@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Flix のコンパイラ jar の場所を 1 line で出す。test/run.sh と Makefile が使う。
+#
+#   FLIX_JAR=/path/to/flix.jar   を渡せばそれを使う（CI はこちら。release の flix.jar）
+#   無ければ flix_game_engine の devbox profile から借りる（FLIXLINT_ENGINE_ROOT で場所を変えられる）
+#
+# WhyNot: flix.nix の flix コマンドを直に exec しないのは、それが自分専用の JRE を同梱していて
+# 手元の jdk と別のマイナーバージョンになるため。jar だけ借り、JRE は手元に固定する。
+ENGINE_ROOT="${FLIXLINT_ENGINE_ROOT:-$HOME/Desktop/flix_game_engine}"
+
+FLIX_JAR="${FLIX_JAR:-}"
+if [ -n "$FLIX_JAR" ] && [ ! -f "$FLIX_JAR" ]; then FLIX_JAR=""; fi
+if [ -z "$FLIX_JAR" ]; then
+    real="$(readlink -f "$ENGINE_ROOT/.devbox/nix/profile/default/bin/flix" 2>/dev/null)"
+    case "$real" in
+        /nix/store/*)
+            jar="$(dirname "$(dirname "$real")")/share/java/flix/flix.jar"
+            if [ -f "$jar" ]; then FLIX_JAR="$jar"; fi
+            ;;
+    esac
+fi
+if [ -z "$FLIX_JAR" ] && [ -f "$ENGINE_ROOT/bin/flix.jar" ]; then FLIX_JAR="$ENGINE_ROOT/bin/flix.jar"; fi
+
+if [ -z "$FLIX_JAR" ]; then
+    echo "flix.jar が見つかりません。FLIX_JAR=/path/to/flix.jar を渡してください。" >&2
+    exit 127
+fi
+echo "$FLIX_JAR"

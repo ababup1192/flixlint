@@ -1,0 +1,93 @@
+src/Effects.flix:17: visible: Condition.Eq: takes ApiId
+    conditions name fields through Visible, never a raw ApiId
+    fix it, or add |> allowInFile("src/Effects.flix", "reason") to rule visible
+src/Effects.flix:17: visible: Condition.In: takes ApiId
+    conditions name fields through Visible, never a raw ApiId
+    fix it, or add |> allowInFile("src/Effects.flix", "reason") to rule visible
+src/Wall.flix:14: clock: Report.title: calls Wall.today
+    the real clock is read where Main builds the clock; everything else takes the time as an argument
+    Wall.today -> Wall.nowMillis -> java.lang.System.currentTimeMillis
+    fix it, or add |> allowIn(Fn.Report_title, "reason") to rule clock
+src/Wall.flix:16: clock: Report.footer: calls Wall.stamp
+    the real clock is read where Main builds the clock; everything else takes the time as an argument
+    Wall.stamp -> Wall.secret -> Wall.nowMillis -> java.lang.System.currentTimeMillis
+    fix it, or add |> allowIn(Fn.Report_footer, "reason") to rule clock
+src/admin/Resolvers.flix:16: grant-target: Resolvers.pairedGrant: calls AdminMapping.entryId and Session.grant
+    an entry id and its proof are obtained together (entryTarget + grantOnEntry)
+    fix it, or add |> allowIn(Fn.Resolvers_pairedGrant, "reason") to rule grant-target
+src/admin/Resolvers.flix:25: grant-leak: Resolvers.leaky: calls Session.grantOnEntry and Session.grant
+    an id received with grantOnEntry is not re-checked with a target-less grant()
+    fix it, or add |> allowIn(Fn.Resolvers_leaky, "reason") to rule grant-leak
+src/admin/Resolvers.flix:34: schema-guard: Resolvers.addFieldBare: calls ContentTypes.addField
+    type changes from the admin API go through ContentTypes.guarded
+    fix it, or add |> allowIn(Fn.Resolvers_addFieldBare, "reason") to rule schema-guard
+src/admin/Resolvers.flix:41: find-many: Resolvers.eachInLambda: calls Entries.find inside a lambda passed to List.map
+    one read per id over a list of ids is N+1; a list of ids is read with findMany
+    fix it, or add |> allowIn(Fn.Resolvers_eachInLambda, "reason") to rule find-many
+src/admin/Resolvers.flix:45: find-many: Resolvers.eachByName: calls Entries.find inside a lambda passed to List.map
+    one read per id over a list of ids is N+1; a list of ids is read with findMany
+    fix it, or add |> allowIn(Fn.Resolvers_eachByName, "reason") to rule find-many
+src/admin/Resolvers.flix:53: silent-parse: Resolvers.parsedIds: drops the values Ids.parse rejects
+    a value that does not parse is rejected, not dropped or replaced by a default
+    fix it, or add |> allowIn(Fn.Resolvers_parsedIds, "reason") to rule silent-parse
+src/admin/Resolvers.flix:57: silent-parse: Resolvers.parsedOrZero: defaults the values Ids.parse rejects
+    a value that does not parse is rejected, not dropped or replaced by a default
+    fix it, or add |> allowIn(Fn.Resolvers_parsedOrZero, "reason") to rule silent-parse
+src/admin/Resolvers.flix:61: silent-parse: Resolvers.parsedOrOne: defaults the values Ids.parse rejects
+    a value that does not parse is rejected, not dropped or replaced by a default
+    fix it, or add |> allowIn(Fn.Resolvers_parsedOrOne, "reason") to rule silent-parse
+src/app/Runner.flix:12: handler-site: Runner.bypass: installs a handler for Session
+    the Session handler is installed by the runner only; use cases receive Granted
+    fix it, or add |> allowIn(Fn.Runner_bypass, "reason") to rule handler-site
+src/cms/Entries.flix:11: io-in-tx: Entries.viaAlias: has Db and Http in its signature
+    DB and outbound I/O in one signature: split into read Tx -> I/O -> write Tx
+    fix it, or add |> allowIn(Fn.Entries_viaAlias, "reason") to rule io-in-tx
+src/cms/Entries.flix:15: io-in-tx: Entries.confirm: has Db and Http in its signature
+    DB and outbound I/O in one signature: split into read Tx -> I/O -> write Tx
+    allowUntil 2026-01-01 has expired (split into two transactions (#123))
+    fix it, or add |> allowIn(Fn.Entries_confirm, "reason") to rule io-in-tx
+src/cms/Entries.flix:20: grant-site: Entries.selfGranting: calls Session.grant
+    use cases receive Granted as an argument; only the boundary asks Session
+    fix it, or add |> allowIn(Fn.Entries_selfGranting, "reason") to rule grant-site
+src/cms/Entries.flix:27: handler-site: Entries.forgesProof: builds Session.Granted.Granted
+    Granted is built inside Session only
+    fix it, or add |> allowIn(Fn.Entries_forgesProof, "reason") to rule handler-site
+src/cms/Entries.flix:30: clock: Entries.stamped: calls Clock.now
+    Clock.now is handled by the runner; use cases take the time as an argument
+    fix it, or add |> allowIn(Fn.Entries_stamped, "reason") to rule clock
+src/cms/Entries.flix:32: clock-alone: Entries.stampedRow: has Clock with Db
+    a function that reads the clock does nothing else, so tests can fix the time
+    fix it, or add |> allowIn(Fn.Entries_stampedRow, "reason") to rule clock-alone
+src/cms/Entries.flix:33: clock: Entries.stampedRow: calls Clock.now
+    Clock.now is handled by the runner; use cases take the time as an argument
+    fix it, or add |> allowIn(Fn.Entries_stampedRow, "reason") to rule clock
+src/cms/Entries.flix:38: domain-isolation: Entries.count: takes Generated.Query
+    the domain does not know the generated API; mappings live in AdminMapping
+    fix it, or add |> allowIn(Fn.Entries_count, "reason") to rule domain-isolation
+src/cms/Entries.flix:39: domain-isolation: Entries.count: calls Generated.limitOf
+    the domain does not know the generated API; mappings live in AdminMapping
+    fix it, or add |> allowIn(Fn.Entries_count, "reason") to rule domain-isolation
+src/cms/Entries.flix:45: visible: Entries.visibleOf: builds Visible.Visible
+    Visible is made from a FieldDef with Visible.ofField
+    fix it, or add |> allowIn(Fn.Entries_visibleOf, "reason") to rule visible
+src/cms/Entries.flix:54: domain-isolation: Entries.defaultRole: returns Generated.Role
+    the domain does not know the generated API; mappings live in AdminMapping
+    fix it, or add |> allowIn(Fn.Entries_defaultRole, "reason") to rule domain-isolation
+src/cms/Entries.flix:55: domain-isolation: Entries.defaultRole: builds Generated.Role.Admin
+    the domain does not know the generated API; mappings live in AdminMapping
+    fix it, or add |> allowIn(Fn.Entries_defaultRole, "reason") to rule domain-isolation
+src/cms/Entries.flix:57: domain-isolation: Entries.rolesOf: returns Generated.Role
+    the domain does not know the generated API; mappings live in AdminMapping
+    fix it, or add |> allowIn(Fn.Entries_rolesOf, "reason") to rule domain-isolation
+src/cms/Entries.flix:60: log-text: Entries.logged: calls Log.str with "error.message"
+    a key that carries a sentence or a secret is written with Log.text only
+    fix it, or add |> allowIn(Fn.Entries_logged, "reason") to rule log-text
+src/cms/Entries.flix:66: log-text: Entries.loggedSecret: calls Log.str with "secret"
+    a key that carries a sentence or a secret is written with Log.text only
+    fix it, or add |> allowIn(Fn.Entries_loggedSecret, "reason") to rule log-text
+src/cms/Entries.flix:72: domain-isolation: Wrapped.Of: takes Generated.Query
+    the domain does not know the generated API; mappings live in AdminMapping
+    fix it, or add |> allowInFile("src/cms/Entries.flix", "reason") to rule domain-isolation
+src/cms/rules/Pricing.flix:4: pure-rules: Pricing.priceFromDb: has Db
+    rules are pure and table-tested; the time comes in as nowMillis
+    fix it, or add |> allowIn(Fn.Pricing_priceFromDb, "reason") to rule pure-rules

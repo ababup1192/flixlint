@@ -1,0 +1,11 @@
+# scala-cli work directories and the built jars
+.scala-build/
+.bsp/
+build/
+# the fixture writes its facts and engine under test/fixture/build/
+test/fixture/build/
+# devbox の生成物（devbox.json と devbox.lock だけを追う）
+.devbox/
+# flix のコンパイラが作る物
+lib/
+artifact/

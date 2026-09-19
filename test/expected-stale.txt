@@ -1,0 +1,9 @@
+src/cms/Entries.flix:11: io-in-tx: Entries.viaAlias: has Db and Http in its signature
+    DB and outbound I/O in one signature: split into read Tx -> I/O -> write Tx
+    fix it, or add |> allowIn(Fn.Entries_viaAlias, "reason") to rule io-in-tx
+src/cms/Entries.flix:15: io-in-tx: Entries.confirm: has Db and Http in its signature
+    DB and outbound I/O in one signature: split into read Tx -> I/O -> write Tx
+    fix it, or add |> allowIn(Fn.Entries_confirm, "reason") to rule io-in-tx
+flixlint: rule io-in-tx: allowIn(Fn.Entries_create) matches nothing (remove it)
+flixlint: rule io-in-tx: allowInFile("src/cms/Removed.flix"): no such file among the sources
+flixlint: rule nothing: allowIn(Fn.Entries_create) matches nothing (remove it)

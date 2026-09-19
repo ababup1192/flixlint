@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# flixlint: architecture rules for Flix, checked on the compiler's AST.
+#
+#   flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
+#            [--today YYYY-MM-DD] [--facts-out DIR] [--build-dir DIR] [--shim JAR] [--java-opts "..."] SRC...
+#
+# Exit codes: 0 no violation, 1 violations, 2 the rules are wrong (rules.flix does not compile, an allow that matches
+#             nothing, an allowInFile of a file that is not among the sources), 3 the sources do not compile.
+#
+# Steps: 1) the shim (Scala, on the compiler jar) walks the AST and writes the facts as TSV plus Names.flix
+#        2) the rule engine (Flix: the Flixlint library + Names.flix + rules.flix + a generated main) is built into a
+#           jar, once per distinct set of those sources, and run against the facts.
+#
+# Environment: FLIX_JAR (the compiler), FLIXLINT_SHIM (a prebuilt shim jar), FLIXLINT_JAVA_OPTS.
+#
+# WhyNot: the rule engine is not run through `flix run` on loose files every time. Compiling it costs seconds, so the
+# jar is keyed by the hash of its sources and rebuilt only when the rules or the names change.
+set -eu
+
+# WhyNot: `dirname "$0"` だけで済ませない。flixlint は submodule や release の展開先から PATH の symlink で
+# 呼ばれる事があり、その時 $0 の親は symlink の置き場になって rules/ も shim/ も見つからない。
+self="$0"
+while [ -L "$self" ]; do
+    link="$(readlink "$self")"
+    case "$link" in /*) self="$link" ;; *) self="$(dirname "$self")/$link" ;; esac
+done
+here="$(cd "$(dirname "$self")/.." && pwd)"
+
+flix_jar="${FLIX_JAR:-}"
+rules=""
+pkgs=()
+jars=()
+stage="typed"
+today=""
+facts_out=""
+build_dir="build/flixlint"
+shim="${FLIXLINT_SHIM:-}"
+java_opts="${FLIXLINT_JAVA_OPTS:--Xss32m -XX:MaxRAMPercentage=35}"
+srcs=()
+
+usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --flix-jar) flix_jar="$2"; shift 2 ;;
+        --rules) rules="$2"; shift 2 ;;
+        --pkg) pkgs+=(--pkg "$2"); shift 2 ;;
+        --jar) jars+=(--jar "$2"); shift 2 ;;
+        --stage) stage="$2"; shift 2 ;;
+        --today) today="$2"; shift 2 ;;
+        --facts-out) facts_out="$2"; shift 2 ;;
+        --build-dir) build_dir="$2"; shift 2 ;;
+        --shim) shim="$2"; shift 2 ;;
+        --java-opts) java_opts="$2"; shift 2 ;;
+        -h|--help) usage ;;
+        --*) echo "flixlint: unknown option $1" >&2; usage ;;
+        *) srcs+=("$1"); shift ;;
+    esac
+done
+# 何も指さなかった時だけ bin/flix-jar の解決に落ちる（FLIX_JAR か --flix-jar が在ればそちらが勝つ）。
+if [ -z "$flix_jar" ] && [ -x "$here/bin/flix-jar" ]; then flix_jar="$("$here/bin/flix-jar" || true)"; fi
+[ -n "$flix_jar" ] && [ -f "$flix_jar" ] || { echo "flixlint: --flix-jar JAR (or FLIX_JAR) must point at flix.jar" >&2; exit 2; }
+[ -n "$rules" ] || { echo "flixlint: --rules PATH/rules.flix is required" >&2; exit 2; }
+[ -f "$rules" ] || { echo "flixlint: rules file not found: $rules" >&2; exit 2; }
+[ ${#srcs[@]} -gt 0 ] || { echo "flixlint: at least one source directory is required" >&2; exit 2; }
+[ -n "$today" ] || today="$(date +%Y-%m-%d)"
+[ -n "$facts_out" ] || facts_out="$build_dir/facts"
+mkdir -p "$build_dir"
+
+# The module of rules.flix that holds `pub def rules(): Flixlint.RuleSet`: its first `mod` declaration.
+rules_mod="$(grep -m1 -oE '^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+[A-Za-z0-9_.]+' "$rules" | awk '{print $NF}')"
+[ -n "$rules_mod" ] || { echo "flixlint: $rules must declare a module (mod MyRules { pub def rules(): Flixlint.RuleSet = ... })" >&2; exit 2; }
+
+# ---- 1. the shim (built once, or taken prebuilt from --shim / FLIXLINT_SHIM) ----
+# WhyNot: the built shim does not go under $build_dir by default. It only depends on shim/*.scala and the compiler
+# jar, not on the project being linted, so one copy next to the sources serves every project on the machine.
+if [ -n "$shim" ]; then
+    [ -f "$shim" ] || { echo "flixlint: shim jar not found: $shim" >&2; exit 2; }
+else
+    shim="$here/build/flixlint-shim.jar"
+    if [ ! -f "$shim" ] || [ -n "$(find "$here/shim" -newer "$shim" -name '*.scala')" ]; then
+        # WhyNot: devbox を必ず挟まない。flixlint を release の tarball で置いた所には devbox.json ごと在るとは
+        # 限らず、PATH に scala-cli が在れば devbox は要らない。
+        if [ -f "$here/devbox.json" ] && command -v devbox >/dev/null 2>&1; then
+            scala_cli=(devbox run -- scala-cli)
+        elif command -v scala-cli >/dev/null 2>&1; then
+            scala_cli=(scala-cli)
+        else
+            echo "flixlint: the shim is not built and scala-cli was not found." >&2
+            echo "          install scala-cli (flixlint's devbox.json has it), or pass a prebuilt jar with" >&2
+            echo "          --shim JAR / FLIXLINT_SHIM=JAR (the release has flixlint-shim-<flix version>.jar)." >&2
+            exit 2
+        fi
+        mkdir -p "$here/build"
+        echo "flixlint: building the shim" >&2
+        (cd "$here" && "${scala_cli[@]}" --power package shim --jar "$flix_jar" --library -o "$shim" -f >/dev/null)
+    fi
+fi
+engine="$build_dir/engine"
+rm -rf "$engine/src"; mkdir -p "$engine/src/Flixlint"
+# shellcheck disable=SC2086
+java $java_opts -cp "$flix_jar:$shim" flixlint.Facts --out "$facts_out" --names-out "$engine/src/Names.flix" --stage "$stage" "${pkgs[@]}" "${jars[@]}" "${srcs[@]}"
+
+# ---- 2. the engine: library + Names.flix + rules.flix + main ----
+cp "$here"/rules/Flixlint/*.flix "$engine/src/Flixlint/"
+cp "$here"/rules/Flixlint.flix "$engine/src/"
+cp "$rules" "$engine/src/Rules.flix"
+printf 'def main(): Unit \\ IO = Flixlint.Engine.lint(%s.rules())\n' "$rules_mod" > "$engine/src/Main.flix"
+
+hash="$(cat "$engine"/src/*.flix "$engine"/src/Flixlint/*.flix | shasum | cut -c1-16)"
+engine_jar="$engine/artifact/engine.jar"
+if [ ! -f "$engine_jar" ] || [ "$(cat "$engine/built-hash" 2>/dev/null)" != "$hash" ]; then
+    printf '[package]\nname = "flixlint-rules"\ndescription = "generated"\nversion = "0.0.0"\nflix = "0.0.0"\nauthors = []\n' > "$engine/flix.toml"
+    rm -f "$engine/built-hash"
+    # shellcheck disable=SC2086
+    if ! (cd "$engine" && java $java_opts -jar "$flix_jar" build-jar --no-install >build.log 2>&1); then
+        echo "flixlint: the rules do not compile ($rules; the names come from $engine/src/Names.flix):" >&2
+        tr '\r' '\n' < "$engine/build.log" | grep -a -vE '^[[:space:]]*$|^[[:space:]]*\[|^(Found|Resolving|Downloading|  Running|Dependency resolution)' | tail -60 >&2
+        exit 2
+    fi
+    echo "$hash" > "$engine/built-hash"
+fi
+# shellcheck disable=SC2086
+FLIXLINT_FACTS="$facts_out" FLIXLINT_TODAY="$today" java $java_opts -jar "$engine_jar"
