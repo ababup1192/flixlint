@@ -12,3 +12,7 @@ authors     = ["abab <ababup1192@gmail.com>"]
 #    利用側の [dependencies] に置くと、利用側の `flix check` が毎回 Undefined use 'Names.Fn' で落ちる。
 # flixlint はライブラリではなく道具なので、リポジトリごと（clone / submodule / release の tarball）渡し、
 # 利用側は bin/flixlint を呼ぶ。詳しくは README.md の「配り方と取り込み方」。
+#
+# WhyNot: このリポジトリで `flix check` を回さない。src/ は無く、Flix の project mode が見る test/ には
+# fixture が書いた生成物（test/fixture/build/.../engine/src/）が入るので、そちらを拾って落ちる。
+# エンジンの型検査は `make test`（fixture を 1 回通す）。
