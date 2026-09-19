@@ -38,13 +38,15 @@ have neither, take `flixlint-shim-<flix version>.jar` from the release and pass 
 internal AST, so one jar per Flix version serves every machine and every project.
 
 ```bash
-make test            # lint the fixture and diff the report against test/expected*.txt
+make test            # lint test/fixture and examples/, diff the reports against test/expected*.txt
 make test-resolved   # the same at the resolved stage
 make shim            # rebuild build/flixlint-shim.jar
 ```
 
-`make test` is also the type check of the rule engine: `rules/Flixlint*.flix` only compiles together with a generated
-`Names.flix`, so running the fixture through is the only way to compile it.
+`make test` is also the type check of the rule engine: `src/Flixlint*.flix` only compiles together with a generated
+`Names.flix`, so running a project through is the only way to compile it. This repository therefore has no
+`flix check` of its own — `test/` holds a fixture that must not compile (`rules/broken.flix` names a function the
+sources do not have), which is exactly what the test asserts.
 
 ## Using it from your project
 
@@ -58,6 +60,11 @@ lint:
 	$(LINT)
 ```
 
+Your rule file names things through the generated module, so it starts with
+`use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}` (up to flixlint 0.1.0 that module was the top-level `Names`;
+upgrading is that one `use` line, and the case names inside `Fn` / `Eff` / `Mod` / `Case` / `Enum` / `Type` are
+unchanged).
+
 `--pkg` / `--jar` are the dependencies your sources need; the compiler has already resolved them into `lib/` by the
 time `flix check` has run once, so a small script that turns `flix.toml` into `--pkg lib/... --jar lib/cache/...`
 lines is all that is needed. Nothing else of flixlint has to live in your repository: the engine, the shim and the
@@ -67,7 +74,8 @@ lines is all that is needed. Nothing else of flixlint has to live in your reposi
 
 `flix build-pkg` puts `flix.toml`, `README.md`, `LICENSE.md` and `src/**/*.flix` into the package and nothing else —
 a jar or a resource file under `src/` is dropped, and so is everything outside `src/`. So neither `bin/flixlint` nor
-the shim jar can travel in an fpkg. On top of that, `rules/Flixlint*.flix` refers to the generated `Names` module, so
+the shim jar can travel in an fpkg. On top of that, `src/Flixlint*.flix` refers to the generated `Flixlint.Names`
+module, so
 as a package it would not compile in the consumer's project at all — and it has no business being compiled into the
 consumer's program, since only the throwaway rule-engine project that `bin/flixlint` generates ever uses it.
 
@@ -110,7 +118,7 @@ src/Report.flix:14: clock: Report.title: calls Wall.today
 
 Violations are sorted by file, line and rule id, so the report is the same on every run.
 
-The rule engine is a Flix program made of the `rules/Flixlint` library, the generated `Names.flix`, your rule file and
+The rule engine is a Flix program made of the `src/Flixlint` library, the generated `Names.flix`, your rule file and
 a generated `main`; `bin/flixlint` compiles it into a jar with the same compiler and rebuilds it only when one of those
 changes (measured on a 227-file project: the engine builds in about 16 s, then a run costs the facts plus 3 s).
 
@@ -118,39 +126,16 @@ changes (measured on a 227-file project: the engine builds in about 16 s, then a
 
 A rule file is a Flix module with one `pub def rules(): Flixlint.RuleSet`. Each entry is a record with `id`, what is
 disallowed, and `reason`; the functions chained after it add what the entry needs and nothing else. Names come from
-the generated `Names` module: `Fn.Session_grant`, `Eff.Net_Http`, `Mod.Now`, `Case.Visible_Visible`,
+the generated `Flixlint.Names` module (`use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}`):
+`Fn.Session_grant`, `Eff.Net_Http`, `Mod.Now`, `Case.Visible_Visible`,
 `Enum.Condition`, `Type.ApiId` (the qualified name with every character that is not a letter or a digit replaced by
 `_` and the first letter upper-cased; `java.lang.System.currentTimeMillis` is `Fn.Java_lang_System_currentTimeMillis`,
 the root module is `Mod.Root`). The editor's completion on `Fn.` lists the candidates.
 
-```flix
-mod MyRules {
-    use Flixlint.{RuleSet, disallowFunction, disallowEffectsTogether, disallowHandler, transitivelyIn, allowIn, allowInFile, allowUntil}
-    use Names.{Fn, Eff, Mod}
-
-    pub def rules(): RuleSet = Flixlint.ruleSet(List#{
-        Flixlint.functions(List#{
-            disallowFunction({ id = "clock", path = Fn.Java_lang_System_currentTimeMillis,
-                reason = "the time is an argument; only Main reads the clock" })
-                |> transitivelyIn(Mod.Now)
-                |> allowIn(Fn.Now_real, "the one value of the real clock")
-        }),
-        Flixlint.effectsTogether(List#{
-            disallowEffectsTogether({ id = "io-in-tx", effects = Set#{Eff.Db}, withEffects = Set#{Eff.ObjectStore, Eff.Net_Http},
-                reason = "waiting on the network inside a Tx keeps the connection borrowed" })
-                |> allowUntil(Fn.Assets_confirm, "2026-12-31", "split into two transactions (#123)")
-        }),
-        Flixlint.handlers(List#{
-            disallowHandler({ id = "handler-site", effect = Eff.Session, reason = "the runner installs it" })
-                |> transitivelyIn(Mod.Session)
-                |> allowInFile("src/app/DbRunner.flix", "the runner")
-        }),
-        Flixlint.custom("schema-guard", schemaGuard)
-    })
-
-    def schemaGuard(facts: Flixlint.Facts.Facts): List[Flixlint.Violation.Violation] = ...
-}
-```
+[`examples/rules.flix`](examples/rules.flix) is a complete rule file — `disallowFunction` with `transitivelyIn`
+and `allowIn`, `disallowEffectsTogether` with `allowUntil`, `disallowHandler` with `allowInFile`, and a custom rule —
+against the six-file project in [`examples/src`](examples/src). `examples/README.md` shows the report it produces,
+and `make test` diffs that report, so the example is never out of date. Read it first; the reference follows.
 
 `Flixlint.ruleSet` merges the parts; a family that has no entries is simply not written.
 
@@ -177,7 +162,7 @@ the family's.
 Effect sets are expanded through type aliases on both sides: `Eff.Db` in a rule means the members of the alias `Db`,
 and a signature written `\ AdminEff` is seen as the members of `AdminEff`.
 
-The judgments, one sentence each (`rules/Flixlint/Engine.flix`):
+The judgments, one sentence each (`src/Flixlint/Engine.flix`):
 
 ```
 disallowFunction:         Calls(caller, callee), callee = path or callee ∈ wrappers(path), caller not on the way to path
@@ -213,19 +198,8 @@ attributes, and a comment would be a string the linter would have to parse.
 
 ### Custom rules
 
-What the families cannot say is written against the facts, in the same rule set:
-
-```flix
-Flixlint.custom("schema-guard", facts ->
-    let mutating = Flixlint.Facts.defs(facts)
-        |> List.filter(d -> d#module == Mod.ContentTypes and Flixlint.Facts.argType(facts, d#fn, 0) == Some(Type.Session_Granted))
-        |> List.map(d -> d#fn) |> List.toSet;
-    Flixlint.Facts.calls(facts)
-        |> List.filter(c -> Set.memberOf(c#callee, mutating))
-        |> List.filter(c -> Flixlint.Facts.defOf(facts, c#caller) |> Option.exists(d -> Flixlint.Glob.matches("src/admin/**", d#file)))
-        |> List.filter(c -> not Flixlint.Facts.callsTo(facts, c#caller, Fn.SchemaGuard_guarded))
-        |> List.map(c -> Flixlint.Violation.atCall(facts, "schema-guard", c, "schema changes go through SchemaGuard.guarded")))
-```
+What the families cannot say is written against the facts, in the same rule set; `findReadsOnly` in
+[`examples/rules.flix`](examples/rules.flix) is one.
 
 `Flixlint.Facts` gives the relations as lists of records (`defs`, `calls`, `handles`, `constructs`, `callsInLambda`,
 `argLits`, `argCalls`, `pipedInto`, `strLits`, `argTypes`, `argTypesAll`, `caseTypes`, `caseTypesAll`, `enums`, `effects`)
@@ -240,7 +214,7 @@ short form without allows.
 
 ## Facts
 
-The shim (`shim/Facts.scala`) writes one TSV per relation into the facts directory and `Names.flix` next to the
+The shim (`shim/Facts.scala`) writes one TSV per relation into the facts directory and `Flixlint/Names.flix` next to the
 engine's sources. `fn`, `callee`, `eff`, `case`, `enum` and `tycon` are qualified the way the compiler qualifies
 symbols: `Session.grant`, `Session.Granted.Granted` (enum cases carry their enum), `Net.Http` (an effect declared
 inside `mod Net.Http`), `java.lang.System.currentTimeMillis` (Java interop; constructors are `pkg.Class.<init>`).
@@ -266,7 +240,7 @@ inside `mod Net.Http`), `java.lang.System.currentTimeMillis` (Java interop; cons
 | `Enum` / `Eff` | `name, mod, file, line, pub` | Where an enum / an effect is declared. |
 
 Definitions coming from packages and the standard library are not listed in `Def` (only project sources are), but they
-appear as callees, effects and types, and they are in `Names.flix`: `Fn` holds every function the sources could call
+appear as callees, effects and types, and they are in `Flixlint.Names`: `Fn` holds every function the sources could call
 (project, packages, stdlib, and the Java methods the sources do call), so a rule can disallow a function nobody calls
 yet. On a 227-file project that is about 10,600 `Fn` cases; the enums derive `Eq, Order` and not `ToString`, because
 deriving `ToString` on an enum of that size takes the compiler minutes (80 s at 3,000 cases against 6 s without), and
@@ -278,24 +252,27 @@ large to compile.
 ```
 flix.toml                    the package metadata (name, version, the Flix version the shim is compiled against)
 Makefile                     test / test-resolved / shim / clean / release
-bin/flixlint                 the command: shim -> facts + Names.flix, engine jar -> violations
+bin/flixlint                 the command: shim -> facts + Flixlint/Names.flix, engine jar -> violations
 bin/flix-jar                 where the compiler jar is, when neither --flix-jar nor FLIX_JAR says
-shim/Facts.scala             AST -> TSV facts and Names.flix (typed stage, and the resolved stage that stops before the typer)
-rules/Flixlint.flix          what a rule file uses: the family records and builders, transitivelyIn / allowIn / allowInFile / allowUntil, ruleSet
-rules/Flixlint/Facts.flix    the facts loaded from the TSV, and the lookups custom rules use
-rules/Flixlint/Engine.flix   the judgments, the allows, the report and the exit code
-rules/Flixlint/Violation.flix  the violation record and how it is rendered
-rules/Flixlint/Glob.flix     the glob of `files`
+shim/Facts.scala             AST -> TSV facts and Flixlint/Names.flix (typed stage, and the resolved stage that stops before the typer)
+src/Flixlint.flix            what a rule file uses: the family records and builders, transitivelyIn / allowIn / allowInFile / allowUntil, ruleSet
+src/Flixlint/Facts.flix      the facts loaded from the TSV, and the lookups custom rules use
+src/Flixlint/Engine.flix     the judgments, the allows, the report and the exit code
+src/Flixlint/Violation.flix  the violation record and how it is rendered
+src/Flixlint/Glob.flix       the glob of `files`
+examples/                    a six-file project and four rules, small enough to read in a minute
 test/fixture/                a 7-file project that violates every family and three custom rules; test/run.sh checks the report
+test/expected*.txt           the reports both of them must produce
 ```
 
 `make test` runs the test (`make test-resolved`, or `FLIXLINT_STAGE=resolved test/run.sh`, runs it at the resolved
-stage). The fixture is a project of its own; nothing outside this repository is needed to run it.
+stage). Both projects are projects of their own, and their facts and rule engines are built under `build/`, outside
+the sources; nothing outside this repository is needed to run them.
 
 ## Notes and limits
 
 - Names are matched exactly as the compiler qualifies them. When a rule does not hit what you expect, look at the
-  facts TSV (`grep Http build/flixlint/facts/effect_of.tsv`) or at `build/flixlint/engine/src/Names.flix`.
+  facts TSV (`grep Http build/flixlint/facts/effect_of.tsv`) or at `build/flixlint/engine/src/Flixlint/Names.flix`.
 - `Fn` has the functions the sources could call; it does not have Java methods the sources never call, so a Java
   method can be disallowed only once something calls it.
 - `PipedInto` follows one `|>` chain. A parse inside a lambda of a stage (`Option.flatMap(t -> parse(t) |> Result.toOption) |> Option.getWithDefault(d)`)
@@ -303,7 +280,7 @@ stage). The fixture is a project of its own; nothing outside this repository is 
 - A let-bound expression is read where its variable is first used as an argument; a variable used as an argument twice is
   walked once, at the first use.
 - The resolved stage does not see Java instance-method calls (`x.foo()`); static calls and constructors are the same at
-  both stages. The two stages generate different `Names.flix`, so switching stage rebuilds the engine.
+  both stages. The two stages generate different `Flixlint.Names`, so switching stage rebuilds the engine.
 - The shim depends on the compiler's internal AST (`ca.uwaterloo.flix.language.ast.*`) and on two private members of
   `Flix` for the resolved stage. A compiler upgrade is a change to `shim/Facts.scala` only; the rules and the TSV
   contract do not move.

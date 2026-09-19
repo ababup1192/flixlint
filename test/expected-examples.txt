@@ -1,0 +1,13 @@
+src/Orders.flix:5: clock: Orders.receipt: calls Clock.today
+    the time comes in as an argument; only Clock reads the wall clock
+    Clock.today -> Clock.real -> java.lang.System.currentTimeMillis
+    fix it, or add |> allowIn(Fn.Orders_receipt, "reason") to rule clock
+src/Orders.flix:7: find-reads-only: Orders.findAndNotify: has Http in its signature
+    a find* function reads; reaching out over the network belongs in its own step
+    fix it, or add |> allowIn(Fn.Orders_findAndNotify, "reason") to rule find-reads-only
+src/Orders.flix:7: io-in-tx: Orders.findAndNotify: has Db and Http in its signature
+    waiting on the network inside a Tx keeps the connection borrowed: read Tx -> I/O -> write Tx
+    fix it, or add |> allowIn(Fn.Orders_findAndNotify, "reason") to rule io-in-tx
+src/Reports.flix:6: db-handler: Reports.preview: installs a handler for Db
+    the Db handler is installed by the runner only
+    fix it, or add |> allowIn(Fn.Reports_preview, "reason") to rule db-handler

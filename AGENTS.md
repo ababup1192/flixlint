@@ -26,27 +26,34 @@ Flix のアーキテクチャ規則を、grep でなくコンパイラの AST �
 | 層 | 場所 | 直すのは |
 |---|---|---|
 | shim（Scala） | `shim/Facts.scala` | facts の列を足す・変える、コンパイラのバージョンを上げる |
-| エンジン（Flix） | `rules/Flixlint.flix`、`rules/Flixlint/` | family を足す、判定を変える、報告の文面 |
+| エンジン（Flix） | `src/Flixlint.flix`、`src/Flixlint/` | family を足す、判定を変える、報告の文面 |
 | CLI（bash） | `bin/flixlint` | 引数、shim と engine の組み方とキャッシュ |
 
-shim は TSV と `Names.flix` を書く所までで、規則を知らない。エンジンは TSV しか読まない。
+shim は TSV と `Flixlint/Names.flix`（`pub mod Flixlint.Names`）を書く所までで、規則を知らない。エンジンは TSV しか読まない。
 **この境界を越えない**（shim に規則を書かない、エンジンから AST を触らない）。
 コンパイラのバージョンを上げる時に動くのは `shim/Facts.scala` だけで、TSV の契約と規則は動かない。
 
 ## 破ると事故る決まり
 
 - **flixlint は特定のプロジェクトを知らない。** effect・モジュール・ファイル・enum の case の名前は
-  利用側の `rules.flix` の物で、`rules/` にも `shim/` にも書かない
-- **`rules/Flixlint*.flix` は単体でコンパイルできない**（生成物の `Names` を参照する）。型検査は
-  `make test`（fixture を 1 回通す）で、これがエンジンのコンパイルそのもの
+  利用側の `rules.flix` の物で、`src/` にも `shim/` にも書かない
+- **`src/Flixlint*.flix` は単体でコンパイルできない**（生成物の `Flixlint.Names` を参照する）。型検査は
+  `make test`（fixture を 1 回通す）で、これがエンジンのコンパイルそのもの。**このリポジトリで
+  `flix check` は回らない**（`test/` に「コンパイルできない事」を確かめる fixture が在るため。`flix.toml` の WhyNot）
 - **fpkg では配らない。** `flix build-pkg` は `src/**/*.flix` しか詰めず、`bin/` も shim の jar も入らない
-  （理由は `flix.toml` の WhyNot と README の「Why it is not an fpkg」）。`src/` を作らない
+  （理由は `flix.toml` の WhyNot と README の「Why it is not an fpkg」）。`src/` が在っても
+  `.fpkg` を作らない
 - **報告は決定的に。** 違反はファイル・行・rule id で並べ替えてから出す。`--today` を受けるのは
   `allowUntil` を実時刻に依らせないため（テストは日付を固定する）
 - **facts の列を足したら `test/fixture/` に違反を 1 件足す。** fixture は「全 family と custom 規則に
   少なくとも 1 件ずつ違反が在る」状態を保つ
 - **`test/expected*.txt` を手で合わせない。** 報告が変わったら、変えて良い変更かを先に決めてから
   差分を取り込む
+- **`examples/` は README の「Writing rules」の実体。** README に規則の code を貼り直さず、
+  `examples/rules.flix` を指す。`make test` が `test/expected-examples.txt` と突き合わせるので、
+  古くなれば落ちる
+- **flixlint の生成物を `src/` と `test/` の下に置かない。** Flix の project mode が見る 2 つで、
+  拾われるとコンパイルが壊れる。`test/run.sh` は `--build-dir` を `build/` に向けている
 
 ## ビルドと実行
 
