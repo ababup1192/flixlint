@@ -2,10 +2,10 @@
 /// What a rule file uses: one record per rule entry (`id` / what / `reason`), a builder per family, the functions
 /// that are chained after an entry (`transitivelyIn`, `allowIn`, `allowInFile`, `allowUntil`), and the `RuleSet`
 /// the engine runs. Names of functions, effects, modules, cases, enums and types are the enums of the generated
-/// `Names` module, so a rule that names something the sources no longer have fails to compile.
+/// `Flixlint.Names` module, so a rule that names something the sources no longer have fails to compile.
 ///
 pub mod Flixlint {
-    use Names.{Fn, Eff, Mod, Case, Enum, Type}
+    use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}
     use Flixlint.Facts.Facts
     use Flixlint.Violation.Violation
 

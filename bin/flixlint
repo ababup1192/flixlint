@@ -99,11 +99,11 @@ fi
 engine="$build_dir/engine"
 rm -rf "$engine/src"; mkdir -p "$engine/src/Flixlint"
 # shellcheck disable=SC2086
-java $java_opts -cp "$flix_jar:$shim" flixlint.Facts --out "$facts_out" --names-out "$engine/src/Names.flix" --stage "$stage" "${pkgs[@]}" "${jars[@]}" "${srcs[@]}"
+java $java_opts -cp "$flix_jar:$shim" flixlint.Facts --out "$facts_out" --names-out "$engine/src/Flixlint/Names.flix" --stage "$stage" "${pkgs[@]}" "${jars[@]}" "${srcs[@]}"
 
 # ---- 2. the engine: library + Names.flix + rules.flix + main ----
-cp "$here"/rules/Flixlint/*.flix "$engine/src/Flixlint/"
-cp "$here"/rules/Flixlint.flix "$engine/src/"
+cp "$here"/src/Flixlint/*.flix "$engine/src/Flixlint/"
+cp "$here"/src/Flixlint.flix "$engine/src/"
 cp "$rules" "$engine/src/Rules.flix"
 printf 'def main(): Unit \\ IO = Flixlint.Engine.lint(%s.rules())\n' "$rules_mod" > "$engine/src/Main.flix"
 
@@ -114,7 +114,7 @@ if [ ! -f "$engine_jar" ] || [ "$(cat "$engine/built-hash" 2>/dev/null)" != "$ha
     rm -f "$engine/built-hash"
     # shellcheck disable=SC2086
     if ! (cd "$engine" && java $java_opts -jar "$flix_jar" build-jar --no-install >build.log 2>&1); then
-        echo "flixlint: the rules do not compile ($rules; the names come from $engine/src/Names.flix):" >&2
+        echo "flixlint: the rules do not compile ($rules; the names come from $engine/src/Flixlint/Names.flix):" >&2
         tr '\r' '\n' < "$engine/build.log" | grep -a -vE '^[[:space:]]*$|^[[:space:]]*\[|^(Found|Resolving|Downloading|  Running|Dependency resolution)' | tail -60 >&2
         exit 2
     fi

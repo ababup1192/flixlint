@@ -4,7 +4,7 @@ mod StaleRules {
     use Flixlint.{RuleSet, disallowEffectsTogether, customRule, allowIn, allowInFile}
     use Flixlint.Facts.Facts
     use Flixlint.Violation.Violation
-    use Names.{Fn, Eff}
+    use Flixlint.Names.{Fn, Eff}
 
     pub def rules(): RuleSet = Flixlint.ruleSet(List#{
         Flixlint.effectsTogether(List#{

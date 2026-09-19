@@ -2,7 +2,7 @@
 /// One violation: the line it is reported at, the rule that produced it and the lines that explain it.
 ///
 pub mod Flixlint.Violation {
-    use Names.Fn
+    use Flixlint.Names.Fn
     use Flixlint.Facts.{Facts, Call, Def}
 
     ///

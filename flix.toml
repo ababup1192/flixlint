@@ -1,18 +1,20 @@
 [package]
 name        = "flixlint"
 description = "Flix のアーキテクチャ規則を、grep でなくコンパイラの AST から取った facts で check する linter"
-version     = "0.1.0"
+version     = "0.2.0"
 flix        = "0.76.0"
 authors     = ["abab <ababup1192@gmail.com>"]
 
 # WhyNot: [dependencies] に書いて配る形（sqlfx / logfx と同じ形）にしない。
 # 1) `flix build-pkg` が .fpkg に入れるのは flix.toml / README.md / LICENSE.md / src/**/*.flix だけで、
 #    bin/flixlint も shim の jar も入らない（jar を src/ に置いても落ちる。実測済み）。
-# 2) rules/Flixlint*.flix は生成物の `Names` モジュールを参照するので、単体ではコンパイルできない。
-#    利用側の [dependencies] に置くと、利用側の `flix check` が毎回 Undefined use 'Names.Fn' で落ちる。
+# 2) src/Flixlint*.flix は生成物の `Flixlint.Names` を参照するので、単体ではコンパイルできない。
+#    利用側の [dependencies] に置くと、利用側の `flix check` が毎回 Undefined use 'Flixlint.Names.Fn' で落ちる。
 # flixlint はライブラリではなく道具なので、リポジトリごと（clone / submodule / release の tarball）渡し、
 # 利用側は bin/flixlint を呼ぶ。詳しくは README.md の「配り方と取り込み方」。
 #
-# WhyNot: このリポジトリで `flix check` を回さない。src/ は無く、Flix の project mode が見る test/ には
-# fixture が書いた生成物（test/fixture/build/.../engine/src/）が入るので、そちらを拾って落ちる。
-# エンジンの型検査は `make test`（fixture を 1 回通す）。
+# WhyNot: このリポジトリで `flix check` を回さない。Flix の project mode は src/ と test/ の 2 つを
+# まとめてコンパイルするが、test/fixture/rules/broken.flix は「コンパイルできない事」を test が確かめる
+# ファイルで、test/fixture/rules/*.flix も fixture の生成した Names に紐づいている。src/ だけなら
+# `Flixlint.Names` の stub を置けば型検査は通る（実測）が、`make test` は本物の生成物に対して
+# エンジンを組むので、stub の検査はそれより弱い。エンジンの型検査は `make test`。

@@ -5,7 +5,7 @@
 /// `allowInFile` of a file that is not among the sources).
 ///
 pub mod Flixlint.Engine {
-    use Names.{Fn, Eff, Mod}
+    use Flixlint.Names.{Fn, Eff, Mod}
     use Flixlint.{Allow, RuleSet, DisallowedFunction, DisallowedCallsTogether, DisallowedEffectsTogether,
                   DisallowedOtherEffectsWith, DisallowedEffectsIn, DisallowedHandler, DisallowedConstructor,
                   DisallowedCallInLambda, DisallowedCallWithArg, DisallowedCaseArgType, DisallowedDependency}

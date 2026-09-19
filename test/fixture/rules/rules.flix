@@ -6,7 +6,7 @@ mod FixtureRules {
                   transitivelyIn, inFiles, valuesFromLiteralsIn, allowIn, allowInFile, allowUntil}
     use Flixlint.Facts.Facts
     use Flixlint.Violation.Violation
-    use Names.{Fn, Eff, Mod, Case, Enum, Type}
+    use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}
 
     pub def rules(): RuleSet = Flixlint.ruleSet(List#{
         Flixlint.functions(List#{

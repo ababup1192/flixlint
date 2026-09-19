@@ -1,7 +1,7 @@
 .PHONY: test test-resolved shim clean release
 
-# fixture に flixlint を掛けて、報告を test/expected*.txt と突き合わせる。
-# 型検査もここで一緒に済む: 規則のエンジン（rules/Flixlint*.flix）は生成物の Names.flix が揃って初めて
+# test/fixture と examples に flixlint を掛けて、報告を test/expected*.txt と突き合わせる。
+# 型検査もここで一緒に済む: 規則のエンジン（src/Flixlint*.flix）は生成物の Names.flix が揃って初めて
 # コンパイルできるので、fixture を 1 回通す事がエンジンの型検査そのものになる。
 test:
 	test/run.sh
@@ -16,7 +16,7 @@ shim:
 	devbox run -- scala-cli --power package shim --jar "$$(bin/flix-jar)" --library -o build/flixlint-shim.jar -f
 
 clean:
-	rm -rf build test/fixture/build shim/.scala-build
+	rm -rf build shim/.scala-build
 
 # GitHub の release に shim の jar を付ける。利用側は scala-cli 無しで
 # FLIXLINT_SHIM=... / --shim ... に渡せる（README「shim の届け方」）。

@@ -1,9 +1,9 @@
 ///
 /// The facts of the linted sources, loaded from the TSV the shim writes, with the names turned into the enums of
-/// the generated `Names` module. Custom rules read them through the functions of this module.
+/// the generated `Flixlint.Names` module. Custom rules read them through the functions of this module.
 ///
 pub mod Flixlint.Facts {
-    use Names.{Fn, Eff, Mod, Case, Enum, Type}
+    use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}
     use Fs.FileRead.FileRead
 
     ///
@@ -179,13 +179,13 @@ pub mod Flixlint.Facts {
 
     /// Loads the TSV of `dir`. A row whose name is not in the generated enums (operators such as `++`) is skipped.
     pub def load(dir: String): Facts \ FileRead =
-        let fnTable = Names.fnTable();
+        let fnTable = Flixlint.Names.fnTable();
         let fnOf = table(fnTable);
-        let effOf = table(Names.effTable());
-        let modOf = table(Names.modTable());
-        let caseOf = table(Names.caseTable());
-        let enumOf = table(Names.enumTable());
-        let typeOf = table(Names.typeTable());
+        let effOf = table(Flixlint.Names.effTable());
+        let modOf = table(Flixlint.Names.modTable());
+        let caseOf = table(Flixlint.Names.caseTable());
+        let enumOf = table(Flixlint.Names.enumTable());
+        let typeOf = table(Flixlint.Names.typeTable());
         let defs = rows(dir, "def") |> List.filterMap(c -> forM (
                 fn <- fnOf(col(0, c));
                 module <- modOf(col(2, c))
@@ -257,11 +257,11 @@ pub mod Flixlint.Facts {
                 |> (acc -> List.foldLeft((s, e) -> Set.insert(e#file, s), acc, effects)),
             fnNames = fnTable |> List.map(match (n, _, k) -> (k, n)) |> List.toMap,
             fnCases = fnTable |> List.map(match (_, c, k) -> (k, c)) |> List.toMap,
-            effNames = inverse(Names.effTable()),
-            modNames = inverse(Names.modTable()),
-            caseNames = inverse(Names.caseTable()),
-            enumNames = inverse(Names.enumTable()),
-            typeNames = inverse(Names.typeTable())
+            effNames = inverse(Flixlint.Names.effTable()),
+            modNames = inverse(Flixlint.Names.modTable()),
+            caseNames = inverse(Flixlint.Names.caseTable()),
+            enumNames = inverse(Flixlint.Names.enumTable()),
+            typeNames = inverse(Flixlint.Names.typeTable())
         })
 
     /// A lookup from the qualified name to the enum case. The root module is the empty name.
