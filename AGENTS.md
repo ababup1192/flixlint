@@ -57,13 +57,14 @@ shim は TSV と `Flixlint/Names.flix`（`pub mod Flixlint.Names`）を書く所
 
 ## ビルドと実行
 
-Flix コンパイラ jar は `FLIX_JAR` で渡すか、無ければ flix_game_engine の devbox の物を借りる
-（`bin/flix-jar`。`FLIXLINT_ENGINE_ROOT` で場所を変えられる）。shim を組む scala-cli は `devbox.json`。
+Flix コンパイラ jar は `FLIX_JAR` で渡すか、無ければ `bin/flix-jar` が PATH の `flix` の隣、
+最後に flix_game_engine の devbox（`FLIXLINT_ENGINE_ROOT` で場所を変えられる）から探す。
+shim を組む scala-cli は `devbox.json`。
 
 ```bash
 make test            # fixture に掛けて test/expected*.txt と突き合わせる（型検査もこれ）
 make test-resolved   # 名前解決の直後の AST でも同じ報告になる事
 make shim            # build/flixlint-shim.jar を組み直す
 make clean           # build/ と .scala-build/ を消す
-make release         # shim の jar を GitHub の release に付ける（version は flix.toml）
+make release         # shim の jar を GitHub の release に付ける（version は flix.toml。`bin/flixlint --version` も同じ所を読む）
 ```

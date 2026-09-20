@@ -9,8 +9,6 @@ pub mod Flixlint {
     use Flixlint.Facts.Facts
     use Flixlint.Violation.Violation
 
-    pub def version(): String = "0.3.0"
-
     /// A function or file whose violations of one entry are not reported, with the reason it is allowed.
     pub enum Allow with Eq, Order {
         /// `allowIn(Fn.X, reason)`

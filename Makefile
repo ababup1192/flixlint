@@ -19,7 +19,7 @@ clean:
 	rm -rf build shim/.scala-build
 
 # GitHub の release に shim の jar を付ける。利用側は scala-cli 無しで
-# FLIXLINT_SHIM=... / --shim ... に渡せる（README「shim の届け方」）。
+# FLIXLINT_SHIM=... / --shim ... に渡せる（README の "Installing"）。
 # WhyNot: .fpkg は作らない。flix build-pkg は src/**/*.flix しか詰めず、bin/ も shim も入らない（flix.toml の WhyNot）。
 VERSION    = $(shell sed -n 's/^version *= *"\(.*\)"/\1/p' flix.toml)
 FLIX_VER   = $(shell sed -n 's/^flix *= *"\(.*\)"/\1/p' flix.toml)

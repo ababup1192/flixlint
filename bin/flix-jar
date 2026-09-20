@@ -1,23 +1,38 @@
 #!/usr/bin/env bash
 # Flix のコンパイラ jar の場所を 1 line で出す。test/run.sh と Makefile が使う。
 #
-#   FLIX_JAR=/path/to/flix.jar   を渡せばそれを使う（CI はこちら。release の flix.jar）
-#   無ければ flix_game_engine の devbox profile から借りる（FLIXLINT_ENGINE_ROOT で場所を変えられる）
+#   1) FLIX_JAR=/path/to/flix.jar を渡せばそれ（CI はこちら。release の flix.jar）
+#   2) PATH の flix を辿って、その隣の share/java/flix/flix.jar
+#   3) flix_game_engine の devbox profile（FLIXLINT_ENGINE_ROOT で場所を変えられる）
 #
-# WhyNot: flix.nix の flix コマンドを直に exec しないのは、それが自分専用の JRE を同梱していて
-# 手元の jdk と別のマイナーバージョンになるため。jar だけ借り、JRE は手元に固定する。
-ENGINE_ROOT="${FLIXLINT_ENGINE_ROOT:-$HOME/Desktop/flix_game_engine}"
+# WhyNot: flix コマンドを直に exec しないのは、それが自分専用の JRE を同梱していて手元の jdk と
+# 別のマイナーバージョンになるため。jar だけ借り、JRE は手元に固定する。
+set -u
+
+# nix の profile も devbox の profile も bin/flix と share/java/flix/flix.jar を同じ prefix の下に置く。
+jar_beside() {
+    local exe real
+    exe="$1"
+    real="$(readlink -f "$exe" 2>/dev/null)" || return 1
+    [ -n "$real" ] || return 1
+    local jar
+    jar="$(dirname "$(dirname "$real")")/share/java/flix/flix.jar"
+    [ -f "$jar" ] || return 1
+    echo "$jar"
+}
 
 FLIX_JAR="${FLIX_JAR:-}"
 if [ -n "$FLIX_JAR" ] && [ ! -f "$FLIX_JAR" ]; then FLIX_JAR=""; fi
+
+if [ -z "$FLIX_JAR" ] && command -v flix >/dev/null 2>&1; then
+    FLIX_JAR="$(jar_beside "$(command -v flix)" || true)"
+fi
+
+# WhyNot: devbox の段を最後に置く。作者の手元にしか無いパスなので、ここに当たるのは他の段が
+# 全部外れた時だけで良い。
+ENGINE_ROOT="${FLIXLINT_ENGINE_ROOT:-$HOME/Desktop/flix_game_engine}"
 if [ -z "$FLIX_JAR" ]; then
-    real="$(readlink -f "$ENGINE_ROOT/.devbox/nix/profile/default/bin/flix" 2>/dev/null)"
-    case "$real" in
-        /nix/store/*)
-            jar="$(dirname "$(dirname "$real")")/share/java/flix/flix.jar"
-            if [ -f "$jar" ]; then FLIX_JAR="$jar"; fi
-            ;;
-    esac
+    FLIX_JAR="$(jar_beside "$ENGINE_ROOT/.devbox/nix/profile/default/bin/flix" || true)"
 fi
 if [ -z "$FLIX_JAR" ] && [ -f "$ENGINE_ROOT/bin/flix.jar" ]; then FLIX_JAR="$ENGINE_ROOT/bin/flix.jar"; fi
 
