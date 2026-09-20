@@ -7,3 +7,5 @@ build/
 # flix のコンパイラが作る物
 lib/
 artifact/
+# CI が落としてくるコンパイラ
+flix.jar
