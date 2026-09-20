@@ -43,7 +43,7 @@ pub mod Flixlint {
     pub type alias DisallowedConstructor = { id = String, reason = String, constructor = Case, transitively = List[Mod], allows = List[Allow] }
 
     /// Do not call `function` inside a lambda passed to one of `inLambdaOf` (`List.map(x -> function(x), xs)`, or
-    /// `List.map(function, xs)`). `files` (a glob, `**` by default; `inFiles`) limits where it is judged.
+    /// `List.map(function, xs)`), in the files matching the glob `files` (`**` for all of them).
     pub type alias DisallowedCallInLambda = { id = String, reason = String, function = Fn, inLambdaOf = Set[Fn], files = String, allows = List[Allow] }
 
     /// Do not call `function` with one of `values` as the string literal at `argIndex`. With
@@ -101,8 +101,8 @@ pub mod Flixlint {
     pub def disallowConstructor(r: { id = String, constructor = Case, reason = String }): DisallowedConstructor =
         { id = r#id, reason = r#reason, constructor = r#constructor, transitively = Nil, allows = Nil }
 
-    pub def disallowCallInLambdaOf(r: { id = String, function = Fn, inLambdaOf = Set[Fn], reason = String }): DisallowedCallInLambda =
-        { id = r#id, reason = r#reason, function = r#function, inLambdaOf = r#inLambdaOf, files = "**", allows = Nil }
+    pub def disallowCallInLambdaOf(r: { id = String, function = Fn, inLambdaOf = Set[Fn], files = String, reason = String }): DisallowedCallInLambda =
+        { id = r#id, reason = r#reason, function = r#function, inLambdaOf = r#inLambdaOf, files = r#files, allows = Nil }
 
     pub def disallowCallWithArg(r: { id = String, function = Fn, argIndex = Int32, values = Set[String], reason = String }): DisallowedCallWithArg =
         { id = r#id, reason = r#reason, function = r#function, argIndex = r#argIndex, values = r#values, valuesFrom = Nil, allows = Nil }
@@ -118,10 +118,6 @@ pub mod Flixlint {
     /// The pub functions of `module` that reach the disallowed thing through calls count as the thing itself.
     pub def transitivelyIn(module: Mod, rule: { transitively = List[Mod] | r }): { transitively = List[Mod] | r } =
         { transitively = rule#transitively ::: (module :: Nil) | rule }
-
-    /// Only the functions of the files matching the glob (`src/{api,app}/**`) are judged.
-    pub def inFiles(glob: String, rule: { files = String | r }): { files = String | r } =
-        { files = glob | rule }
 
     /// The string literals in the body of `fn` count as `values` (a list the sources keep in one function).
     pub def valuesFromLiteralsIn(fn: Fn, rule: { valuesFrom = List[Fn] | r }): { valuesFrom = List[Fn] | r } =

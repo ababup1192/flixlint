@@ -213,7 +213,7 @@ the family's.
 | `Flixlint.disallowEffectsIn` | `Flixlint.effectsIn` | `files = glob, effects = Set[Eff]` | EffectOf + Def | the functions in these files do not have these effects (`Set#{}`: are pure) |
 | `Flixlint.disallowHandler` | `Flixlint.handlers` | `effect = Eff` | Handles | do not install a handler for this effect (with `transitivelyIn`, nor call `X.runWith`) |
 | `Flixlint.disallowConstructor` | `Flixlint.constructors` | `constructor = Case` | Constructs | do not build this case (with `transitivelyIn`, nor call a pub function that does) |
-| `Flixlint.disallowCallInLambdaOf` | `Flixlint.callsInLambda` | `function = Fn, inLambdaOf = Set[Fn]` | CallsInLambdaArgOf + Def | do not call this inside a lambda passed to one of these (`List.map(x -> f(x), xs)`, `List.map(f, xs)`); `inFiles(glob)` limits where |
+| `Flixlint.disallowCallInLambdaOf` | `Flixlint.callsInLambda` | `function = Fn, inLambdaOf = Set[Fn], files = glob` | CallsInLambdaArgOf + Def | do not call this inside a lambda passed to one of these (`List.map(x -> f(x), xs)`, `List.map(f, xs)`), in the files matching the glob (`**` for all of them) |
 | `Flixlint.disallowCallWithArg` | `Flixlint.callsWithArg` | `function = Fn, argIndex = Int32, values = Set[String]` | ArgLit + StrLit | do not call this with one of these string literals at that argument; `valuesFromLiteralsIn(Fn.X)` adds the literals of `X`'s body |
 | `Flixlint.disallowCaseArgType` | `Flixlint.caseArgTypes` | `ofEnum = Enum, argType = Type` | CaseTypeAll | no case of this enum has this type in a field (`ColumnName` or `List[ColumnName]`) |
 | `Flixlint.disallowDependency` | `Flixlint.dependencies` | `files = glob, module = Mod` | Calls + Constructs + ArgTypeAll + RetTypeAll + CaseTypeAll | the functions in these files neither call this module (or its submodules), nor build its cases, nor have its types in a parameter or the return type; the enums declared there have none in a case |
@@ -246,7 +246,6 @@ wrappers(x, mods):        the pub functions of mods that reach x through Calls (
 
 | Function | Meaning |
 |---|---|
-| `inFiles(glob)` | Only the functions of the files matching the glob are judged (`disallowCallInLambdaOf`; the default is `**`). |
 | `valuesFromLiteralsIn(Fn.X)` | The string literals in the body of `X` count as `values` (`disallowCallWithArg`), so a list the sources keep in one function is not copied into the rule. Repeatable. |
 | `transitivelyIn(Mod.X)` | The pub functions of `X` that reach the disallowed thing through calls count as the thing itself (`Clock.today` calling `Clock.nowMillis` calling the clock). Computed from the facts on every run, so a new entry in `X` needs no rule change. Repeatable. Available on `disallowFunction`, `disallowHandler` and `disallowConstructor`. |
 | `allowIn(Fn.X, reason)` | Violations inside `X` are not reported. |
@@ -585,7 +584,7 @@ entry が 1 つも無い family は、単に list から外す。
 | `Flixlint.disallowEffectsIn` | `Flixlint.effectsIn` | `files = glob, effects = Set[Eff]` | EffectOf + Def | これらのファイルの関数はこれらの effect を持たない（`Set#{}` なら純粋） |
 | `Flixlint.disallowHandler` | `Flixlint.handlers` | `effect = Eff` | Handles | この effect の handler を入れない（`transitivelyIn` を付ければ `X.runWith` の呼び出しも） |
 | `Flixlint.disallowConstructor` | `Flixlint.constructors` | `constructor = Case` | Constructs | この case を組まない（`transitivelyIn` を付ければ、組む pub 関数の呼び出しも） |
-| `Flixlint.disallowCallInLambdaOf` | `Flixlint.callsInLambda` | `function = Fn, inLambdaOf = Set[Fn]` | CallsInLambdaArgOf + Def | これらに渡すラムダの中でこれを呼ばない（`List.map(x -> f(x), xs)`、`List.map(f, xs)`）。`inFiles(glob)` で場所を絞る |
+| `Flixlint.disallowCallInLambdaOf` | `Flixlint.callsInLambda` | `function = Fn, inLambdaOf = Set[Fn], files = glob` | CallsInLambdaArgOf + Def | glob に当たるファイルで、これらに渡すラムダの中でこれを呼ばない（`List.map(x -> f(x), xs)`、`List.map(f, xs)`）。全部なら `**` |
 | `Flixlint.disallowCallWithArg` | `Flixlint.callsWithArg` | `function = Fn, argIndex = Int32, values = Set[String]` | ArgLit + StrLit | その位置の引数にこれらの文字列リテラルを渡して呼ばない。`valuesFromLiteralsIn(Fn.X)` で `X` の本体のリテラルを足せる |
 | `Flixlint.disallowCaseArgType` | `Flixlint.caseArgTypes` | `ofEnum = Enum, argType = Type` | CaseTypeAll | この enum のどの case も、この型を項目に持たない（`ColumnName` も `List[ColumnName]` も） |
 | `Flixlint.disallowDependency` | `Flixlint.dependencies` | `files = glob, module = Mod` | Calls + Constructs + ArgTypeAll + RetTypeAll + CaseTypeAll | これらのファイルの関数は、このモジュール（と配下）を呼ばず、その case を組まず、引数と戻り値の型にその型を持たない。そこで宣言した enum の case も持たない |
@@ -618,7 +617,6 @@ wrappers(x, mods):        the pub functions of mods that reach x through Calls (
 
 | 関数 | 意味 |
 |---|---|
-| `inFiles(glob)` | glob に当たるファイルの関数だけを判定する（`disallowCallInLambdaOf`。既定は `**`） |
 | `valuesFromLiteralsIn(Fn.X)` | `X` の本体の文字列リテラルを `values` に数える（`disallowCallWithArg`）。ソースが 1 つの関数に持っている一覧を rule に写さずに済む。繰り返せる |
 | `transitivelyIn(Mod.X)` | `X` の pub 関数のうち、呼び出しで禁じた物に届く物を、その物と同じに扱う（`Clock.today` が `Clock.nowMillis` を呼び、それが時計を呼ぶ）。毎回 facts から計算するので、`X` に足した関数のために rule を直す必要は無い。繰り返せる。`disallowFunction`・`disallowHandler`・`disallowConstructor` で使える |
 | `allowIn(Fn.X, reason)` | `X` の中の違反を報告しない |

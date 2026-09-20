@@ -3,7 +3,7 @@ mod FixtureRules {
     use Flixlint.{RuleSet, disallowFunction, disallowCallsTogether, disallowEffectsTogether, disallowOtherEffectsWith,
                   disallowEffectsIn, disallowHandler, disallowConstructor, disallowCallInLambdaOf, disallowCallWithArg,
                   disallowCaseArgType, disallowDependency, customRule,
-                  transitivelyIn, inFiles, valuesFromLiteralsIn, allowIn, allowInFile, allowUntil}
+                  transitivelyIn, valuesFromLiteralsIn, allowIn, allowInFile, allowUntil}
     use Flixlint.Facts.Facts
     use Flixlint.Violation.Violation
     use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}
@@ -49,8 +49,8 @@ mod FixtureRules {
         }),
         Flixlint.callsInLambda(List#{
             disallowCallInLambdaOf({ id = "find-many", function = Fn.Orders_find, inLambdaOf = Set#{Fn.List_map, Fn.List_filterMap},
+                files = "src/{api,app}/**",
                 reason = "one read per id over a list of ids is N+1; a list of ids is read with findMany" })
-                |> inFiles("src/{api,app}/**")
         }),
         Flixlint.callsWithArg(List#{
             disallowCallWithArg({ id = "log-text", function = Fn.Log_str, argIndex = 0, values = Set#{"secret"},
