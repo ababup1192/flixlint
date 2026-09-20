@@ -88,20 +88,18 @@ lint:
 | the facts, the generated `Names.flix`, the rule engine and its jar | `--build-dir` (default `build/flixlint`) | no, `.gitignore` it |
 | the shim jar | flixlint's own `build/`, or wherever `--shim` points | no |
 
-The dependencies need no argument. When neither `--pkg` nor `--jar` is given, the shim reads your `flix.toml` with
+When neither `--pkg` nor `--jar` is given, the shim reads your `flix.toml` with
 the compiler's own `ManifestParser` and passes the versions it names out of `lib/`, where the compiler has unpacked
 them: `lib/github/<owner>/<name>/<version>/` for a Flix package (its own manifest is read there too, so a package's
 own dependencies come along), `lib/external/` for a `[jar-dependencies]` jar, and every jar under `lib/cache/` for
 `[mvn-dependencies]`. Nothing is downloaded. The project is the nearest directory with a `flix.toml` at or above the
 sources, never above the current directory; `--project-root DIR` names it when that is not where it is. A project
-with no dependencies gets nothing and needs nothing, and `--pkg` / `--jar` override the whole thing. The packages do
+with no dependencies gets nothing, and `--pkg` / `--jar` override the whole thing. The packages do
 have to be unpacked: one that `flix.toml` names and `lib/` does not have is exit 4, with the message to run
 `flix check` once; if you pass `--pkg` / `--jar` yourself and miss one, the sources do not compile and it is exit 3.
 
 Your rule file names things through the generated module, so it starts with
-`use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}` (up to flixlint 0.1.0 that module was the top-level `Names`;
-upgrading is that one `use` line, and the case names inside `Fn` / `Eff` / `Mod` / `Case` / `Enum` / `Type` are
-unchanged).
+`use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}`.
 
 ### Why it is not an fpkg
 
@@ -348,7 +346,7 @@ test/expected*.txt           the reports both of them must produce
 
 `make test` runs the test (`make test-resolved`, or `FLIXLINT_STAGE=resolved test/run.sh`, runs it at the resolved
 stage). Both projects are projects of their own, and their facts and rule engines are built under `build/`, outside
-the sources; nothing outside this repository is needed to run them.
+the sources.
 
 ## Notes and limits
 
@@ -461,20 +459,18 @@ lint:
 | facts・生成した `Names.flix`・rule engine とその jar | `--build-dir`（既定は `build/flixlint`） | しない。`.gitignore` に入れる |
 | shim の jar | flixlint 自身の `build/`、または `--shim` の指す先 | しない |
 
-依存は引数を要らない。`--pkg` も `--jar` も渡さなければ、shim が利用側の `flix.toml` をコンパイラ自身の
+`--pkg` も `--jar` も渡さなければ、shim が利用側の `flix.toml` をコンパイラ自身の
 `ManifestParser` で読み、そこに書かれた版を、コンパイラが既に展開している `lib/` から渡す。Flix の package は
 `lib/github/<owner>/<name>/<version>/`（その package 自身の manifest もそこで読むので、package の依存も
 付いてくる）、`[jar-dependencies]` の jar は `lib/external/`、`[mvn-dependencies]` は `lib/cache/` の下の jar を
 全部。何もダウンロードしない。プロジェクトはソースの位置から上に辿って最初に `flix.toml` が在るディレクトリで、
 カレントディレクトリより上には行かない。そこに無い時は `--project-root DIR` で指す。依存の無い
-プロジェクトには何も渡らず、それで足りる。`--pkg` / `--jar` を渡せば全部そちらが勝つ。展開されている事は
+プロジェクトには何も渡らない。`--pkg` / `--jar` を渡せば全部そちらが勝つ。展開されている事は
 必要で、`flix.toml` に在って `lib/` に無い package は exit 4 になり、`flix check` を 1 回回すよう促す。
 `--pkg` / `--jar` を自分で渡して取りこぼした時は、ソースがコンパイルできず exit 3 になる。
 
 rule のファイルは生成されたモジュール越しに名前を指すので、
-`use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}` で始まる（flixlint 0.1.0 まではトップレベルの `Names`
-だった。上げる時に直すのはこの `use` の 1 行だけで、`Fn` / `Eff` / `Mod` / `Case` / `Enum` / `Type` の中の
-case の名前は変わっていない）。
+`use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}` で始まる。
 
 ### fpkg にしない理由
 
@@ -719,7 +715,7 @@ test/expected*.txt           その 2 つが出さなければならない報告
 
 テストを回すのは `make test`（`make test-resolved`、または `FLIXLINT_STAGE=resolved test/run.sh` が resolved の
 段）。どちらのプロジェクトもそれ自体が 1 つのプロジェクトで、facts と rule engine はソースの外の `build/` の
-下に組む。このリポジトリの外の物は何も要らない。
+下に組む。
 
 ## 注意と制限
 
