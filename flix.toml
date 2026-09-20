@@ -3,6 +3,7 @@ name        = "flixlint"
 description = "Architecture rules for Flix, checked against facts taken from the compiler's AST instead of grep"
 version     = "0.2.0"
 flix        = "0.76.0"
+license     = "Apache-2.0"
 authors     = ["abab <ababup1192@gmail.com>"]
 
 # WhyNot: [dependencies] に書いて配る形（sqlfx / logfx と同じ形）にしない。
@@ -11,7 +12,7 @@ authors     = ["abab <ababup1192@gmail.com>"]
 # 2) src/Flixlint*.flix は生成物の `Flixlint.Names` を参照するので、単体ではコンパイルできない。
 #    利用側の [dependencies] に置くと、利用側の `flix check` が毎回 Undefined use 'Flixlint.Names.Fn' で落ちる。
 # flixlint はライブラリではなく道具なので、リポジトリごと（clone / submodule / release の tarball）渡し、
-# 利用側は bin/flixlint を呼ぶ。詳しくは README.md の「配り方と取り込み方」。
+# 利用側は bin/flixlint を呼ぶ。詳しくは README.md の "Installing" と "Why it is not an fpkg"。
 #
 # WhyNot: このリポジトリで `flix check` を回さない。Flix の project mode は src/ と test/ の 2 つを
 # まとめてコンパイルするが、test/fixture/rules/broken.flix は「コンパイルできない事」を test が確かめる
