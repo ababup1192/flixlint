@@ -6,4 +6,5 @@ src/domain/Orders.flix:15: io-in-tx: Orders.confirm: has Db and Http in its sign
     fix it, or add |> allowIn(Fn.Orders_confirm, "reason") to rule io-in-tx
 flixlint: rule io-in-tx: allowIn(Fn.Orders_create) matches nothing (remove it)
 flixlint: rule io-in-tx: allowInFile("src/domain/Removed.flix"): no such file among the sources
+flixlint: rule io-in-tx: allowInFile("src/domain/Money.flix") matches nothing (remove it)
 flixlint: rule nothing: allowIn(Fn.Orders_create) matches nothing (remove it)

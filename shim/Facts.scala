@@ -94,6 +94,10 @@ object Facts {
     val t1 = System.nanoTime()
 
     val sink = new Sink(args.out)
+    // WhyNot: the set of files is not left to be read off the definitions. A file that holds only type aliases, or
+    // only a trait, has no `def`, `enum` or `eff` row, so an `allowInFile` naming it would be refused as a file the
+    // sources do not have.
+    files.foreach(f => sink.sourceFile(f.toString))
     val (nErrors, phaseNs) = args.stage match {
       case "typed" =>
         val (optRoot, errors) = flix.check()
@@ -418,6 +422,7 @@ final class Sink(dir: Path) {
     if (i > 0) modNames += qualified.substring(0, i)
   }
 
+  def sourceFile(file: String): Unit = row("source_file", file)
   def defn(fn: String, name: String, mod: String, file: String, line: Int, isPub: Boolean): Unit = { fnNames += fn; modNames += mod; row("def", fn, name, mod, file, line, isPub) }
   def calls(caller: String, callee: String, line: Int): Unit = { fnNames += caller; fnNames += callee; modOf(callee); row("calls", caller, callee, line) }
   def effectOf(fn: String, eff: String): Unit = { fnNames += fn; effNames += eff; row("effect_of", fn, eff) }

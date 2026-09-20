@@ -299,6 +299,7 @@ facts directory holds fewer files than the table below has rows.
 
 | Relation | Columns | Meaning |
 |---|---|---|
+| `SourceFile` | `file` | A `.flix` file the walk was given, whether or not it holds a definition. `allowInFile` is checked against these, so a file of nothing but type aliases or a trait counts. |
 | `Def` | `fn, name, mod, file, line, pub` | A top-level or instance definition; `name` is the unqualified name, `pub` is `true`/`false`. Definitions the compiler makes up (derived instances, `Eq.eq$123`) are left out. |
 | `Calls` | `caller, callee, line` | A call inside the body of `caller` (lambdas and local defs count as the enclosing def). Def, trait signature, effect operation and Java calls alike; a function passed by name counts as a call. |
 | `EffectOf` | `fn, eff` | One effect of the signature, type aliases expanded (`\ Db` with `Db = DbRead + DbWrite` gives two rows). |
@@ -668,6 +669,7 @@ qualify するのと同じ形になる。`Auth.permit`、`Auth.Permit.Permit`（
 
 | 関係 | 列 | 意味 |
 |---|---|---|
+| `SourceFile` | `file` | 走査に渡した `.flix` のファイル。定義を持たないファイルも載る。`allowInFile` はこれと突き合わせるので、型エイリアスや trait だけのファイルも数える |
 | `Def` | `fn, name, mod, file, line, pub` | トップレベルか instance の定義。`name` は unqualified な名前、`pub` は `true`/`false`。コンパイラが作る定義（derive した instance、`Eq.eq$123`）は外す |
 | `Calls` | `caller, callee, line` | `caller` の本体の中の呼び出し（ラムダとローカルの def は囲む def に数える）。def・trait の signature・effect の操作・Java の呼び出しを区別しない。名前で渡した関数も呼び出しに数える |
 | `EffectOf` | `fn, eff` | シグネチャの effect 1 つ。型エイリアスは展開する（`Db = DbRead + DbWrite` の `\ Db` は 2 row） |

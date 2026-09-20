@@ -106,6 +106,7 @@ pub mod Flixlint.Facts {
     pub def caseTypesAll(facts: Facts): List[CaseType] = data(facts)#caseTypesAll
     pub def enums(facts: Facts): List[EnumDef] = data(facts)#enums
     pub def effects(facts: Facts): List[EffDef] = data(facts)#effects
+    /// Every file the walk was given, whether or not it holds a definition an `allowInFile` could name.
     pub def files(facts: Facts): Set[String] = data(facts)#files
 
     /// The definition of `fn`, if it is one of the linted sources (package, stdlib and Java callees have none).
@@ -226,6 +227,7 @@ pub mod Flixlint.Facts {
         let aliasRows = rows(dir, "eff_alias") |> List.filterMap(c -> forM (a <- effOf(col(0, c)); e <- effOf(col(1, c))) yield (a, e));
         let enums = rows(dir, "enum") |> List.filterMap(c -> forM (e <- enumOf(col(0, c)); m <- modOf(col(1, c))) yield { ofEnum = e, module = m, file = col(2, c), line = int(3, c) });
         let effects = rows(dir, "eff") |> List.filterMap(c -> forM (e <- effOf(col(0, c)); m <- modOf(col(1, c))) yield { effect = e, module = m, file = col(2, c), line = int(3, c) });
+        let sourceFiles = rows(dir, "source_file") |> List.map(c -> col(0, c));
         let sortedCalls = calls |> List.sortBy(c -> (c#caller, c#line, c#callee));
         Facts.Facts({
             defs = defs,
@@ -252,7 +254,8 @@ pub mod Flixlint.Facts {
             retTypesAllOf = setsBy(retTypesAll),
             strLitsOf = grouped(s -> s#fn, strLits |> List.sortBy(s -> (s#fn, s#line))) |> Map.map(List.map(s -> s#text)),
             effAliases = setsBy(aliasRows),
-            files = List.foldLeft((acc, d) -> Set.insert(d#file, acc), Set.empty(), defs)
+            files = List.foldLeft((acc, f) -> Set.insert(f, acc), Set.empty(), sourceFiles)
+                |> (acc -> List.foldLeft((s, d) -> Set.insert(d#file, s), acc, defs))
                 |> (acc -> List.foldLeft((s, e) -> Set.insert(e#file, s), acc, enums))
                 |> (acc -> List.foldLeft((s, e) -> Set.insert(e#file, s), acc, effects)),
             fnNames = fnTable |> List.map(match (n, _, k) -> (k, n)) |> List.toMap,
