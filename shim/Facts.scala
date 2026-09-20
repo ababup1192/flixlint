@@ -4,7 +4,8 @@ import ca.uwaterloo.flix.api.Flix
 import ca.uwaterloo.flix.language.ast.shared.{Input, SecurityContext}
 import ca.uwaterloo.flix.language.ast.{ChangeSet, ResolvedAst, SourceLocation, Symbol, Type, TypeConstructor, TypedAst, UnkindedType}
 import ca.uwaterloo.flix.language.phase
-import ca.uwaterloo.flix.util.{LibLevel, Options, Subeffecting}
+import ca.uwaterloo.flix.tools.pkg.{Dependency, Manifest, ManifestParser}
+import ca.uwaterloo.flix.util.{Formatter, LibLevel, Options, Result, Subeffecting}
 
 import java.io.PrintWriter
 import java.nio.file.{Files, Path, Paths}
@@ -14,7 +15,8 @@ import scala.jdk.CollectionConverters._
   * `Flixlint/Names.flix`: one Flix enum per kind of name (Fn / Eff / Mod / Case / Enum / Type) with every name the facts mention,
   * so that rules refer to functions, effects and types as enum cases and a stale name fails to compile.
   *
-  * Usage: Facts --out DIR [--names-out FILE] [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... SRC...
+  * Usage: Facts --out DIR [--names-out FILE] [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]...
+  *               [--project-root DIR] SRC...
   *
   * WhyNot: the walker dispatches on `productPrefix` and reads fields by name instead of pattern matching on the
   * TypedAst / ResolvedAst case classes. The two ASTs share the node names and field names that matter here, so one
@@ -22,7 +24,10 @@ import scala.jdk.CollectionConverters._
   */
 object Facts {
 
-  final case class Args(out: Path, namesOut: Option[Path], stage: String, pkgs: List[Path], jars: List[Path], srcs: List[Path], subeffecting: Boolean)
+  final case class Args(out: Path, namesOut: Option[Path], stage: String, pkgs: List[Path], jars: List[Path], srcs: List[Path], projectRoot: Option[Path], subeffecting: Boolean)
+
+  /** Thrown for anything the caller can fix: a bad option, a missing file, an unreadable flix.toml. Exit code 4. */
+  final class UsageError(msg: String) extends RuntimeException(msg)
 
   def parseArgs(argv: Array[String]): Args = {
     var out: Path = null
@@ -31,25 +36,46 @@ object Facts {
     var pkgs = List.empty[Path]
     var jars = List.empty[Path]
     var srcs = List.empty[Path]
+    var projectRoot: Option[Path] = None
     var sub = true
     var i = 0
+    def value(opt: String): String =
+      if (i + 1 < argv.length) argv(i + 1) else throw new UsageError(s"$opt needs a value")
     while (i < argv.length) {
       argv(i) match {
-        case "--out" => out = Paths.get(argv(i + 1)); i += 2
-        case "--names-out" => namesOut = Some(Paths.get(argv(i + 1))); i += 2
-        case "--stage" => stage = argv(i + 1); i += 2
-        case "--pkg" => pkgs = pkgs :+ Paths.get(argv(i + 1)); i += 2
-        case "--jar" => jars = jars :+ Paths.get(argv(i + 1)); i += 2
+        case "--out" => out = Paths.get(value("--out")); i += 2
+        case "--names-out" => namesOut = Some(Paths.get(value("--names-out"))); i += 2
+        case "--stage" => stage = value("--stage"); i += 2
+        case "--pkg" => pkgs = pkgs :+ Paths.get(value("--pkg")); i += 2
+        case "--jar" => jars = jars :+ Paths.get(value("--jar")); i += 2
+        case "--project-root" => projectRoot = Some(Paths.get(value("--project-root"))); i += 2
         case "--no-subeffecting" => sub = false; i += 1
+        case opt if opt.startsWith("--") => throw new UsageError(s"unknown option $opt")
         case s => srcs = srcs :+ Paths.get(s); i += 1
       }
     }
-    require(out != null, "--out DIR is required")
-    require(srcs.nonEmpty, "at least one source directory or file is required")
-    Args(out, namesOut, stage, pkgs, jars, srcs, sub)
+    if (out == null) throw new UsageError("--out DIR is required")
+    if (srcs.isEmpty) throw new UsageError("at least one source directory or file is required")
+    if (stage != "typed" && stage != "resolved") throw new UsageError(s"unknown --stage $stage (typed or resolved)")
+    Args(out, namesOut, stage, pkgs, jars, srcs, projectRoot, sub)
   }
 
-  def main(argv: Array[String]): Unit = {
+  // Exit codes: 0 facts written, 3 the sources do not compile, 4 the caller or the environment is wrong.
+  // WhyNot: a crash must not leave exit 1. bin/flixlint reserves 1 for "there are violations", so an
+  // uncaught exception here would read to CI as a report of new violations.
+  def main(argv: Array[String]): Unit =
+    try run(argv)
+    catch {
+      case e: UsageError =>
+        System.err.println(s"flixlint: ${e.getMessage}")
+        sys.exit(4)
+      case e: Throwable =>
+        System.err.println(s"flixlint: the fact walker failed: ${e.getClass.getName}: ${e.getMessage}")
+        e.printStackTrace()
+        sys.exit(4)
+    }
+
+  def run(argv: Array[String]): Unit = {
     val args = parseArgs(argv)
     val t0 = System.nanoTime()
     val flix = new Flix()
@@ -62,8 +88,9 @@ object Facts {
     flix.setOptions(opts)
     val files = args.srcs.flatMap(listFlix)
     files.foreach(f => flix.addFile(f)(SecurityContext.Unrestricted))
-    args.pkgs.foreach(p => flix.addPkg(p)(SecurityContext.Unrestricted))
-    args.jars.foreach(j => flix.addJar(j))
+    val deps = if (args.pkgs.nonEmpty || args.jars.nonEmpty) Deps(args.pkgs, args.jars) else Deps.ofProject(args.projectRoot, args.srcs)
+    deps.pkgs.foreach(p => flix.addPkg(p)(SecurityContext.Unrestricted))
+    deps.jars.foreach(j => flix.addJar(j))
     val t1 = System.nanoTime()
 
     val sink = new Sink(args.out)
@@ -83,7 +110,7 @@ object Facts {
         errors.foreach(e => System.err.println(e.messageWithLoc(flix.getFormatter)(None)))
         Resolved.emit(root, sink)
         (errors.length, t2 - t1)
-      case other => sys.error(s"unknown --stage $other")
+      case other => throw new UsageError(s"unknown --stage $other (typed or resolved)")
     }
     sink.close()
     Names.write(args.namesOut.getOrElse(args.out.resolve("Names.flix")), sink)
@@ -94,7 +121,91 @@ object Facts {
 
   def listFlix(p: Path): List[Path] =
     if (Files.isDirectory(p)) Files.walk(p).iterator().asScala.filter(f => f.toString.endsWith(".flix") && Files.isRegularFile(f)).toList.sorted
-    else List(p)
+    else if (Files.isRegularFile(p)) List(p)
+    else throw new UsageError(s"$p: no such source file or directory")
+
+  /** The packages and jars to put on the compiler's path. */
+  final case class Deps(pkgs: List[Path], jars: List[Path])
+
+  /** Reads the project's `flix.toml` with the compiler's own `ManifestParser` and turns the dependencies it names
+    * into the paths the compiler has already unpacked them to (`lib/github`, `lib/cache`, `lib/external`).
+    *
+    * WhyNot: `FlixPackageManager.findTransitiveDependencies` is not used. It reaches GitHub, and a linter must not
+    * need the network; the manifest of every installed package sits next to its fpkg, so the closure is taken from
+    * disk. Nothing is downloaded: a package that is not there is an error telling the caller to run `flix check`.
+    *
+    * WhyNot: `lib/**/*.fpkg` is not passed wholesale. lib/ keeps every version ever resolved, and two versions of
+    * one package bring the same definitions in twice. Jars are passed whole: two versions of one artifact on the
+    * classpath is first-wins, not a redefinition.
+    */
+  object Deps {
+    def ofProject(explicitRoot: Option[Path], srcs: List[Path]): Deps = findRoot(explicitRoot, srcs) match {
+      case None => Deps(Nil, Nil)
+      case Some(root) => ofRoot(root)
+    }
+
+    /** WhyNot: the search upwards does not run to `/`. Above the current directory sits whatever the machine
+      * happens to have, and a `flix.toml` found there describes another project.
+      */
+    private def findRoot(explicitRoot: Option[Path], srcs: List[Path]): Option[Path] = {
+      val cwd = Paths.get("").toAbsolutePath.normalize
+      explicitRoot match {
+        case Some(r) =>
+          val root = r.toAbsolutePath.normalize
+          if (!Files.isRegularFile(root.resolve("flix.toml"))) throw new UsageError(s"--project-root $root has no flix.toml")
+          Some(root)
+        case None =>
+          var p = Option(srcs.head.toAbsolutePath.normalize.getParent).getOrElse(cwd)
+          var found: Option[Path] = None
+          while (found.isEmpty && p != null && p.startsWith(cwd)) {
+            if (Files.isRegularFile(p.resolve("flix.toml"))) found = Some(p) else p = p.getParent
+          }
+          found.orElse(Some(cwd).filter(c => Files.isRegularFile(c.resolve("flix.toml"))))
+      }
+    }
+
+    private def ofRoot(root: Path): Deps = {
+      val lib = root.resolve("lib")
+      val fpkgs = scala.collection.mutable.LinkedHashMap.empty[String, Path]
+      val externals = scala.collection.mutable.LinkedHashMap.empty[String, Path]
+      def walk(manifest: Manifest): Unit = {
+        manifest.jarDependencies.foreach { d =>
+          externals.getOrElseUpdate(d.fileName, need(lib.resolve("external").resolve(d.fileName), root))
+        }
+        manifest.flixDependencies.foreach { d =>
+          val version = d.version.toString
+          val dir = lib.resolve("github").resolve(d.username).resolve(d.projectName).resolve(version)
+          val key = s"${d.username}/${d.projectName}/$version"
+          if (!fpkgs.contains(key)) {
+            fpkgs += (key -> need(dir.resolve(s"${d.projectName}-$version.fpkg"), root))
+            val nested = dir.resolve(s"${d.projectName}-$version.toml")
+            if (Files.isRegularFile(nested)) walk(parse(nested))
+          }
+        }
+      }
+      walk(parse(root.resolve("flix.toml")))
+      Deps(fpkgs.values.toList, listJars(lib.resolve("cache")) ++ externals.values.toList)
+    }
+
+    private def parse(toml: Path): Manifest = ManifestParser.parse(toml) match {
+      case Result.Ok(m) => m
+      case Result.Err(e) => throw new UsageError(s"$toml: ${e.message(Formatter.NoFormatter)}")
+    }
+
+    private def need(p: Path, root: Path): Path =
+      if (Files.isRegularFile(p)) p
+      else throw new UsageError(
+        s"$p is missing; run 'flix check' once in $root so that the compiler unpacks the dependencies of its " +
+          "flix.toml into lib/, or pass --pkg / --jar yourself")
+
+    private def listJars(dir: Path): List[Path] =
+      if (!Files.isDirectory(dir)) Nil
+      else {
+        val entries = Files.walk(dir)
+        try entries.iterator().asScala.filter(f => f.toString.endsWith(".jar") && Files.isRegularFile(f)).toList.sorted
+        finally entries.close()
+      }
+  }
 
   // ---- generic helpers over the AST (both stages) ----
 
@@ -287,7 +398,10 @@ object Facts {
   * Every name that goes into a row is also remembered by kind, for `Names.flix`.
   */
 final class Sink(dir: Path) {
+  // WhyNot: 既存の TSV を残さない。row が 1 件も出ない relation はファイルを開かないので、前回の走行で
+  // 出ていた違反がそのまま残り、直した物を報告し続ける。
   Files.createDirectories(dir)
+  Sink.deleteStaleTsv(dir)
   private val writers = scala.collection.mutable.Map.empty[String, PrintWriter]
   private def w(rel: String): PrintWriter = writers.getOrElseUpdate(rel, new PrintWriter(Files.newBufferedWriter(dir.resolve(rel + ".tsv"))))
   private def clean(s: String): String = s.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')
@@ -324,6 +438,14 @@ final class Sink(dir: Path) {
   def enumDef(enum0: String, mod: String, file: String, line: Int, isPub: Boolean): Unit = { enumNames += enum0; modNames += mod; row("enum", enum0, mod, file, line, isPub) }
   def effDef(eff: String, mod: String, file: String, line: Int, isPub: Boolean): Unit = { effNames += eff; modNames += mod; row("eff", eff, mod, file, line, isPub) }
   def close(): Unit = writers.values.foreach(_.close())
+}
+
+object Sink {
+  private def deleteStaleTsv(dir: Path): Unit = {
+    val entries = Files.list(dir)
+    try entries.iterator().asScala.filter(_.toString.endsWith(".tsv")).toList.foreach(Files.delete)
+    finally entries.close()
+  }
 }
 
 /** `Names.flix`: the names of the facts as Flix enums (`Fn` / `Eff` / `Mod` / `Case` / `Enum` / `Type`).

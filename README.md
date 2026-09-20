@@ -31,8 +31,8 @@ The project to lint is an ordinary Flix project; an empty one is `java -jar flix
 
 You need a JDK and the Flix compiler jar of the version in `flix.toml` (`flix = "0.76.0"`). Download `flix.jar`
 from [Flix's GitHub releases](https://github.com/flix/flix/releases) and pass it with `--flix-jar` or `FLIX_JAR`.
-With neither, `bin/flix-jar` takes over, but that is a shortcut for the author's devbox
-(`~/Desktop/flix_game_engine`, moved with `FLIXLINT_ENGINE_ROOT`) and finds nothing anywhere else, so pass the jar.
+With neither, `bin/flix-jar` looks for a `flix` on `PATH` and takes the `share/java/flix/flix.jar` next to it, and
+falls back on the author's devbox (`~/Desktop/flix_game_engine`, moved with `FLIXLINT_ENGINE_ROOT`) last.
 
 The Scala shim is built once, on first use and whenever `shim/*.scala` changes, into `build/flixlint-shim.jar`.
 That needs `scala-cli`: `devbox.json` has it, and a `scala-cli` on `PATH` is used when there is no devbox. If you
@@ -60,11 +60,15 @@ lint:
 	../flixlint/bin/flixlint --flix-jar /path/to/flix.jar --rules lint/rules.flix --stage resolved src
 ```
 
-The dependencies need no argument. When neither `--pkg` nor `--jar` is given, flixlint reads the `flix.toml` above
-your sources and passes the versions it names out of `lib/`, where the compiler has unpacked them; a project with
-no dependencies gets nothing and needs nothing. Pass `--pkg` / `--jar` yourself only to override that. Either way
-the packages have to be there: sources that `flix check` accepts fail here with a Resolution Error and exit code 3
-when they are missing, so run `flix check` once before the first lint.
+The dependencies need no argument. When neither `--pkg` nor `--jar` is given, flixlint reads your `flix.toml` with
+the compiler's own `ManifestParser` and passes the versions it names out of `lib/`, where the compiler has unpacked
+them: `lib/github/<owner>/<name>/<version>/` for a Flix package (its own manifest is read there too, so a package's
+own dependencies come along), `lib/external/` for a `[jar-dependencies]` jar, and every jar under `lib/cache/` for
+`[mvn-dependencies]`. Nothing is downloaded. The project is the nearest directory with a `flix.toml` at or above the
+sources, never above the current directory; `--project-root DIR` names it when that is not where it is. A project
+with no dependencies gets nothing and needs nothing, and `--pkg` / `--jar` override the whole thing. Either way the
+packages have to be there: sources that `flix check` accepts fail here with a Resolution Error and exit code 3 when
+they are missing, so run `flix check` once before the first lint.
 
 Your rule file names things through the generated module, so it starts with
 `use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}` (up to flixlint 0.1.0 that module was the top-level `Names`;
@@ -91,7 +95,9 @@ the shim runs: the shim runs on the compiler jar's classpath inside `bin/flixlin
 
 ```
 bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
-             [--today YYYY-MM-DD] [--facts-out DIR] [--build-dir DIR] [--shim JAR] [--java-opts "..."] SRC...
+             [--today YYYY-MM-DD] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
+             [--java-opts "..."] SRC...
+bin/flixlint --version
 ```
 
 | Option | Meaning |
@@ -99,16 +105,21 @@ bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR
 | `--flix-jar JAR` | The Flix compiler (`flix.jar`, 0.76.0). `FLIX_JAR` in the environment works too; with neither, `bin/flix-jar` resolves it. |
 | `--rules PATH/rules.flix` | The rule file: a Flix module with `pub def rules(): Flixlint.RuleSet` (see below). |
 | `--pkg FPKG` / `--jar JAR` | Dependencies the sources need (`lib/**/*.fpkg`, `lib/cache/**/*.jar`). Repeatable. With neither, they are read from the project's `flix.toml`. |
+| `--project-root DIR` | The directory whose `flix.toml` names the dependencies (default: the nearest one at or above the sources, within the current directory). |
 | `--stage typed` (default) | Facts from the typed AST (`Flix.check()`): everything below, including compile errors. |
 | `--stage resolved` | Facts from the AST right after name resolution, before kinding and typing. Several times faster; the same facts except Java instance-method calls (the receiver's class is not known yet). |
 | `--today YYYY-MM-DD` | The date `allowUntil` is compared with (default: the real date). Tests fix it. |
 | `--facts-out DIR` | Where the TSV facts go (default `BUILD/facts`). Keep them: they are the easiest way to look up a qualified name. |
 | `--build-dir DIR` | Working directory for the facts and the rule engine (default `build/flixlint`), relative to the current directory. |
 | `--shim JAR` | A prebuilt shim jar, instead of building one with `scala-cli`. `FLIXLINT_SHIM` works too. |
+| `--version` | The version in `flix.toml`. |
 | `SRC...` | Source directories or files, relative to the current directory. File paths in violations and in `allowInFile` are relative to that directory too. |
 
 Exit codes: `0` no violation, `1` violations, `2` the rules are wrong (the rule file does not compile, an allow that
-covers nothing, an `allowInFile` of a file that is not among the sources), `3` the sources do not compile.
+covers nothing, an `allowInFile` of a file that is not among the sources), `3` the sources do not compile, `4` the
+call or the environment is wrong (an option flixlint does not know, no `flix.jar`, no `scala-cli` and no `--shim`, a
+dependency that is not unpacked, a crash in the fact walker). `2` and `3` are what your sources and rules say; `4`
+never is, so a `4` in CI is a broken setup rather than a lint finding.
 
 A violation is a `file:line:` header editors pick up, then the rule's reason, the path through the wrappers when
 `transitivelyIn` found it, and how to get rid of it:
@@ -273,6 +284,8 @@ large to compile.
 
 ```
 flix.toml                    the package metadata (name, version, the Flix version the shim is compiled against)
+LICENSE.md                   Apache-2.0
+.github/workflows/ci.yml     make test and make test-resolved on the Flix release jar
 Makefile                     test / test-resolved / shim / clean / release
 bin/flixlint                 the command: shim -> facts + Flixlint/Names.flix, engine jar -> violations
 bin/flix-jar                 where the compiler jar is, when neither --flix-jar nor FLIX_JAR says
@@ -306,3 +319,7 @@ the sources; nothing outside this repository is needed to run them.
 - The shim depends on the compiler's internal AST (`ca.uwaterloo.flix.language.ast.*`) and on two private members of
   `Flix` for the resolved stage. A compiler upgrade is a change to `shim/Facts.scala` only; the rules and the TSV
   contract do not move.
+
+## License
+
+[Apache-2.0](LICENSE.md).

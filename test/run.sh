@@ -4,6 +4,7 @@
 #   the same rules with --today before the allowUntil date -> exit 1, test/expected-before-expiry.txt
 #   fixture, rules/stale.flix  -> exit 2, test/expected-stale.txt (an allow that matches nothing, on a family and on a custom rule; an allowInFile of a missing file)
 #   fixture, rules/broken.flix -> exit 2 (a name the sources do not have: the rules do not compile)
+#   a wrong call or environment -> exit 4, so that the 2 above can only mean "the rules are wrong"
 #   fixture, rules/clean.flix  -> exit 0
 #   examples/rules.flix        -> exit 1, test/expected-examples.txt (the four rules of examples/README.md)
 #
@@ -38,5 +39,20 @@ lint test/fixture rules/stale.flix 2026-09-19 2 expected-stale.txt
 lint test/fixture rules/broken.flix 2026-09-19 2
 lint test/fixture rules/clean.flix 2026-09-19 0
 lint examples rules.flix 2026-09-19 1 expected-examples.txt
+
+# WhyNot: 呼び方と環境の誤りを exit 2 のままにしない。flix.jar が無くても shim が組めなくても --rules の
+# パスが違っても broken.flix の行が緑になり、「規則が壊れている事」を確かめたつもりの検査が何も確かめない。
+expect4() {
+    local code
+    set +e
+    (cd "$root/test/fixture" && "$@") >/dev/null 2>&1
+    code=$?
+    set -e
+    [ "$code" = 4 ] || { echo "expected exit 4, got $code: $*" >&2; exit 1; }
+}
+expect4 env FLIX_JAR=/nonexistent/flix.jar "$lint" --rules rules/clean.flix src
+expect4 "$lint" --rules rules/clean.flix --stage bogus src
+expect4 "$lint" --rules rules/does-not-exist.flix src
+expect4 "$lint" --rules rules/clean.flix --nonsense src
 
 echo "flixlint test: ok ($(grep -c ': .*: .*: ' "$root/test/expected.txt") violations on the fixture, $(grep -c ': .*: .*: ' "$root/test/expected-examples.txt") on examples)"

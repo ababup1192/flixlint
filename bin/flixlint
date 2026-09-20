@@ -2,10 +2,13 @@
 # flixlint: architecture rules for Flix, checked on the compiler's AST.
 #
 #   flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
-#            [--today YYYY-MM-DD] [--facts-out DIR] [--build-dir DIR] [--shim JAR] [--java-opts "..."] SRC...
+#            [--today YYYY-MM-DD] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
+#            [--java-opts "..."] SRC...
+#   flixlint --version
 #
 # Exit codes: 0 no violation, 1 violations, 2 the rules are wrong (rules.flix does not compile, an allow that matches
-#             nothing, an allowInFile of a file that is not among the sources), 3 the sources do not compile.
+#             nothing, an allowInFile of a file that is not among the sources), 3 the sources do not compile,
+#             4 the call or the environment is wrong (a missing option, no flix.jar, no scala-cli, a missing package).
 #
 # Steps: 1) the shim (Scala, on the compiler jar) walks the AST and writes the facts as TSV plus Names.flix
 #        2) the rule engine (Flix: the Flixlint library + Names.flix + rules.flix + a generated main) is built into a
@@ -26,8 +29,11 @@ while [ -L "$self" ]; do
 done
 here="$(cd "$(dirname "$self")/.." && pwd)"
 
+version="$(sed -n 's/^version *= *"\(.*\)"/\1/p' "$here/flix.toml")"
+
 flix_jar="${FLIX_JAR:-}"
 rules=""
+project_root=""
 pkgs=()
 jars=()
 stage="typed"
@@ -38,7 +44,10 @@ shim="${FLIXLINT_SHIM:-}"
 java_opts="${FLIXLINT_JAVA_OPTS:--Xss32m -XX:MaxRAMPercentage=35}"
 srcs=()
 
-usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+# WhyNot: 使い方の断りに 1 も 2 も使わない。1 は「違反が在る」、2 は「規則が間違っている」で、CI からは
+# どちらも lint が仕事をした結果に見える。呼び方と環境の誤りは 4 で分ける。
+usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; }
+die() { echo "flixlint: $1" >&2; exit 4; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -52,48 +61,40 @@ while [ $# -gt 0 ]; do
         --build-dir) build_dir="$2"; shift 2 ;;
         --shim) shim="$2"; shift 2 ;;
         --java-opts) java_opts="$2"; shift 2 ;;
-        -h|--help) usage ;;
-        --*) echo "flixlint: unknown option $1" >&2; usage ;;
+        --project-root) project_root="$2"; shift 2 ;;
+        --version) echo "flixlint $version"; exit 0 ;;
+        -h|--help) usage; exit 0 ;;
+        --*) echo "flixlint: unknown option $1" >&2; usage >&2; exit 4 ;;
         *) srcs+=("$1"); shift ;;
     esac
 done
 # 何も指さなかった時だけ bin/flix-jar の解決に落ちる（FLIX_JAR か --flix-jar が在ればそちらが勝つ）。
 if [ -z "$flix_jar" ] && [ -x "$here/bin/flix-jar" ]; then flix_jar="$("$here/bin/flix-jar" || true)"; fi
-[ -n "$flix_jar" ] && [ -f "$flix_jar" ] || { echo "flixlint: --flix-jar JAR (or FLIX_JAR) must point at flix.jar" >&2; exit 2; }
-[ -n "$rules" ] || { echo "flixlint: --rules PATH/rules.flix is required" >&2; exit 2; }
-[ -f "$rules" ] || { echo "flixlint: rules file not found: $rules" >&2; exit 2; }
-[ ${#srcs[@]} -gt 0 ] || { echo "flixlint: at least one source directory is required" >&2; exit 2; }
+[ -n "$flix_jar" ] && [ -f "$flix_jar" ] || die "--flix-jar JAR (or FLIX_JAR) must point at flix.jar"
+[ -n "$rules" ] || die "--rules PATH/rules.flix is required"
+[ -f "$rules" ] || die "rules file not found: $rules"
+[ ${#srcs[@]} -gt 0 ] || die "at least one source directory is required"
+case "$stage" in typed|resolved) ;; *) die "unknown --stage $stage (typed or resolved)" ;; esac
 [ -n "$today" ] || today="$(date +%Y-%m-%d)"
 [ -n "$facts_out" ] || facts_out="$build_dir/facts"
 mkdir -p "$build_dir"
 
 # ---- the dependencies, when the caller passed none ----
-# The compiler has already unpacked them into the project's lib/ by the time `flix check` has run once.
-# WhyNot: lib/**/*.fpkg is not passed wholesale. lib/ keeps every version ever resolved, and two versions of one
-# package bring the same definitions in twice, so only the versions flix.toml names are passed. Jars are passed
-# whole: two versions of one artifact on the classpath is first-wins, not a redefinition.
-if [ ${#pkgs[@]} -eq 0 ] && [ ${#jars[@]} -eq 0 ]; then
-    root="$(cd "$(dirname "${srcs[0]}")" 2>/dev/null && pwd)" || root="$PWD"
-    while [ ! -f "$root/flix.toml" ] && [ "$root" != "/" ]; do root="$(dirname "$root")"; done
-    if [ -f "$root/flix.toml" ] && grep -qE '^"github:' "$root/flix.toml"; then
-        while read -r owner name version; do
-            fpkg="$root/lib/github/$owner/$name/$version/$name-$version.fpkg"
-            [ -f "$fpkg" ] || { echo "flixlint: $fpkg is missing; run 'flix check' once so that the compiler resolves the dependencies of $root/flix.toml into lib/, or pass --pkg yourself" >&2; exit 2; }
-            pkgs+=(--pkg "$fpkg")
-        done < <(sed -nE 's/^"github:([^"/]+)\/([^"]+)"[[:space:]]*=[[:space:]]*\{[^}]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1 \2 \3/p' "$root/flix.toml")
-        while read -r jar; do jars+=(--jar "$jar"); done < <(find "$root/lib/cache" -name '*.jar' 2>/dev/null | sort)
-    fi
-fi
+# WhyNot: flix.toml is not read here. It is TOML, the short and the table form of a dependency both have to be
+# understood, and the closure over the installed packages' own manifests with it; the compiler jar the shim already
+# runs on carries ManifestParser, so the shim reads it there, typed.
+root_opt=()
+[ -n "$project_root" ] && root_opt=(--project-root "$project_root")
 
 # The module of rules.flix that holds `pub def rules(): Flixlint.RuleSet`: its first `mod` declaration.
 rules_mod="$(grep -m1 -oE '^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+[A-Za-z0-9_.]+' "$rules" | awk '{print $NF}')"
-[ -n "$rules_mod" ] || { echo "flixlint: $rules must declare a module (mod MyRules { pub def rules(): Flixlint.RuleSet = ... })" >&2; exit 2; }
+[ -n "$rules_mod" ] || die "$rules must declare a module (mod MyRules { pub def rules(): Flixlint.RuleSet = ... })"
 
 # ---- 1. the shim (built once, or taken prebuilt from --shim / FLIXLINT_SHIM) ----
 # WhyNot: the built shim does not go under $build_dir by default. It only depends on shim/*.scala and the compiler
 # jar, not on the project being linted, so one copy next to the sources serves every project on the machine.
 if [ -n "$shim" ]; then
-    [ -f "$shim" ] || { echo "flixlint: shim jar not found: $shim" >&2; exit 2; }
+    [ -f "$shim" ] || die "shim jar not found: $shim"
 else
     shim="$here/build/flixlint-shim.jar"
     if [ ! -f "$shim" ] || [ -n "$(find "$here/shim" -newer "$shim" -name '*.scala')" ]; then
@@ -107,26 +108,28 @@ else
             echo "flixlint: the shim is not built and scala-cli was not found." >&2
             echo "          install scala-cli (flixlint's devbox.json has it), or pass a prebuilt jar with" >&2
             echo "          --shim JAR / FLIXLINT_SHIM=JAR (the release has flixlint-shim-<flix version>.jar)." >&2
-            exit 2
+            exit 4
         fi
         mkdir -p "$here/build"
         echo "flixlint: building the shim" >&2
-        (cd "$here" && "${scala_cli[@]}" --power package shim --jar "$flix_jar" --library -o "$shim" -f >/dev/null)
+        (cd "$here" && "${scala_cli[@]}" --power package shim --jar "$flix_jar" --library -o "$shim" -f >/dev/null) \
+            || die "the shim did not build (scala-cli package shim)"
     fi
 fi
 engine="$build_dir/engine"
 rm -rf "$engine/src"; mkdir -p "$engine/src/Flixlint"
 # shellcheck disable=SC2086
 set +e
-java $java_opts -cp "$flix_jar:$shim" flixlint.Facts --out "$facts_out" --names-out "$engine/src/Flixlint/Names.flix" --stage "$stage" "${pkgs[@]}" "${jars[@]}" "${srcs[@]}"
+java $java_opts -cp "$flix_jar:$shim" flixlint.Facts --out "$facts_out" --names-out "$engine/src/Flixlint/Names.flix" --stage "$stage" "${root_opt[@]}" "${pkgs[@]}" "${jars[@]}" "${srcs[@]}"
 status=$?
 set -e
 if [ "$status" -ne 0 ]; then
     # WhyNot: the compiler's Resolution Error does not say that a dependency is missing, and sources that
     # `flix check` accepts fail here when the packages are not passed, so exit 3 with no --pkg says it.
     if [ "$status" -eq 3 ] && [ ${#pkgs[@]} -eq 0 ]; then
-        echo "flixlint: no packages were passed. If the sources depend on any, pass them with --pkg lib/github/.../x.fpkg" >&2
-        echo "          --jar lib/cache/.../y.jar (the compiler unpacks them into lib/ once 'flix check' has run)." >&2
+        echo "flixlint: the sources do not compile. If they depend on packages that flixlint did not find, name the" >&2
+        echo "          project with --project-root DIR, or pass them with --pkg lib/github/.../x.fpkg --jar" >&2
+        echo "          lib/cache/.../y.jar (the compiler unpacks them into lib/ once 'flix check' has run)." >&2
     fi
     exit "$status"
 fi
