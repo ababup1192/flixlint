@@ -400,7 +400,7 @@ flowchart TD
     shimjar -->|"生成する"| names["BUILD/engine/src/Flixlint/Names.flix"]
     names -->|"一緒にコンパイルする"| engine["BUILD/engine/artifact/engine.jar<br>3 つのハッシュが変わった時だけ組み直す"]
     lib["flixlint の src/Flixlint*.flix"] -->|"一緒にコンパイルする"| engine
-    rules["利用側の lint/rules.flix"] -->|"Rules.flix として写す"| engine
+    rules["利用側の lint/rules.flix"] -->|"Rules.flix としてコピーする"| engine
     flixjar -->|"組む"| engine
     facts -->|"実行時に読む"| engine
     engine -->|"出す"| report["違反と exit code"]
