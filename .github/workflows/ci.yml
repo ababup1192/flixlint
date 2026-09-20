@@ -14,12 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # WhyNot: setup-java を scala-cli-setup より後に置く。scala-cli-setup は自分の JDK 17 を
+      # JAVA_HOME に入れるので、先に置くとコンパイラ（Flix 0.76 は 21 が要る）がその 17 で動く。
+      - uses: VirtusLab/scala-cli-setup@v1.17.1
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
-
-      - uses: VirtusLab/scala-cli-setup@v1.17.1
 
       - name: Read the Flix version from flix.toml
         id: flix

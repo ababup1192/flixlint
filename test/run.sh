@@ -21,16 +21,20 @@ stage="${FLIXLINT_STAGE:-typed}"
 # generated engine would land inside the project being linted, and test/ is one of the two directories Flix's
 # project mode compiles.
 lint() {
-    local actual code dir
+    local actual code dir stderr
     dir="$1"; shift
     actual="$(mktemp)"
+    # WhyNot: stderr is kept, not dropped. A run that fails for a reason of its own (no flix.jar, a JDK the
+    # compiler cannot run on, a shim that does not build) then reports nothing on stdout and looks like a
+    # report that changed, and the reason is the only thing that says what happened.
+    stderr="$(mktemp)"
     set +e
     (cd "$root/$dir" && "$lint" --rules "$1" --today "$2" --stage "$stage" \
-        --build-dir "$root/build/$(basename "$dir")" src) > "$actual" 2> /dev/null
+        --build-dir "$root/build/$(basename "$dir")" src) > "$actual" 2> "$stderr"
     code=$?
     set -e
-    [ "$code" = "$3" ] || { echo "$dir/$1: expected exit $3, got $code" >&2; cat "$actual" >&2; exit 1; }
-    if [ $# -ge 4 ] && ! diff "$root/test/$4" "$actual"; then echo "$dir/$1: the report differs from test/$4 (< expected / > actual)" >&2; exit 1; fi
+    [ "$code" = "$3" ] || { echo "$dir/$1: expected exit $3, got $code" >&2; cat "$actual" "$stderr" >&2; exit 1; }
+    if [ $# -ge 4 ] && ! diff "$root/test/$4" "$actual"; then echo "$dir/$1: the report differs from test/$4 (< expected / > actual)" >&2; cat "$stderr" >&2; exit 1; fi
 }
 
 lint test/fixture rules/rules.flix 2026-09-19 1 expected.txt
