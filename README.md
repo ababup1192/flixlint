@@ -53,36 +53,25 @@ sources do not have), which is exactly what the test asserts.
 
 ## Using it from your project
 
-Keep one file in your project — the rules — and call flixlint with the compiler jar and your dependencies:
+Keep one file in your project — the rules — and call flixlint with the compiler jar:
 
 ```make
-LINT = ../flixlint/bin/flixlint --flix-jar "$$(bin/flix-jar)" --rules lint/rules.flix --stage resolved \
-       $$(bin/flix-deps) src
-
 lint:
-	$(LINT)
+	../flixlint/bin/flixlint --flix-jar /path/to/flix.jar --rules lint/rules.flix --stage resolved src
 ```
 
-Both `$(...)` there are scripts of your own project, not of flixlint. `bin/flix-jar` is whatever one-liner prints
-your compiler jar (`FLIX_JAR` or a literal path does as well), and `bin/flix-deps` is a few lines that list the
-dependencies the compiler has already unpacked into `lib/`:
-
-```bash
-#!/usr/bin/env bash
-find lib -name '*.fpkg' -exec echo --pkg {} \; -o -name '*.jar' -exec echo --jar {} \;
-```
-
-A project with no dependencies can leave `$(bin/flix-deps)` out entirely. A project that has them cannot: without
-the dependencies, sources that `flix check` accepts fail here with a Resolution Error and exit code 3.
+The dependencies need no argument. When neither `--pkg` nor `--jar` is given, flixlint reads the `flix.toml` above
+your sources and passes the versions it names out of `lib/`, where the compiler has unpacked them; a project with
+no dependencies gets nothing and needs nothing. Pass `--pkg` / `--jar` yourself only to override that. Either way
+the packages have to be there: sources that `flix check` accepts fail here with a Resolution Error and exit code 3
+when they are missing, so run `flix check` once before the first lint.
 
 Your rule file names things through the generated module, so it starts with
 `use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}` (up to flixlint 0.1.0 that module was the top-level `Names`;
 upgrading is that one `use` line, and the case names inside `Fn` / `Eff` / `Mod` / `Case` / `Enum` / `Type` are
 unchanged).
 
-`--pkg` / `--jar` are the dependencies your sources need; the compiler has already resolved them into `lib/` by the
-time `flix check` has run once, so a small script that turns `flix.toml` into `--pkg lib/... --jar lib/cache/...`
-lines is all that is needed. Nothing else of flixlint has to live in your repository: the engine, the shim and the
+Nothing else of flixlint has to live in your repository: the engine, the shim and the
 `Names` enums are all built under `--build-dir` (default `build/flixlint`), which belongs in `.gitignore`.
 
 ### Why it is not an fpkg
@@ -109,7 +98,7 @@ bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR
 |---|---|
 | `--flix-jar JAR` | The Flix compiler (`flix.jar`, 0.76.0). `FLIX_JAR` in the environment works too; with neither, `bin/flix-jar` resolves it. |
 | `--rules PATH/rules.flix` | The rule file: a Flix module with `pub def rules(): Flixlint.RuleSet` (see below). |
-| `--pkg FPKG` / `--jar JAR` | Dependencies the sources need (`lib/**/*.fpkg`, `lib/cache/**/*.jar`). Repeatable. |
+| `--pkg FPKG` / `--jar JAR` | Dependencies the sources need (`lib/**/*.fpkg`, `lib/cache/**/*.jar`). Repeatable. With neither, they are read from the project's `flix.toml`. |
 | `--stage typed` (default) | Facts from the typed AST (`Flix.check()`): everything below, including compile errors. |
 | `--stage resolved` | Facts from the AST right after name resolution, before kinding and typing. Several times faster; the same facts except Java instance-method calls (the receiver's class is not known yet). |
 | `--today YYYY-MM-DD` | The date `allowUntil` is compared with (default: the real date). Tests fix it. |

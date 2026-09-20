@@ -1,6 +1,6 @@
 [package]
 name        = "flixlint"
-description = "Flix のアーキテクチャ規則を、grep でなくコンパイラの AST から取った facts で check する linter"
+description = "Architecture rules for Flix, checked against facts taken from the compiler's AST instead of grep"
 version     = "0.2.0"
 flix        = "0.76.0"
 authors     = ["abab <ababup1192@gmail.com>"]
