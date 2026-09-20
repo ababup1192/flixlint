@@ -40,6 +40,16 @@ jobs:
           test -f flix.jar || curl -fsSL -o flix.jar \
             "https://github.com/flix/flix/releases/download/v${{ steps.flix.outputs.version }}/flix.jar"
 
+      # WhyNot: bin/flixlint に shim を組ませない。scala-cli は既定で bloop のサーバを起こし、
+      # CI ではその起動が 30 秒で timeout する。ここで --server=false（scalac を直に呼ぶ）で組んでおけば、
+      # bin/flixlint は既に在る jar を使う。
+      - name: Build the shim
+        run: |
+          mkdir -p build
+          scala-cli --power package shim --jar "$FLIX_JAR" --library -o build/flixlint-shim.jar -f --server=false
+        env:
+          FLIX_JAR: ${{ github.workspace }}/flix.jar
+
       - name: make test
         run: make test
         env:
