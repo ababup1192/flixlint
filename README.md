@@ -27,9 +27,12 @@ git clone https://github.com/ababup1192/flixlint.git
 git submodule add https://github.com/ababup1192/flixlint.git flixlint
 ```
 
-You need a JDK and the Flix compiler jar of the version in `flix.toml` (`flix = "0.76.0"`); pass it with
-`--flix-jar` or `FLIX_JAR`, and with neither `bin/flix-jar` looks for the devbox profile of
-`~/Desktop/flix_game_engine` (`FLIXLINT_ENGINE_ROOT` moves that).
+The project to lint is an ordinary Flix project; an empty one is `java -jar flix.jar init` in an empty directory.
+
+You need a JDK and the Flix compiler jar of the version in `flix.toml` (`flix = "0.76.0"`). Download `flix.jar`
+from [Flix's GitHub releases](https://github.com/flix/flix/releases) and pass it with `--flix-jar` or `FLIX_JAR`.
+With neither, `bin/flix-jar` takes over, but that is a shortcut for the author's devbox
+(`~/Desktop/flix_game_engine`, moved with `FLIXLINT_ENGINE_ROOT`) and finds nothing anywhere else, so pass the jar.
 
 The Scala shim is built once, on first use and whenever `shim/*.scala` changes, into `build/flixlint-shim.jar`.
 That needs `scala-cli`: `devbox.json` has it, and a `scala-cli` on `PATH` is used when there is no devbox. If you
@@ -59,6 +62,18 @@ LINT = ../flixlint/bin/flixlint --flix-jar "$$(bin/flix-jar)" --rules lint/rules
 lint:
 	$(LINT)
 ```
+
+Both `$(...)` there are scripts of your own project, not of flixlint. `bin/flix-jar` is whatever one-liner prints
+your compiler jar (`FLIX_JAR` or a literal path does as well), and `bin/flix-deps` is a few lines that list the
+dependencies the compiler has already unpacked into `lib/`:
+
+```bash
+#!/usr/bin/env bash
+find lib -name '*.fpkg' -exec echo --pkg {} \; -o -name '*.jar' -exec echo --jar {} \;
+```
+
+A project with no dependencies can leave `$(bin/flix-deps)` out entirely. A project that has them cannot: without
+the dependencies, sources that `flix check` accepts fail here with a Resolution Error and exit code 3.
 
 Your rule file names things through the generated module, so it starts with
 `use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}` (up to flixlint 0.1.0 that module was the top-level `Names`;
@@ -124,20 +139,33 @@ changes (measured on a 227-file project: the engine builds in about 16 s, then a
 
 ## Writing rules
 
-A rule file is a Flix module with one `pub def rules(): Flixlint.RuleSet`. Each entry is a record with `id`, what is
-disallowed, and `reason`; the functions chained after it add what the entry needs and nothing else. Names come from
+A rule file is a Flix module with one `pub def rules(): Flixlint.RuleSet`. Entries are grouped by family, each group
+goes into its family's lifting function, and `Flixlint.ruleSet` merges the groups:
+
+```flix
+Flixlint.ruleSet(List#{
+    Flixlint.functions(List#{ ... }),
+    Flixlint.effectsTogether(List#{ ... }),
+    Flixlint.handlers(List#{ ... }),
+    Flixlint.customs(List#{ ... })
+})
+```
+
+Each entry is a record with `id`, what is disallowed, and `reason`; the functions chained after it add what the entry needs and nothing else. Names come from
 the generated `Flixlint.Names` module (`use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}`):
-`Fn.Session_grant`, `Eff.Net_Http`, `Mod.Now`, `Case.Visible_Visible`,
-`Enum.Condition`, `Type.ApiId` (the qualified name with every character that is not a letter or a digit replaced by
+`Fn.Auth_permit`, `Eff.Net_Http`, `Mod.Clock`, `Case.Column_Column`,
+`Enum.Predicate`, `Type.ColumnName` (the qualified name with every character that is not a letter or a digit replaced by
 `_` and the first letter upper-cased; `java.lang.System.currentTimeMillis` is `Fn.Java_lang_System_currentTimeMillis`,
-the root module is `Mod.Root`). The editor's completion on `Fn.` lists the candidates.
+the root module is `Mod.Root`). To find a name, run flixlint once and grep the file it generates:
+`grep Auth_ build/flixlint/engine/src/Flixlint/Names.flix`. That file sits under `--build-dir`, outside your source
+path, so the editor does not complete it.
 
 [`examples/rules.flix`](examples/rules.flix) is a complete rule file — `disallowFunction` with `transitivelyIn`
 and `allowIn`, `disallowEffectsTogether` with `allowUntil`, `disallowHandler` with `allowInFile`, and a custom rule —
 against the six-file project in [`examples/src`](examples/src). `examples/README.md` shows the report it produces,
 and `make test` diffs that report, so the example is never out of date. Read it first; the reference follows.
 
-`Flixlint.ruleSet` merges the parts; a family that has no entries is simply not written.
+A family with no entries is simply left out of the list.
 
 ### Families
 
@@ -145,19 +173,23 @@ and `make test` diffs that report, so the example is never out of date. Read it 
 with, keep it out of this place, not with this literal, not inside a lambda passed to this) gives eleven families. Every entry has `id` and `reason`; the fields in the middle are
 the family's.
 
-| Family | Record fields | Facts | Says |
-|---|---|---|---|
-| `disallowFunction` | `path = Fn` | Calls | do not call this (with `transitivelyIn`, nor its wrappers) |
-| `disallowCallsTogether` | `functions = Set[Fn], withFunctions = Set[Fn]` | Calls | a function that calls one of A does not call one of B |
-| `disallowEffectsTogether` | `effects = Set[Eff], withEffects = Set[Eff]` | EffectOf | a signature does not have an effect of A together with one of B |
-| `disallowOtherEffectsWith` | `effect = Eff` | EffectOf | a signature with this effect has no other |
-| `disallowEffectsIn` | `files = glob, effects = Set[Eff]` | EffectOf + Def | the functions in these files do not have these effects (`Set#{}`: are pure) |
-| `disallowHandler` | `effect = Eff` | Handles | do not install a handler for this effect (with `transitivelyIn`, nor call `X.runWith`) |
-| `disallowConstructor` | `constructor = Case` | Constructs | do not build this case (with `transitivelyIn`, nor call a pub function that does) |
-| `disallowCallInLambdaOf` | `function = Fn, inLambdaOf = Set[Fn]` | CallsInLambdaArgOf + Def | do not call this inside a lambda passed to one of these (`List.map(x -> f(x), xs)`, `List.map(f, xs)`); `inFiles(glob)` limits where |
-| `disallowCallWithArg` | `function = Fn, argIndex = Int32, values = Set[String]` | ArgLit + StrLit | do not call this with one of these string literals at that argument; `valuesFromLiteralsIn(Fn.X)` adds the literals of `X`'s body |
-| `disallowCaseArgType` | `ofEnum = Enum, argType = Type` | CaseTypeAll | no case of this enum has this type in a field (`ApiId` or `List[ApiId]`) |
-| `disallowDependency` | `files = glob, module = Mod` | Calls + Constructs + ArgTypeAll + RetTypeAll + CaseTypeAll | the functions in these files neither call this module (or its submodules), nor build its cases, nor have its types in a parameter or the return type; the enums declared there have none in a case |
+| Family | Lifted with | Record fields | Facts | Says |
+|---|---|---|---|---|
+| `Flixlint.disallowFunction` | `Flixlint.functions` | `path = Fn` | Calls | do not call this (with `transitivelyIn`, nor its wrappers) |
+| `Flixlint.disallowCallsTogether` | `Flixlint.callsTogether` | `functions = Set[Fn], withFunctions = Set[Fn]` | Calls | a function that calls one of A does not call one of B |
+| `Flixlint.disallowEffectsTogether` | `Flixlint.effectsTogether` | `effects = Set[Eff], withEffects = Set[Eff]` | EffectOf | a signature does not have an effect of A together with one of B |
+| `Flixlint.disallowOtherEffectsWith` | `Flixlint.otherEffectsWith` | `effect = Eff` | EffectOf | a signature with this effect has no other |
+| `Flixlint.disallowEffectsIn` | `Flixlint.effectsIn` | `files = glob, effects = Set[Eff]` | EffectOf + Def | the functions in these files do not have these effects (`Set#{}`: are pure) |
+| `Flixlint.disallowHandler` | `Flixlint.handlers` | `effect = Eff` | Handles | do not install a handler for this effect (with `transitivelyIn`, nor call `X.runWith`) |
+| `Flixlint.disallowConstructor` | `Flixlint.constructors` | `constructor = Case` | Constructs | do not build this case (with `transitivelyIn`, nor call a pub function that does) |
+| `Flixlint.disallowCallInLambdaOf` | `Flixlint.callsInLambda` | `function = Fn, inLambdaOf = Set[Fn]` | CallsInLambdaArgOf + Def | do not call this inside a lambda passed to one of these (`List.map(x -> f(x), xs)`, `List.map(f, xs)`); `inFiles(glob)` limits where |
+| `Flixlint.disallowCallWithArg` | `Flixlint.callsWithArg` | `function = Fn, argIndex = Int32, values = Set[String]` | ArgLit + StrLit | do not call this with one of these string literals at that argument; `valuesFromLiteralsIn(Fn.X)` adds the literals of `X`'s body |
+| `Flixlint.disallowCaseArgType` | `Flixlint.caseArgTypes` | `ofEnum = Enum, argType = Type` | CaseTypeAll | no case of this enum has this type in a field (`ColumnName` or `List[ColumnName]`) |
+| `Flixlint.disallowDependency` | `Flixlint.dependencies` | `files = glob, module = Mod` | Calls + Constructs + ArgTypeAll + RetTypeAll + CaseTypeAll | the functions in these files neither call this module (or its submodules), nor build its cases, nor have its types in a parameter or the return type; the enums declared there have none in a case |
+| `Flixlint.customRule` | `Flixlint.customs` | `check = Facts -> List[Violation]` | all of them | what the families cannot say (see [Custom rules](#custom-rules)) |
+
+A `use Flixlint.{disallowFunction, disallowHandler, ...}` at the top of the rule file shortens the entry builders;
+the lifting functions are written qualified in the examples.
 
 Effect sets are expanded through type aliases on both sides: `Eff.Db` in a rule means the members of the alias `Db`,
 and a signature written `\ AdminEff` is seen as the members of `AdminEff`.
@@ -216,9 +248,10 @@ short form without allows.
 
 The shim (`shim/Facts.scala`) writes one TSV per relation into the facts directory and `Flixlint/Names.flix` next to the
 engine's sources. `fn`, `callee`, `eff`, `case`, `enum` and `tycon` are qualified the way the compiler qualifies
-symbols: `Session.grant`, `Session.Granted.Granted` (enum cases carry their enum), `Net.Http` (an effect declared
+symbols: `Auth.permit`, `Auth.Permit.Permit` (enum cases carry their enum), `Net.Http` (an effect declared
 inside `mod Net.Http`), `java.lang.System.currentTimeMillis` (Java interop; constructors are `pkg.Class.<init>`).
-`file` is the path as given on the command line.
+`file` is the path as given on the command line. A relation with no rows gets no TSV file, so a small project's
+facts directory holds fewer files than the table below has rows.
 
 | Relation | Columns | Meaning |
 |---|---|---|
@@ -233,8 +266,8 @@ inside `mod Net.Http`), `java.lang.System.currentTimeMillis` (Java interop; cons
 | `ArgCall` | `caller, callee, index, argCallee, line` | A call to `argCallee` (or a partial application of it) as the `index`-th argument of a call to `callee`. |
 | `PipedInto` | `caller, source, target, line` | In a `|>` chain, the result of `source` reaches `target` through any number of stages (`a() |> f |> g(x)` gives a→f, a→g, f→g); `line` is the line of `target`. A lambda inside a stage is not part of the chain. |
 | `StrLit` | `fn, text, line` | A string literal in the body of `fn` (the pieces of an interpolated string too). |
-| `ArgType` | `fn, index, tycon` | Head type constructor of the `index`-th parameter (`Session.Granted`, `List`, `Str`, `Arrow(2)`, `?` for a type variable). |
-| `ArgTypeAll` | `fn, index, tycon` | Every type constructor in the `index`-th parameter, nested ones included (`List[ApiId]` gives `List` and `ApiId`; an alias is listed by its own name and its arguments; type variables and record rows are left out). |
+| `ArgType` | `fn, index, tycon` | Head type constructor of the `index`-th parameter (`Auth.Permit`, `List`, `Str`, `Arrow(2)`, `?` for a type variable). |
+| `ArgTypeAll` | `fn, index, tycon` | Every type constructor in the `index`-th parameter, nested ones included (`List[ColumnName]` gives `List` and `ColumnName`; an alias is listed by its own name and its arguments; type variables and record rows are left out). |
 | `RetType` / `RetTypeAll` | `fn, tycon` | The head type constructor of the return type / every one in it. |
 | `CaseType` / `CaseTypeAll` | `enum, case, index, tycon` | The head type constructor of the `index`-th field of an enum case / every one in it. |
 | `Enum` / `Eff` | `name, mod, file, line, pub` | Where an enum / an effect is declared. |

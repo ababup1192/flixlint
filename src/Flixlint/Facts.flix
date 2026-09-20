@@ -43,7 +43,7 @@ pub mod Flixlint.Facts {
     pub type alias StrLit = { fn = Fn, text = String, line = Int32 }
 
     /// A type constructor of the `index`-th parameter of `fn`: the head one (`argTypes`), or any one in the
-    /// type, nested ones included (`argTypesAll`: `List[ApiId]` gives `List` and `ApiId`).
+    /// type, nested ones included (`argTypesAll`: `List[ColumnName]` gives `List` and `ColumnName`).
     pub type alias ArgType = { fn = Fn, index = Int32, tycon = Type }
 
     /// A type constructor of the `index`-th field of an enum case: the head one (`caseTypes`) or any one (`caseTypesAll`).
@@ -148,10 +148,10 @@ pub mod Flixlint.Facts {
     pub def expandEffects(facts: Facts, effects: Set[Eff]): Set[Eff] =
         Set.foldLeft((acc, e) -> Set.union(acc, expandEffect(facts, e)), Set.empty(), effects)
 
-    /// The qualified name of a function as the compiler prints it (`Session.grant`).
+    /// The qualified name of a function as the compiler prints it (`Auth.permit`).
     pub def fnName(facts: Facts, fn: Fn): String = Map.getWithDefault(fn, "?", data(facts)#fnNames)
 
-    /// The spelling of the enum case of a function (`Session_grant`), for the hint that names `Fn.Session_grant`.
+    /// The spelling of the enum case of a function (`Auth_permit`), for the hint that names `Fn.Auth_permit`.
     pub def fnCase(facts: Facts, fn: Fn): String = Map.getWithDefault(fn, "?", data(facts)#fnCases)
 
     pub def effName(facts: Facts, effect: Eff): String = Map.getWithDefault(effect, "?", data(facts)#effNames)
@@ -160,7 +160,7 @@ pub mod Flixlint.Facts {
     pub def enumName(facts: Facts, ofEnum: Enum): String = Map.getWithDefault(ofEnum, "?", data(facts)#enumNames)
     pub def typeName(facts: Facts, tycon: Type): String = Map.getWithDefault(tycon, "?", data(facts)#typeNames)
 
-    /// The module part of a qualified name (`GeneratedAdmin.Types.Foo` -> `GeneratedAdmin.Types`; a bare name has none).
+    /// The module part of a qualified name (`Generated.Types.Foo` -> `Generated.Types`; a bare name has none).
     pub def moduleOf(qualified: String): String =
         match String.indexOfRight(substr = ".", qualified) {
             case Some(i) => String.takeLeft(i, qualified)

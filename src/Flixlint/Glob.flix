@@ -1,6 +1,6 @@
 pub mod Flixlint.Glob {
     /// Whether `path` matches the glob `pattern`: `*` stays inside one path segment, `**` crosses segments,
-    /// `{a,b}` is either alternative (`src/{admin,mcp}/**`).
+    /// `{a,b}` is either alternative (`src/{api,app}/**`).
     pub def matches(pattern: String, path: String): Bool =
         expand(pattern) |> List.exists(p -> go(String.toList(p), String.toList(path)))
 

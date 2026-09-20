@@ -10,35 +10,35 @@ pub eff Clock {
     def now(): Int64
 }
 
-pub type alias AdminEff = Db + Http
+pub type alias WriteEff = Db + Http
 
-pub enum ApiId(String)
+pub enum ColumnName(String)
 
-pub enum Condition {
-    case Eq(ApiId, String)
-    case In(List[ApiId])
+pub enum Predicate {
+    case Eq(ColumnName, String)
+    case In(List[ColumnName])
     case Any
 }
 
-pub enum Visible(String)
+pub enum Column(String)
 
 pub enum Filter {
-    case On(Visible)
+    case On(Column)
 }
 
-mod Tenant {
-    pub def currentId(): String = "p1"
+mod Scope {
+    pub def currentId(): String = "s1"
 }
 
 mod Generated {
     pub enum Query(Int32)
 
     pub enum Role {
-        case Admin
-        case Reader
+        case Owner
+        case Viewer
     }
 
-    pub def findEntries(projectId: String, limit: Int32): String \ Db = Db.exec("select ${projectId} ${limit}")
+    pub def findOrders(scopeId: String, limit: Int32): String \ Db = Db.exec("select ${scopeId} ${limit}")
 
     pub def limitOf(q: Query): Int32 = match q { case Query.Query(n) => n }
 }

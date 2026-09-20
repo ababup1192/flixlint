@@ -329,7 +329,7 @@ final class Sink(dir: Path) {
 /** `Names.flix`: the names of the facts as Flix enums (`Fn` / `Eff` / `Mod` / `Case` / `Enum` / `Type`).
   *
   * A case is the qualified name with every character that is not an ASCII letter or digit replaced by `_` and the
-  * first letter upper-cased (`Session.grant` -> `Session_grant`, `java.lang.System.currentTimeMillis` ->
+  * first letter upper-cased (`Auth.permit` -> `Auth_permit`, `java.lang.System.currentTimeMillis` ->
   * `Java_lang_System_currentTimeMillis`); a name that would collide gets a trailing `_`. Names that do not start with a
   * letter (`++`, `|>`, `bug!`) are left out: no rule needs them and they cannot be enum cases. The root module (the empty
   * name) is `Mod.Root`.
@@ -431,7 +431,7 @@ object Typed {
     }
   }
 
-  /** Every named type constructor in a type, outermost first (`List[ApiId]` gives `List`, `ApiId`). An alias is
+  /** Every named type constructor in a type, outermost first (`List[ColumnName]` gives `List`, `ColumnName`). An alias is
     * listed by its own name and its arguments (its target is not); type variables and record / schema rows are left out.
     */
   def allNames(t: Type): List[String] = t match {

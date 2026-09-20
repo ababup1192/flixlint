@@ -52,7 +52,7 @@ pub mod Flixlint {
     /// `valuesFromLiteralsIn(Fn.X)`, the string literals in the body of `X` are values too.
     pub type alias DisallowedCallWithArg = { id = String, reason = String, function = Fn, argIndex = Int32, values = Set[String], valuesFrom = List[Fn], allows = List[Allow] }
 
-    /// No case of `ofEnum` may have a field whose type has `argType` in it (`ApiId` as well as `List[ApiId]`).
+    /// No case of `ofEnum` may have a field whose type has `argType` in it (`ColumnName` as well as `List[ColumnName]`).
     pub type alias DisallowedCaseArgType = { id = String, reason = String, ofEnum = Enum, argType = Type, allows = List[Allow] }
 
     /// The functions of the files matching the glob `files` must neither call `module` (or its submodules), nor
@@ -121,7 +121,7 @@ pub mod Flixlint {
     pub def transitivelyIn(module: Mod, rule: { transitively = List[Mod] | r }): { transitively = List[Mod] | r } =
         { transitively = rule#transitively ::: (module :: Nil) | rule }
 
-    /// Only the functions of the files matching the glob (`src/{admin,mcp}/**`) are judged.
+    /// Only the functions of the files matching the glob (`src/{api,app}/**`) are judged.
     pub def inFiles(glob: String, rule: { files = String | r }): { files = String | r } =
         { files = glob | rule }
 

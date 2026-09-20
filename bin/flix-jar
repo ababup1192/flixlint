@@ -22,7 +22,8 @@ fi
 if [ -z "$FLIX_JAR" ] && [ -f "$ENGINE_ROOT/bin/flix.jar" ]; then FLIX_JAR="$ENGINE_ROOT/bin/flix.jar"; fi
 
 if [ -z "$FLIX_JAR" ]; then
-    echo "flix.jar が見つかりません。FLIX_JAR=/path/to/flix.jar を渡してください。" >&2
+    echo "flix.jar not found. Pass it with FLIX_JAR=/path/to/flix.jar (or --flix-jar JAR)." >&2
+    echo "Download flix.jar from https://github.com/flix/flix/releases (the version in flix.toml)." >&2
     exit 127
 fi
 echo "$FLIX_JAR"

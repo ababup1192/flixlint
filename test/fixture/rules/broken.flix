@@ -5,7 +5,7 @@ mod BrokenRules {
 
     pub def rules(): RuleSet = Flixlint.ruleSet(List#{
         Flixlint.functions(List#{
-            disallowFunction({ id = "gone", path = Fn.Entries_removedLongAgo, reason = "removed" })
+            disallowFunction({ id = "gone", path = Fn.Orders_removedLongAgo, reason = "removed" })
         })
     })
 }

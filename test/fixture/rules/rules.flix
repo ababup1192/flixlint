@@ -18,39 +18,39 @@ mod FixtureRules {
                 |> allowIn(Fn.Runner_nowMillis, "the runner reads it once per request")
         }),
         Flixlint.callsTogether(List#{
-            disallowCallsTogether({ id = "grant-target", functions = Set#{Fn.AdminMapping_entryId}, withFunctions = Set#{Fn.Session_grant},
-                reason = "an entry id and its proof are obtained together (entryTarget + grantOnEntry)" }),
-            disallowCallsTogether({ id = "grant-leak", functions = Set#{Fn.Session_grantOnEntry}, withFunctions = Set#{Fn.Session_grant},
-                reason = "an id received with grantOnEntry is not re-checked with a target-less grant()" })
+            disallowCallsTogether({ id = "capability-target", functions = Set#{Fn.Mapping_orderId}, withFunctions = Set#{Fn.Auth_permit},
+                reason = "an order id and the permit for it are obtained together (Mapping.orderId with Auth.permitOn)" }),
+            disallowCallsTogether({ id = "capability-leak", functions = Set#{Fn.Auth_permitOn}, withFunctions = Set#{Fn.Auth_permit},
+                reason = "an id received with permitOn is not re-checked with a target-less permit()" })
         }),
         Flixlint.effectsTogether(List#{
             disallowEffectsTogether({ id = "io-in-tx", effects = Set#{Eff.Db}, withEffects = Set#{Eff.Http},
                 reason = "DB and outbound I/O in one signature: split into read Tx -> I/O -> write Tx" })
-                |> allowIn(Fn.Entries_createAndFetch, "the fetch is a health probe of a few ms")
-                |> allowUntil(Fn.Entries_confirm, "2026-01-01", "split into two transactions (#123)")
+                |> allowIn(Fn.Orders_createAndFetch, "the fetch is a health probe of a few ms")
+                |> allowUntil(Fn.Orders_confirm, "2026-01-01", "split into two transactions (#123)")
         }),
         Flixlint.otherEffectsWith(List#{
             disallowOtherEffectsWith({ id = "clock-alone", effect = Eff.Clock, reason = "a function that reads the clock does nothing else, so tests can fix the time" })
         }),
         Flixlint.effectsIn(List#{
-            disallowEffectsIn({ id = "pure-rules", files = "src/cms/rules/**", effects = Set#{},
+            disallowEffectsIn({ id = "pure-rules", files = "src/domain/rules/**", effects = Set#{},
                 reason = "rules are pure and table-tested; the time comes in as nowMillis" })
         }),
         Flixlint.handlers(List#{
-            disallowHandler({ id = "handler-site", effect = Eff.Session, reason = "the Session handler is installed by the runner only; use cases receive Granted" })
-                |> transitivelyIn(Mod.Session)
+            disallowHandler({ id = "handler-site", effect = Eff.Auth, reason = "the Auth handler is installed by the runner only; use cases receive Permit" })
+                |> transitivelyIn(Mod.Auth)
                 |> allowIn(Fn.Runner_transact, "the runner")
-                |> allowInFile("src/cms/Session.flix", "the effect's own module")
+                |> allowInFile("src/domain/Auth.flix", "the effect's own module")
         }),
         Flixlint.constructors(List#{
-            disallowConstructor({ id = "handler-site", constructor = Case.Session_Granted_Granted, reason = "Granted is built inside Session only" })
-                |> allowInFile("src/cms/Session.flix", "the effect's own module"),
-            disallowConstructor({ id = "visible", constructor = Case.Visible_Visible, reason = "Visible is made from a FieldDef with Visible.ofField" })
+            disallowConstructor({ id = "handler-site", constructor = Case.Auth_Permit_Permit, reason = "Permit is built inside Auth only" })
+                |> allowInFile("src/domain/Auth.flix", "the effect's own module"),
+            disallowConstructor({ id = "wrapped-key", constructor = Case.Column_Column, reason = "a Column comes from Column.ofDef, never built by hand" })
         }),
         Flixlint.callsInLambda(List#{
-            disallowCallInLambdaOf({ id = "find-many", function = Fn.Entries_find, inLambdaOf = Set#{Fn.List_map, Fn.List_filterMap},
+            disallowCallInLambdaOf({ id = "find-many", function = Fn.Orders_find, inLambdaOf = Set#{Fn.List_map, Fn.List_filterMap},
                 reason = "one read per id over a list of ids is N+1; a list of ids is read with findMany" })
-                |> inFiles("src/{admin,app}/**")
+                |> inFiles("src/{api,app}/**")
         }),
         Flixlint.callsWithArg(List#{
             disallowCallWithArg({ id = "log-text", function = Fn.Log_str, argIndex = 0, values = Set#{"secret"},
@@ -58,45 +58,45 @@ mod FixtureRules {
                 |> valuesFromLiteralsIn(Fn.Log_freeTextKeys)
         }),
         Flixlint.caseArgTypes(List#{
-            disallowCaseArgType({ id = "visible", ofEnum = Enum.Condition, argType = Type.ApiId, reason = "conditions name fields through Visible, never a raw ApiId" })
+            disallowCaseArgType({ id = "wrapped-key", ofEnum = Enum.Predicate, argType = Type.ColumnName, reason = "predicates name columns through Column, never a raw ColumnName" })
         }),
         Flixlint.dependencies(List#{
-            disallowDependency({ id = "domain-isolation", files = "src/cms/**", module = Mod.Generated, reason = "the domain does not know the generated API; mappings live in AdminMapping" })
-                |> allowIn(Fn.Entries_listMine, "the query is the domain's own")
+            disallowDependency({ id = "domain-isolation", files = "src/domain/**", module = Mod.Generated, reason = "the domain does not know the generated API; mappings live in Mapping" })
+                |> allowIn(Fn.Orders_listMine, "the query is the domain's own")
         }),
-        Flixlint.custom("schema-guard", schemaGuard),
+        Flixlint.custom("guarded-write", guardedWrite),
         Flixlint.customs(List#{
-            customRule({ id = "grant-site", check = grantSite })
-                |> allowIn(Fn.Entries_grantsInLambda, "an allow on a custom rule"),
+            customRule({ id = "capability-site", check = capabilitySite })
+                |> allowIn(Fn.Orders_permitsInLambda, "an allow on a custom rule"),
             customRule({ id = "silent-parse", check = silentParse })
         })
     })
 
-    /// Calling a ContentTypes function that takes a Granted proof from src/admin without ContentTypes.guarded in the same function.
-    def schemaGuard(facts: Facts): List[Violation] =
+    /// Calling an Inventory function that takes a Permit proof from src/api without Inventory.guarded in the same function.
+    def guardedWrite(facts: Facts): List[Violation] =
         let mutating = Flixlint.Facts.defs(facts)
-            |> List.filter(d -> d#module == Mod.ContentTypes and Flixlint.Facts.argType(facts, d#fn, 0) == Some(Type.Session_Granted))
+            |> List.filter(d -> d#module == Mod.Inventory and Flixlint.Facts.argType(facts, d#fn, 0) == Some(Type.Auth_Permit))
             |> List.map(d -> d#fn)
             |> List.toSet;
         Flixlint.Facts.calls(facts)
             |> List.filter(c -> Set.memberOf(c#callee, mutating))
-            |> List.filter(c -> Flixlint.Facts.defOf(facts, c#caller) |> Option.exists(d -> Flixlint.Glob.matches("src/admin/**", d#file)))
-            |> List.filter(c -> not Flixlint.Facts.callsTo(facts, c#caller, Fn.ContentTypes_guarded))
-            |> List.map(c -> Flixlint.Violation.atCall(facts, "schema-guard", c, "type changes from the admin API go through ContentTypes.guarded"))
+            |> List.filter(c -> Flixlint.Facts.defOf(facts, c#caller) |> Option.exists(d -> Flixlint.Glob.matches("src/api/**", d#file)))
+            |> List.filter(c -> not Flixlint.Facts.callsTo(facts, c#caller, Fn.Inventory_guarded))
+            |> List.map(c -> Flixlint.Violation.atCall(facts, "guarded-write", c, "bulk writes from the API go through Inventory.guarded"))
 
-    /// Calling a Session function that asks Session (has the effect) and returns a proof, from src/cms outside Session itself.
-    def grantSite(facts: Facts): List[Violation] =
+    /// Calling an Auth function that asks Auth (has the effect) and returns a proof, from src/domain outside Auth itself.
+    def capabilitySite(facts: Facts): List[Violation] =
         let judging = Flixlint.Facts.defs(facts)
-            |> List.filter(d -> d#module == Mod.Session and d#isPub
-                and Set.memberOf(Eff.Session, Flixlint.Facts.effectOf(facts, d#fn))
-                and Flixlint.Facts.retType(facts, d#fn) == Some(Type.Session_Granted))
+            |> List.filter(d -> d#module == Mod.Auth and d#isPub
+                and Set.memberOf(Eff.Auth, Flixlint.Facts.effectOf(facts, d#fn))
+                and Flixlint.Facts.retType(facts, d#fn) == Some(Type.Auth_Permit))
             |> List.map(d -> d#fn)
             |> List.toSet;
         Flixlint.Facts.calls(facts)
             |> List.filter(c -> Set.memberOf(c#callee, judging))
             |> List.filter(c -> Flixlint.Facts.defOf(facts, c#caller)
-                |> Option.exists(d -> Flixlint.Glob.matches("src/cms/**", d#file) and d#file != "src/cms/Session.flix"))
-            |> List.map(c -> Flixlint.Violation.atCall(facts, "grant-site", c, "use cases receive Granted as an argument; only the boundary asks Session"))
+                |> Option.exists(d -> Flixlint.Glob.matches("src/domain/**", d#file) and d#file != "src/domain/Auth.flix"))
+            |> List.map(c -> Flixlint.Violation.atCall(facts, "capability-site", c, "use cases receive Permit as an argument; only the boundary asks Auth"))
 
     /// A value Ids.parse rejects that is dropped (List.filterMap) or replaced by a default (Option.getWithDefault, directly
     /// or through a pipe); a default that is Result.Err is a rejection and not reported.
