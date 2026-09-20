@@ -140,7 +140,13 @@ cp "$here"/src/Flixlint.flix "$engine/src/"
 cp "$rules" "$engine/src/Rules.flix"
 printf 'def main(): Unit \\ IO = Flixlint.Engine.lint(%s.rules())\n' "$rules_mod" > "$engine/src/Main.flix"
 
-hash="$(cat "$engine"/src/*.flix "$engine"/src/Flixlint/*.flix | shasum | cut -c1-16)"
+# WhyNot: the compiler jar is not left out of the key. It is what builds engine.jar, so another FLIX_JAR with the
+# same rule sources would reuse the jar the first compiler built. Path, size and mtime identify it without hashing a
+# hundred megabytes on every run (`stat` takes the BSD then the GNU spelling, and an mtime it cannot read only makes
+# the key coarser). LC_ALL=C fixes the order the globs expand in, which is the collation order and so the locale's.
+jar_mtime="$(stat -f %m -- "$flix_jar" 2>/dev/null || stat -c %Y -- "$flix_jar" 2>/dev/null || echo unknown)"
+jar_id="$flix_jar $(wc -c < "$flix_jar") $jar_mtime"
+hash="$(export LC_ALL=C; { echo "$jar_id"; cat "$engine"/src/*.flix "$engine"/src/Flixlint/*.flix; } | shasum | cut -c1-16)"
 engine_jar="$engine/artifact/engine.jar"
 if [ ! -f "$engine_jar" ] || [ "$(cat "$engine/built-hash" 2>/dev/null)" != "$hash" ]; then
     printf '[package]\nname = "flixlint-rules"\ndescription = "generated"\nversion = "0.0.0"\nflix = "0.0.0"\nauthors = []\n' > "$engine/flix.toml"

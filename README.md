@@ -24,7 +24,7 @@ flowchart TD
     toml["your flix.toml"] -->|"ManifestParser resolves lib/ for"| shimjar
     shimjar -->|"writes"| facts["BUILD/facts/*.tsv"]
     shimjar -->|"generates"| names["BUILD/engine/src/Flixlint/Names.flix"]
-    names -->|"compiled into"| engine["BUILD/engine/artifact/engine.jar<br>rebuilt only when the hash of those three changes"]
+    names -->|"compiled into"| engine["BUILD/engine/artifact/engine.jar<br>rebuilt only when the hash of those three<br>and of the compiler jar changes"]
     lib["flixlint's src/Flixlint*.flix"] -->|"compiled into"| engine
     rules["your lint/rules.flix"] -->|"copied in as Rules.flix"| engine
     flixjar -->|"builds"| engine
@@ -166,7 +166,7 @@ Violations are sorted by file, line and rule id, so the report is the same on ev
 
 The rule engine is a Flix program made of the `src/Flixlint` library, the generated `Names.flix`, your rule file and
 a generated `main`; `bin/flixlint` compiles it into a jar with the same compiler and rebuilds it only when one of those
-changes (measured on a 227-file project: the engine builds in about 16 s, then a run costs the facts plus 3 s).
+or the compiler jar changes (measured on a 227-file project: the engine builds in about 16 s, then a run costs the facts plus 3 s).
 
 ## Writing rules
 
@@ -396,7 +396,7 @@ flowchart TD
     toml["利用側の flix.toml"] -->|"ManifestParser が lib/ を解決する"| shimjar
     shimjar -->|"書く"| facts["BUILD/facts/*.tsv"]
     shimjar -->|"生成する"| names["BUILD/engine/src/Flixlint/Names.flix"]
-    names -->|"一緒にコンパイルする"| engine["BUILD/engine/artifact/engine.jar<br>3 つのハッシュが変わった時だけ組み直す"]
+    names -->|"一緒にコンパイルする"| engine["BUILD/engine/artifact/engine.jar<br>3 つとコンパイラの jar のハッシュが<br>変わった時だけ組み直す"]
     lib["flixlint の src/Flixlint*.flix"] -->|"一緒にコンパイルする"| engine
     rules["利用側の lint/rules.flix"] -->|"Rules.flix としてコピーする"| engine
     flixjar -->|"組む"| engine
@@ -535,8 +535,8 @@ src/Report.flix:14: clock: Report.title: calls Wall.today
 違反はファイル・行・rule の id で並べるので、報告は毎回同じになる。
 
 rule engine は、`src/Flixlint` のライブラリ・生成した `Names.flix`・利用側の rule のファイル・生成した `main`
-から成る Flix のプログラムで、`bin/flixlint` が同じコンパイラで jar に組み、そのどれかが変わった時だけ組み
-直す（227 ファイルのプロジェクトでの実測で、エンジンの build が 16 秒前後、その後の 1 回は facts + 3 秒）。
+から成る Flix のプログラムで、`bin/flixlint` が同じコンパイラで jar に組み、そのどれかかコンパイラの jar が
+変わった時だけ組み直す（227 ファイルのプロジェクトでの実測で、エンジンの build が 16 秒前後、その後の 1 回は facts + 3 秒）。
 
 ## 規則の書き方
 
