@@ -155,7 +155,10 @@ if [ ! -f "$engine_jar" ] || [ "$(cat "$engine/built-hash" 2>/dev/null)" != "$ha
     if ! (cd "$engine" && java $java_opts -jar "$flix_jar" build-jar --no-install >build.log 2>&1); then
         echo "flixlint: the rules do not compile ($rules; the names come from $engine/src/Flixlint/Names.flix):" >&2
         # The engine compiles the rule file as src/Rules.flix, so the compiler's paths are rewritten back to --rules.
-        tr '\r' '\n' < "$engine/build.log" | grep -a -vE '^[[:space:]]*$|^[[:space:]]*\[|^(Found|Resolving|Downloading|  Running|Dependency resolution)' | sed "s@src/Rules\.flix@$rules@g" | tail -60 >&2
+        # WhyNot: not the last 60 lines. Flix reports the errors in order and the later ones usually follow from the
+        # first, so the end of the log is the derived noise and the head is the one error worth reading.
+        tr '\r' '\n' < "$engine/build.log" | grep -a -vE '^[[:space:]]*$|^[[:space:]]*\[|^(Found|Resolving|Downloading|  Running|Dependency resolution)' | sed "s@src/Rules\.flix@$rules@g" | head -60 >&2
+        echo "flixlint: the whole compiler output is in $engine/build.log" >&2
         exit 2
     fi
     echo "$hash" > "$engine/built-hash"
