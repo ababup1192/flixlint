@@ -48,8 +48,9 @@ mod FixtureRules {
             disallowConstructor({ id = "wrapped-key", constructor = Case.Column_Column, reason = "a Column comes from Column.ofDef, never built by hand" })
         }),
         Flixlint.callsInLambda(List#{
+            // The glob is written with a nested group: it stands for src/api and src/app, and nothing else.
             disallowCallInLambdaOf({ id = "find-many", function = Fn.Orders_find, inLambdaOf = Set#{Fn.List_map, Fn.List_filterMap},
-                files = "src/{api,app}/**",
+                files = "src/{api,{app}}/**",
                 reason = "one read per id over a list of ids is N+1; a list of ids is read with findMany" })
         }),
         Flixlint.callsWithArg(List#{
