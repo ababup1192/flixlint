@@ -14,7 +14,10 @@ pub mod Flixlint.Rel {
     pub type alias Table = { name = String, rows = List[List[String]] }
 
     /// Every table built so far.
-    pub def tables(ast: Ast): List[Table] = List#{
+    pub def tables(ast: Ast): List[Table] =
+        let bodies = bodyTables(ast);
+        let body = name -> { name = name, rows = Map.getWithDefault(name, Nil, bodies) };
+        List#{
         { name = "source_file", rows = Flixlint.Ast.files(ast) |> List.map(f -> f :: Nil) },
         { name = "def", rows = defRows(ast) },
         { name = "enum", rows = declRows(ast, Kind.Enum) },
@@ -31,8 +34,10 @@ pub mod Flixlint.Rel {
         { name = "ret_type_deep", rows = retTypeRows(ast, TypeView.Deep) },
         { name = "case_type", rows = caseTypeRows(ast, TypeView.Head) },
         { name = "case_type_all", rows = caseTypeRows(ast, TypeView.All) },
-        { name = "case_type_deep", rows = caseTypeRows(ast, TypeView.Deep) }
-    }
+        { name = "case_type_deep", rows = caseTypeRows(ast, TypeView.Deep) },
+        body("calls"), body("calls_in_lambda"), body("arg_lit"), body("arg_call"), body("piped_into"), body("str_lit"),
+        body("handles"), body("branch"), body("constructs"), body("bool_lit"), body("tag_arg")
+        }
 
     // ---- declarations ----
 
@@ -178,6 +183,217 @@ pub mod Flixlint.Rel {
         case TypeForm.EffUnion(_) => true
         case _ => false
     }
+
+    // ---- bodies: the old walkBody, walkBools and walkTagArgs, on the generic AST ----
+
+    /// The tables built from the bodies of the defs, by name.
+    def bodyTables(ast: Ast): Map[String, List[List[String]]] = region rc {
+        let out = MutList.empty(rc);
+        Flixlint.Flix.defs(ast) |> List.forEach(d -> {
+            let fn = Flixlint.Flix.nameOf(ast, d);
+            match Flixlint.Ast.child(ast, d, Slot.Exp) {
+                case Some(body) =>
+                    walkBody(rc, ast, fn, body, out);
+                    walkBools(ast, fn, body) |> List.forEach(r -> MutList.push(("bool_lit", r), out));
+                    walkTagArgs(ast, fn, body) |> List.forEach(r -> MutList.push(("tag_arg", r), out))
+                case None => ()
+            }
+        });
+        MutList.toList(out) |> List.foldRight((p, acc) -> { let (t, r) = p; Map.insertWith((a, b) -> a ::: b, t, r :: Nil, acc) }, Map.empty())
+    }
+
+    /// A let-bound expression and the lambda context of its `let` (where its value is computed).
+    type alias Bound = { expr = Node, outers = List[String] }
+
+    /// The calls, handlers, constructions, branches, string literals and the shape of each call of a body, attributed to
+    /// `fn` (lambdas and local defs count as their enclosing def). As the old walker: an argument that is a let-bound
+    /// variable is read as the expression it stands for, and that expression is walked where the variable is first used
+    /// as an argument (inside the call's lambda context), else at its `let`.
+    def walkBody(rc: Region[r], ast: Ast, fn: String, body: Node, out: MutList[(String, List[String]), r]): Unit \ r =
+        let consumed = MutSet.empty(rc);
+        let emit = (t, row) -> MutList.push((t, row), out);
+        let int = Int32.toString;
+        def go(n: Node, outers: List[String], env: Map[String, Bound], inPipe: Bool): Unit \ r = {
+            let walkChildren = () -> Flixlint.Ast.children(ast, n) |> List.forEach(c -> go(c, outers, env, false));
+            if (Flixlint.Flix.isPipe(ast, n)) {
+                if (not inPipe) {
+                    let chain = stages(ast, n, env);
+                    chain |> List.zipWithIndex |> List.forEach(match (i, (from0, _)) ->
+                        List.drop(i + 1, chain) |> List.forEach(match (target, targetLine) -> emit("piped_into", fn :: from0 :: target :: int(targetLine) :: Nil)))
+                } else ();
+                match Flixlint.Flix.args(ast, n) {
+                    case a :: b :: _ =>
+                        go(a, outers, env, true);
+                        go(b, outers, env, false)
+                    case _ => ()
+                }
+            } else if (Flixlint.Flix.isCall(ast, n)) {
+                let callee = Flixlint.Flix.callee(ast, n);
+                let loc = Flixlint.Flix.callLine(ast, n);
+                emit("calls", fn :: callee :: int(loc) :: Nil);
+                List.distinct(outers) |> List.forEach(outer -> emit("calls_in_lambda", fn :: callee :: outer :: int(loc) :: Nil));
+                Flixlint.Flix.args(ast, n) |> List.zipWithIndex |> List.forEach(match (i, e) -> {
+                    let arg = resolveVar(ast, e, env);
+                    strLitOf(ast, arg) |> Option.forEach(s -> emit("arg_lit", fn :: callee :: int(i) :: s :: int(loc) :: Nil));
+                    denoted(ast, arg, env) |> Option.forEach(match (g, _) -> emit("arg_call", fn :: callee :: int(i) :: g :: int(loc) :: Nil));
+                    let inLambda = lambdaOf(ast, arg, env);
+                    match boundVar(ast, e, env) {
+                        case Some((sym, b)) =>
+                            if (not MutSet.memberOf(sym, consumed)) {
+                                MutSet.add(sym, consumed);
+                                go(b#expr, if (inLambda) callee :: b#outers else b#outers, env, false)
+                            } else ()
+                        case None => go(e, if (inLambda) callee :: outers else outers, env, false)
+                    }
+                });
+                Flixlint.Ast.children(ast, n) |> List.filter(c -> Flixlint.Ast.slotOf(ast, c) != Some(Slot.Exps)) |> List.forEach(c -> go(c, outers, env, false))
+            } else if (Flixlint.Ast.is(ast, Kind.Expr_Let, n)) {
+                let sym = Flixlint.Flix.letBinder(ast, n) |> Option.getWithDefault("?");
+                let bound = Flixlint.Ast.child(ast, n, Slot.Exp1);
+                Flixlint.Ast.child(ast, n, Slot.Exp2) |> Option.forEach(b ->
+                    go(b, outers, bound |> Option.map(x -> Map.insert(sym, { expr = x, outers = outers }, env)) |> Option.getWithDefault(env), false));
+                if (not MutSet.memberOf(sym, consumed)) bound |> Option.forEach(x -> go(x, outers, env, false)) else ()
+            } else if (Flixlint.Ast.is(ast, Kind.Expr_Cst, n) or Flixlint.Ast.is(ast, Kind.Pattern_Cst, n)) {
+                strLitOf(ast, n) |> Option.forEach(s -> emit("str_lit", fn :: s :: int(Flixlint.Ast.line(ast, n)) :: Nil))
+            } else if (Flixlint.Ast.is(ast, Kind.Expr_InvokeMethod, n) or Flixlint.Ast.is(ast, Kind.Expr_InvokeStaticMethod, n) or Flixlint.Ast.is(ast, Kind.Expr_InvokeConstructor, n)) {
+                javaCallee(ast, n) |> Option.forEach(name -> emit("calls", fn :: name :: int(Flixlint.Ast.line(ast, n)) :: Nil));
+                walkChildren()
+            } else if (Flixlint.Ast.is(ast, Kind.Expr_Handler, n)) {
+                emit("handles", fn :: (Flixlint.Ast.attr(ast, n, Attr.SymUse) |> Option.getWithDefault("?")) :: int(Flixlint.Ast.line(ast, n)) :: Nil);
+                walkChildren()
+            } else if (Flixlint.Ast.is(ast, Kind.Expr_IfThenElse, n) or Flixlint.Ast.is(ast, Kind.Expr_Match, n) or Flixlint.Ast.is(ast, Kind.Expr_ExtMatch, n)) {
+                branchRows(ast, fn, n) |> List.forEach(r -> emit("branch", r));
+                walkChildren()
+            } else if (Flixlint.Ast.is(ast, Kind.Expr_Tag, n)) {
+                emit("constructs", fn :: Flixlint.Flix.tagCase(ast, n) :: int(Flixlint.Ast.line(ast, n)) :: Nil);
+                walkChildren()
+            } else walkChildren()
+        };
+        go(body, Nil, Map.empty(), false)
+
+    /// The variable an argument is and what it is bound to, when an enclosing `let` binds it.
+    def boundVar(ast: Ast, e: Node, env: Map[String, Bound]): Option[(String, Bound)] =
+        if (not Flixlint.Ast.is(ast, Kind.Expr_Var, e)) None
+        else Flixlint.Ast.attr(ast, e, Attr.Sym) |> Option.flatMap(s -> Map.get(s, env) |> Option.map(b -> (s, b)))
+
+    /// The expression a variable stands for, when it is let-bound in `env`.
+    def resolveVar(ast: Ast, e: Node, env: Map[String, Bound]): Node = match boundVar(ast, e, env) {
+        case Some((_, b)) => resolveVar(ast, b#expr, env)
+        case None => e
+    }
+
+    def isRetype(ast: Ast, n: Node): Bool =
+        Flixlint.Ast.is(ast, Kind.Expr_Ascribe, n) or Flixlint.Ast.is(ast, Kind.Expr_CheckedCast, n) or Flixlint.Ast.is(ast, Kind.Expr_UncheckedCast, n)
+
+    def withLet(ast: Ast, l: Node, env: Map[String, Bound]): Map[String, Bound] =
+        match (Flixlint.Flix.letBinder(ast, l), Flixlint.Ast.child(ast, l, Slot.Exp1)) {
+            case (Some(sym), Some(x)) => Map.insert(sym, { expr = x, outers = Nil }, env)
+            case _ => env
+        }
+
+    /// Whether an expression is a lambda, seen through the lets and ascriptions around it.
+    def lambdaOf(ast: Ast, e: Node, env: Map[String, Bound]): Bool =
+        let r = resolveVar(ast, e, env);
+        if (Flixlint.Ast.is(ast, Kind.Expr_Lambda, r)) true
+        else if (Flixlint.Ast.is(ast, Kind.Expr_Let, r)) Flixlint.Ast.child(ast, r, Slot.Exp2) |> Option.exists(b -> lambdaOf(ast, b, withLet(ast, r, env)))
+        else if (isRetype(ast, r)) Flixlint.Ast.child(ast, r, Slot.Exp) |> Option.exists(b -> lambdaOf(ast, b, env))
+        else false
+
+    /// The function an expression stands for when it is a call (the call itself, or the lambda or let around one), with
+    /// the call's line.
+    def denoted(ast: Ast, e: Node, env: Map[String, Bound]): Option[(String, Int32)] =
+        let r = resolveVar(ast, e, env);
+        if (Flixlint.Flix.isCall(ast, r) and not Flixlint.Flix.isPipe(ast, r)) Some((Flixlint.Flix.callee(ast, r), Flixlint.Ast.line(ast, r)))
+        else if (Flixlint.Ast.is(ast, Kind.Expr_Let, r)) Flixlint.Ast.child(ast, r, Slot.Exp2) |> Option.flatMap(b -> denoted(ast, b, withLet(ast, r, env)))
+        else if (Flixlint.Ast.is(ast, Kind.Expr_Lambda, r) or isRetype(ast, r)) Flixlint.Ast.child(ast, r, Slot.Exp) |> Option.flatMap(b -> denoted(ast, b, env))
+        else None
+
+    /// The stages of a `|>` chain in order: the call that makes the leftmost value, then each function piped into.
+    def stages(ast: Ast, e: Node, env: Map[String, Bound]): List[(String, Int32)] =
+        let r = resolveVar(ast, e, env);
+        if (Flixlint.Flix.isPipe(ast, r)) match Flixlint.Flix.args(ast, r) {
+            case a :: b :: _ => stages(ast, a, env) ::: (denoted(ast, b, env) |> Option.toList)
+            case _ => Nil
+        } else denoted(ast, r, env) |> Option.toList
+
+    def strLitOf(ast: Ast, n: Node): Option[String] =
+        if (Flixlint.Ast.attr(ast, n, Attr.Cst) == Some("Str")) Flixlint.Ast.attr(ast, n, Attr.Cst_lit) else None
+
+    /// The callee of a Java call as the old facts spell it (`java.lang.String.length`, `<init>` for a constructor). The
+    /// resolved stage knows the class of a static call and of a constructor only.
+    def javaCallee(ast: Ast, n: Node): Option[String] =
+        let typed = (Flixlint.Ast.child(ast, n, Slot.Method) |> Option.withDefault(default = Flixlint.Ast.child(ast, n, Slot.Constructor)))
+            |> Option.flatMap(m -> Flixlint.Ast.child(ast, m, Slot.Ref))
+            |> Option.flatMap(r -> match (Flixlint.Ast.attr(ast, r, Attr.Owner), Flixlint.Ast.attr(ast, r, Attr.Name)) {
+                case (Some(o), Some(m)) => Some("${o}.${m}")
+                case _ => None
+            });
+        typed |> Option.withDefault(default = Flixlint.Ast.attr(ast, n, Attr.Clazz) |> Option.map(c ->
+            "${c}.${Flixlint.Ast.attr(ast, n, Attr.MethodName) |> Option.getWithDefault("<init>")}"))
+
+    /// The branch rows of an `if`, a `match` or an `extmatch` and of the guards of a `match`'s rules (a `let (a, b) = e`
+    /// and a `forM` generator are not branches: the compiler makes each a match of one rule).
+    def branchRows(ast: Ast, fn: String, m: Node): List[List[String]] =
+        let isMatch = Flixlint.Ast.is(ast, Kind.Expr_Match, m);
+        let rules = if (isMatch) Flixlint.Ast.childrenIn(ast, m, Slot.Rules) else Nil;
+        let pm = Flixlint.Ast.pos(ast, m);
+        let destructuring = match rules {
+            case r :: Nil =>
+                let pr = Flixlint.Ast.pos(ast, r);
+                not pm#synthetic and pr#line == pm#line and pr#col == pm#col and pr#endLine == pm#endLine and pr#endCol == pm#endCol
+                    and Option.isEmpty(Flixlint.Ast.child(ast, r, Slot.Guard))
+            case _ => false
+        };
+        let generator = match rules {
+            case r :: Nil => pm#synthetic and (Flixlint.Ast.child(ast, r, Slot.Pat)
+                |> Option.exists(p -> Flixlint.Ast.is(ast, Kind.Pattern_Var, p) or Flixlint.Ast.is(ast, Kind.Pattern_Wild, p)))
+            case _ => false
+        };
+        let kind = if (Flixlint.Ast.is(ast, Kind.Expr_IfThenElse, m)) "if" else if (isMatch) "match" else "extmatch";
+        let own = if (destructuring or generator) Nil else (fn :: kind :: Int32.toString(Flixlint.Ast.line(ast, m)) :: Nil) :: Nil;
+        own ::: (rules |> List.filterMap(r -> Flixlint.Ast.child(ast, r, Slot.Guard))
+            |> List.map(g -> fn :: "guard" :: Int32.toString(Flixlint.Ast.line(ast, g)) :: Nil))
+
+    /// Every `true` / `false` literal of a body with where it is written: the nearest parents, closest first, up to three
+    /// (`field:expected < arg:Assert.assertEq:0`), and the line its nearest parent starts on. `not` and ascriptions are
+    /// seen through; a literal in a pattern is not one.
+    def walkBools(ast: Ast, fn: String, body: Node): List[List[String]] =
+        let transparent = n -> Flixlint.Ast.is(ast, Kind.Expr_Unary, n) or isRetype(ast, n);
+        def go(n: Node, ctx: List[(String, Int32)]): List[List[String]] =
+            if (Flixlint.Ast.is(ast, Kind.Expr_Cst, n) and Flixlint.Ast.attr(ast, n, Attr.Cst) == Some("Bool")) {
+                let line = Flixlint.Ast.line(ast, n);
+                (fn :: (Flixlint.Ast.attr(ast, n, Attr.Cst_lit) |> Option.getWithDefault("?")) :: (ctx |> List.take(3) |> List.map(fst) |> String.intercalate(" < "))
+                    :: Int32.toString(line) :: Int32.toString(ctx |> List.head |> Option.map(snd) |> Option.getWithDefault(line)) :: Nil) :: Nil
+            } else
+                Flixlint.Ast.children(ast, n) |> List.flatMap(c ->
+                    go(c, if (transparent(n)) ctx else (parentOf(ast, n, c), Flixlint.Ast.line(ast, n)) :: ctx));
+        go(body, Nil)
+
+    /// How the old facts name a parent of a node: `arg:<callee>:<index>`, `field:<label>`, `tag:<case>`, `tuple`,
+    /// `vector`, `array`, `let`, `op:<operator>`, else the node's name.
+    def parentOf(ast: Ast, p: Node, below: Node): String =
+        let kindName = Flixlint.AstKinds.kindName(Flixlint.Ast.kind(ast, p));
+        let short = lastName(kindName);
+        let slot = Flixlint.Ast.slotOf(ast, below);
+        if (Flixlint.Flix.isCall(ast, p) and slot == Some(Slot.Exps)) "arg:${Flixlint.Flix.callee(ast, p)}:${Flixlint.Ast.indexOf(ast, below)}"
+        else if (Flixlint.Ast.is(ast, Kind.Expr_RecordExtend, p) and slot == Some(Slot.Exp1)) "field:${Flixlint.Ast.attr(ast, p, Attr.Label) |> Option.getWithDefault("?")}"
+        else if (Flixlint.Ast.is(ast, Kind.Expr_Tag, p)) "tag:${Flixlint.Flix.tagCase(ast, p)}"
+        else if (short == "Tuple") "tuple"
+        else if (short == "VectorLit") "vector"
+        else if (short == "ArrayLit") "array"
+        else if (Flixlint.Ast.is(ast, Kind.Expr_Let, p) and slot == Some(Slot.Exp1)) "let"
+        else if (Flixlint.Ast.is(ast, Kind.Expr_Binary, p)) "op:${Flixlint.Ast.attr(ast, p, Attr.Sop) |> Option.getWithDefault("?")}"
+        else short
+
+    /// Every argument of a case built in a body: its shape and the head of its type (typed stage; `?` at the resolved one).
+    def walkTagArgs(ast: Ast, fn: String, body: Node): List[List[String]] =
+        (body :: Flixlint.Ast.descendants(ast, body)) |> List.filter(Flixlint.Ast.is(ast, Kind.Expr_Tag)) |> List.flatMap(t -> {
+            let kase = Flixlint.Flix.tagCase(ast, t);
+            let line = Int32.toString(Flixlint.Ast.line(ast, t));
+            Flixlint.Flix.args(ast, t) |> List.zipWithIndex |> List.map(match (i, e) ->
+                fn :: kase :: Int32.toString(i) :: Flixlint.Flix.shapeOf(ast, e)
+                    :: (Flixlint.Ast.typeOf(ast, e) |> Option.map(headName(ast)) |> Option.getWithDefault("?")) :: line :: Nil)
+        })
 
     // ---- writing ----
 

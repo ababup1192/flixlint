@@ -213,7 +213,7 @@ pub mod Flixlint.Ast {
     /// A line of `strings.txt`: `\\`, `\n` and `\r` back to what they stand for.
     def unescape(s: String): String =
         if (not String.contains(substr = "\\", s)) s
-        else unescapeFrom(String.toList(s), Nil) |> List.reverse |> List.toString
+        else String.unfold(cs -> match cs { case c :: rest => Some((c, rest)) case Nil => None }, unescapeFrom(String.toList(s), Nil) |> List.reverse)
 
     def unescapeFrom(cs: List[Char], acc: List[Char]): List[Char] = match cs {
         case '\\' :: 'n' :: rest => unescapeFrom(rest, '\n' :: acc)

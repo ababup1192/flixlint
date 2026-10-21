@@ -25,11 +25,13 @@ set -e
 [ "$code" -le 1 ] || { echo "compare-old: the run ended with exit $code" >&2; cat "$build/run.err" >&2; exit 2; }
 
 failed=0
-for old in "$build/run/facts"/*.tsv; do
-    t="$(basename "$old" .tsv)"
+# WhyNot: not only the old tables there are files of. The shim writes no file for a table without rows, so a table the
+# old facts have none of and Rel has rows in would not be compared; a missing file is an empty table on either side.
+for t in $( { ls "$build/run/facts" "$build/rel" 2>/dev/null | grep '\.tsv$' | sed 's/\.tsv$//'; } | sort -u); do
     case "$t" in names) continue ;; esac
-    new="$build/rel/$t.tsv"
+    old="$build/run/facts/$t.tsv"; new="$build/rel/$t.tsv"
     if [ ! -f "$new" ]; then echo "$t: not built"; continue; fi
+    [ -f "$old" ] || old=/dev/null
     only_old="$(comm -23 <(sort -u "$old") <(sort -u "$new") | tee "$build/diff/$t.txt" | wc -l | tr -d ' ')"
     only_new="$(comm -13 <(sort -u "$old") <(sort -u "$new") | sed 's/^/+ /' | tee -a "$build/diff/$t.txt" | wc -l | tr -d ' ')"
     if [ "$only_old" = 0 ] && [ "$only_new" = 0 ]; then echo "$t: same ($(sort -u "$new" | wc -l | tr -d ' ') rows)"
