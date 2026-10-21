@@ -15,7 +15,7 @@ import scala.jdk.CollectionConverters._
   * `Flixlint/Names.flix`: one Flix enum per kind of name (Fn / Eff / Mod / Case / Enum / Type) with every name the facts mention,
   * so that rules refer to functions, effects and types as enum cases and a stale name fails to compile.
   *
-  * Usage: Facts --out DIR [--names-out FILE] [--stage typed|resolved] [--spans FILE (see Spans)] [--pkg FPKG]... [--jar JAR]...
+  * Usage: Facts --out DIR [--names-out FILE] [--names-of RULES] [--stage typed|resolved] [--spans FILE (see Spans)] [--pkg FPKG]... [--jar JAR]...
   *               [--project-root DIR] SRC...
   *
   * WhyNot: the walker dispatches on `productPrefix` and reads fields by name instead of pattern matching on the
@@ -24,7 +24,8 @@ import scala.jdk.CollectionConverters._
   */
 object Facts {
 
-  final case class Args(out: Path, namesOut: Option[Path], stage: String, pkgs: List[Path], jars: List[Path], srcs: List[Path], projectRoot: Option[Path])
+  final case class Args(out: Path, namesOut: Option[Path], stage: String, pkgs: List[Path], jars: List[Path], srcs: List[Path], projectRoot: Option[Path],
+                        namesOf: Option[Path] = None)
 
   /** Thrown for anything the caller can fix: a bad option, a missing file, an unreadable flix.toml. Exit code 4. */
   final class UsageError(msg: String) extends RuntimeException(msg)
@@ -37,6 +38,7 @@ object Facts {
     var jars = List.empty[Path]
     var srcs = List.empty[Path]
     var projectRoot: Option[Path] = None
+    var namesOf: Option[Path] = None
     var i = 0
     def value(opt: String): String =
       if (i + 1 < argv.length) argv(i + 1) else throw new UsageError(s"$opt needs a value")
@@ -48,6 +50,7 @@ object Facts {
         case "--pkg" => pkgs = pkgs :+ Paths.get(value("--pkg")); i += 2
         case "--jar" => jars = jars :+ Paths.get(value("--jar")); i += 2
         case "--project-root" => projectRoot = Some(Paths.get(value("--project-root"))); i += 2
+        case "--names-of" => namesOf = Some(Paths.get(value("--names-of"))); i += 2
         case opt if opt.startsWith("--") => throw new UsageError(s"unknown option $opt")
         case s => srcs = srcs :+ Paths.get(s); i += 1
       }
@@ -55,7 +58,7 @@ object Facts {
     if (out == null) throw new UsageError("--out DIR is required")
     if (srcs.isEmpty) throw new UsageError("at least one source directory or file is required")
     if (stage != "typed" && stage != "resolved") throw new UsageError(s"unknown --stage $stage (typed or resolved)")
-    Args(out, namesOut, stage, pkgs, jars, srcs, projectRoot)
+    Args(out, namesOut, stage, pkgs, jars, srcs, projectRoot, namesOf)
   }
 
   // Exit codes: 0 facts written, 3 the sources do not compile, 4 the caller or the environment is wrong.
@@ -138,7 +141,7 @@ object Facts {
       case other => throw new UsageError(s"unknown --stage $other (typed or resolved)")
     }
     sink.close()
-    Names.write(args.namesOut.getOrElse(args.out.resolve("Names.flix")), sink)
+    Names.write(args.namesOut.getOrElse(args.out.resolve("Names.flix")), args.out, sink, args.namesOf.map(p => Names.usedIn(Files.readString(p))))
     val t3 = System.nanoTime()
     System.err.println(f"flixlint facts: stage=${args.stage} files=${files.length} compile=${phaseNs / 1e9}%.1fs walk=${(t3 - t1 - phaseNs) / 1e9}%.2fs total=${(t3 - t0) / 1e9}%.1fs")
     if (nErrors > 0) 3 else 0
@@ -651,7 +654,8 @@ object Sink {
   }
 }
 
-/** `Names.flix`: the names of the facts as Flix enums (`Fn` / `Eff` / `Mod` / `Case` / `Enum` / `Type`).
+/** `Names.flix`: the names of the facts as Flix enums (`Fn` / `Eff` / `Mod` / `Case` / `Enum` / `Type`), and
+  * `names.tsv` next to the facts: every name with the spelling of its case.
   *
   * A case is the qualified name with every character that is not an ASCII letter or digit replaced by `_` and the
   * first letter upper-cased (`Auth.permit` -> `Auth_permit`, `java.lang.System.currentTimeMillis` ->
@@ -659,12 +663,21 @@ object Sink {
   * letter (`++`, `|>`, `bug!`) are left out: no rule needs them and they cannot be enum cases. The root module (the empty
   * name) is `Mod.Root`.
   *
-  * WhyNot: the enums derive `Eq, Order` but not `ToString`. Deriving `ToString` on an enum of a few thousand cases
-  * takes the compiler minutes (measured: 80 s at 3,000 cases, 6 s without); the qualified name comes from the table.
+  * Only the names the rules write (`Fn.Auth_permit` in the rule file, `--names-of`) are cases of their own; every
+  * other name is `Unnamed("its qualified name")`. A value is ordered by its qualified name, the order the cases had
+  * when every name was one, so the report does not change with what the rules name.
+  * WhyNot: not one case per name. The engine is compiled again whenever `Names.flix` changes, and a case per name
+  * changed it with every function added or renamed in the sources (10,000 cases, a rebuild of seconds on a run that
+  * otherwise takes one or two). A name the rules write that the sources no longer have is still left out, so the rule
+  * fails to compile as before.
+  * WhyNot: the enums derive `Eq` but not `ToString`. Deriving `ToString` on an enum of a few thousand cases took the
+  * compiler minutes; the qualified name comes from `fnName` and its kin.
   */
 object Names {
-  /** Upper-case words the parser does not accept as a case name (`case Static`). */
-  val reserved: Set[String] = Set("Static", "Pure", "Univ", "Impure")
+  /** Upper-case words the parser does not accept as a case name (`case Static`), and the case of the other names. */
+  val reserved: Set[String] = Set("Static", "Pure", "Univ", "Impure", "Unnamed")
+
+  val kinds: List[String] = List("Fn", "Eff", "Mod", "Case", "Enum", "Type")
 
   def caseOf(name: String): String = {
     if (name.isEmpty) "Root"
@@ -686,45 +699,57 @@ object Names {
     }
   }
 
+  /** The cases a rule file writes, by kind (`Fn.Auth_permit` gives `Fn` -> `Auth_permit`). A word that only looks like
+    * one (in a comment, `Type.X` of another module) only adds a case, when the sources have that name.
+    */
+  def usedIn(rules: String): Map[String, Set[String]] =
+    """\b(Fn|Eff|Mod|Case|Enum|Type)\.([A-Z][A-Za-z0-9_]*)""".r.findAllMatchIn(rules).toList
+      .groupBy(_.group(1)).map { case (k, ms) => k -> ms.map(_.group(2)).toSet }
+
   private def quoted(s: String): String = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$") + "\""
 
-  /** The table is split into chunks: one list literal of ten thousand tuples is a JVM method too large to compile. */
-  val chunkSize = 400
-
-  def enumSource(kind: String, names: Iterable[String]): String = {
-    val cs = cases(names)
-    val body = if (cs.isEmpty) "        case NoNames\n" else cs.map { case (_, c) => s"        case $c\n" }.mkString
-    val fnName = kind.head.toLower + kind.tail + "Table"
-    val chunks = cs.grouped(chunkSize).toList
-    val parts = chunks.indices.map(i => s"$fnName$i()").mkString(" ::: ")
-    val chunkDefs = chunks.zipWithIndex.map { case (chunk, i) =>
-      val table = chunk.map { case (n, c) => s"        (${quoted(n)}, ${quoted(c)}, $kind.$c)" }.mkString(",\n")
-      s"""    def $fnName$i(): List[(String, String, $kind)] = List#{
-$table
+  /** The enum of one kind with the named cases (all of them when `used` is `None`), its order, and the functions
+    * between a value and its qualified name.
+    */
+  def enumSource(kind: String, all: List[(String, String)], used: Option[Set[String]]): String = {
+    val named = all.filter { case (_, c) => used.forall(_(c)) }
+    val k = kind.head.toLower + kind.tail
+    val body = named.map { case (_, c) => s"        case $c\n" }.mkString
+    val toName = named.map { case (n, c) => s"            case $kind.$c => ${quoted(n)}\n" }.mkString
+    val ofName = named.map { case (n, c) => s"            case ${quoted(n)} => $kind.$c\n" }.mkString
+    s"""    pub enum $kind with Eq {
+$body        case Unnamed(String)
     }
+
+    instance Order[$kind] {
+        pub def compare(x: $kind, y: $kind): Comparison = Order.compare(${k}Name(x), ${k}Name(y))
+    }
+
+    /// The qualified name as the compiler prints it.
+    pub def ${k}Name(x: $kind): String = match x {
+$toName            case $kind.Unnamed(n) => n
+        }
+
+    /// The value of a qualified name.
+    pub def ${k}Of(n: String): $kind = match n {
+$ofName            case _ => $kind.Unnamed(n)
+        }
 """
-    }.mkString("\n")
-    s"""    pub enum $kind with Eq, Order {
-$body    }
-
-    /// Every $kind: (qualified name as the compiler prints it, the spelling of the case, the case).
-    pub def $fnName(): List[(String, String, $kind)] = ${if (chunks.isEmpty) "Nil" else parts}
-
-$chunkDefs"""
   }
 
-  def write(path: Path, sink: Sink): Unit = {
-    val src = "/// Generated by flixlint from the facts of the linted sources. Do not edit.\n" +
+  /** Writes `Names.flix` to `path` and `names.tsv` (kind, name, case) to `factsDir`. */
+  def write(path: Path, factsDir: Path, sink: Sink, used: Option[Map[String, Set[String]]]): Unit = {
+    val byKind = List(sink.fnNames, sink.effNames, sink.modNames, sink.caseNames, sink.enumNames, sink.typeNames)
+      .map(cases).zip(kinds)
+    val src = "/// Generated by flixlint from the facts of the linted sources and the names the rules write. Do not edit.\n" +
       "pub mod Flixlint.Names {\n" +
-      enumSource("Fn", sink.fnNames) + "\n" +
-      enumSource("Eff", sink.effNames) + "\n" +
-      enumSource("Mod", sink.modNames) + "\n" +
-      enumSource("Case", sink.caseNames) + "\n" +
-      enumSource("Enum", sink.enumNames) + "\n" +
-      enumSource("Type", sink.typeNames) +
+      byKind.map { case (all, kind) => enumSource(kind, all, used.map(_.getOrElse(kind, Set.empty))) }.mkString("\n") +
       "}\n"
     Option(path.getParent).foreach(Files.createDirectories(_))
     Files.writeString(path, src)
+    val tsv = new PrintWriter(Files.newBufferedWriter(factsDir.resolve("names.tsv")))
+    try byKind.foreach { case (all, kind) => all.foreach { case (n, c) => tsv.println(s"$kind\t$n\t$c") } }
+    finally tsv.close()
   }
 }
 

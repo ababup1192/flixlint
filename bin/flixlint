@@ -27,7 +27,8 @@
 # when one is up, and runs on its own when none is. --resident-stop stops it.
 #
 # WhyNot: the rule engine is not run through `flix run` on loose files every time. Compiling it costs seconds, so the
-# jar is keyed by the hash of its sources and rebuilt only when the rules or the names change.
+# jar is keyed by the hash of its sources and rebuilt only when the rules change, or a name they write comes or goes
+# (Names.flix has a case only for the names the rule file writes; the rest are read from the facts, names.tsv).
 set -eu
 
 # WhyNot: `dirname "$0"` だけで済ませない。flixlint は submodule や release の展開先から PATH の symlink で
@@ -170,7 +171,9 @@ engine="$build_dir/engine"
 rm -rf "$engine/src"; mkdir -p "$engine/src/Flixlint"
 spans_opt=()
 [ -n "$spans" ] && spans_opt=(--spans "$spans")
-facts_args=(--out "$facts_out" --names-out "$engine/src/Flixlint/Names.flix" --stage "$stage" "${spans_opt[@]}" "${root_opt[@]}" "${pkgs[@]}" "${jars[@]}" "${srcs[@]}")
+names_of=()
+[ -n "$rules" ] && names_of=(--names-of "$rules")
+facts_args=(--out "$facts_out" --names-out "$engine/src/Flixlint/Names.flix" "${names_of[@]}" --stage "$stage" "${spans_opt[@]}" "${root_opt[@]}" "${pkgs[@]}" "${jars[@]}" "${srcs[@]}")
 
 # Says why the facts could not be written, and leaves with the shim's exit code.
 facts_failed() {

@@ -112,13 +112,7 @@ pub mod Flixlint.Facts {
         strLitsOf = Map[Fn, List[String]],
         effAliases = Map[Eff, Set[Eff]],
         files = Set[String],
-        fnNames = Map[Fn, String],
-        fnCases = Map[Fn, String],
-        effNames = Map[Eff, String],
-        modNames = Map[Mod, String],
-        caseNames = Map[Case, String],
-        enumNames = Map[Enum, String],
-        typeNames = Map[Type, String]
+        fnCases = Map[String, String]
     }
 
     pub def defs(facts: Facts): List[Def] = data(facts)#defs
@@ -195,16 +189,16 @@ pub mod Flixlint.Facts {
         Set.foldLeft((acc, e) -> Set.union(acc, expandEffect(facts, e)), Set.empty(), effects)
 
     /// The qualified name of a function as the compiler prints it (`Auth.permit`).
-    pub def fnName(facts: Facts, fn: Fn): String = Map.getWithDefault(fn, "?", data(facts)#fnNames)
+    pub def fnName(_facts: Facts, fn: Fn): String = Flixlint.Names.fnName(fn)
 
     /// The spelling of the enum case of a function (`Auth_permit`), for the hint that names `Fn.Auth_permit`.
-    pub def fnCase(facts: Facts, fn: Fn): String = Map.getWithDefault(fn, "?", data(facts)#fnCases)
+    pub def fnCase(facts: Facts, fn: Fn): String = Map.getWithDefault(Flixlint.Names.fnName(fn), "?", data(facts)#fnCases)
 
-    pub def effName(facts: Facts, effect: Eff): String = Map.getWithDefault(effect, "?", data(facts)#effNames)
-    pub def modName(facts: Facts, module: Mod): String = Map.getWithDefault(module, "?", data(facts)#modNames)
-    pub def caseName(facts: Facts, constructor: Case): String = Map.getWithDefault(constructor, "?", data(facts)#caseNames)
-    pub def enumName(facts: Facts, ofEnum: Enum): String = Map.getWithDefault(ofEnum, "?", data(facts)#enumNames)
-    pub def typeName(facts: Facts, tycon: Type): String = Map.getWithDefault(tycon, "?", data(facts)#typeNames)
+    pub def effName(_facts: Facts, effect: Eff): String = Flixlint.Names.effName(effect)
+    pub def modName(_facts: Facts, module: Mod): String = Flixlint.Names.modName(module)
+    pub def caseName(_facts: Facts, constructor: Case): String = Flixlint.Names.caseName(constructor)
+    pub def enumName(_facts: Facts, ofEnum: Enum): String = Flixlint.Names.enumName(ofEnum)
+    pub def typeName(_facts: Facts, tycon: Type): String = Flixlint.Names.typeName(tycon)
 
     /// The module part of a qualified name (`Generated.Types.Foo` -> `Generated.Types`; a bare name has none).
     pub def moduleOf(qualified: String): String =
@@ -223,15 +217,15 @@ pub mod Flixlint.Facts {
 
     // ---- loading ----
 
-    /// Loads the TSV of `dir`. A row whose name is not in the generated enums (operators such as `++`) is skipped.
+    /// Loads the TSV of `dir`. A row whose name is not among the names (`names.tsv`; operators such as `++` are not) is skipped.
     pub def load(dir: String): Facts \ FileRead =
-        let fnTable = Flixlint.Names.fnTable();
-        let fnOf = table(fnTable);
-        let effOf = table(Flixlint.Names.effTable());
-        let modOf = table(Flixlint.Names.modTable());
-        let caseOf = table(Flixlint.Names.caseTable());
-        let enumOf = table(Flixlint.Names.enumTable());
-        let typeOf = table(Flixlint.Names.typeTable());
+        let names = rows(dir, "names");
+        let fnOf = known(names, "Fn", Flixlint.Names.fnOf);
+        let effOf = known(names, "Eff", Flixlint.Names.effOf);
+        let modOf = known(names, "Mod", Flixlint.Names.modOf);
+        let caseOf = known(names, "Case", Flixlint.Names.caseOf);
+        let enumOf = known(names, "Enum", Flixlint.Names.enumOf);
+        let typeOf = known(names, "Type", Flixlint.Names.typeOf);
         let defs = rows(dir, "def") |> List.filterMap(c -> forM (
                 fn <- fnOf(col(0, c));
                 module <- modOf(col(2, c))
@@ -309,22 +303,14 @@ pub mod Flixlint.Facts {
                 |> (acc -> List.foldLeft((s, d) -> Set.insert(d#file, s), acc, defs))
                 |> (acc -> List.foldLeft((s, e) -> Set.insert(e#file, s), acc, enums))
                 |> (acc -> List.foldLeft((s, e) -> Set.insert(e#file, s), acc, effects)),
-            fnNames = fnTable |> List.map(match (n, _, k) -> (k, n)) |> List.toMap,
-            fnCases = fnTable |> List.map(match (_, c, k) -> (k, c)) |> List.toMap,
-            effNames = inverse(Flixlint.Names.effTable()),
-            modNames = inverse(Flixlint.Names.modTable()),
-            caseNames = inverse(Flixlint.Names.caseTable()),
-            enumNames = inverse(Flixlint.Names.enumTable()),
-            typeNames = inverse(Flixlint.Names.typeTable())
+            fnCases = names |> List.filter(c -> col(0, c) == "Fn") |> List.map(c -> (col(1, c), col(2, c))) |> List.toMap
         })
 
-    /// A lookup from the qualified name to the enum case. The root module is the empty name.
-    def table(t: List[(String, String, a)]): String -> Option[a] with Order[a] =
-        let m = t |> List.map(match (n, _, k) -> (n, k)) |> List.toMap;
+    /// A lookup from the qualified name to its value, for the names of one kind in `names.tsv` (kind, name, case).
+    /// The root module is the empty name.
+    def known(names: List[Vector[String]], kind: String, valueOf: String -> a): String -> Option[a] =
+        let m = names |> List.filter(c -> col(0, c) == kind) |> List.map(c -> (col(1, c), valueOf(col(1, c)))) |> List.toMap;
         (n -> Map.get(n, m))
-
-    def inverse(t: List[(String, String, a)]): Map[a, String] with Order[a] =
-        t |> List.map(match (n, _, k) -> (k, n)) |> List.toMap
 
     /// The type relations read by `loadTypes`.
     type alias TypeRows = {

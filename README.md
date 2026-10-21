@@ -196,9 +196,11 @@ the generated `Flixlint.Names` module (`use Flixlint.Names.{Fn, Eff, Mod, Case, 
 `Fn.Auth_permit`, `Eff.Net_Http`, `Mod.Clock`, `Case.Column_Column`,
 `Enum.Predicate`, `Type.ColumnName` (the qualified name with every character that is not a letter or a digit replaced by
 `_` and the first letter upper-cased; `java.lang.System.currentTimeMillis` is `Fn.Java_lang_System_currentTimeMillis`,
-the root module is `Mod.Root`). To find a name, run flixlint once and grep the file it generates:
-`grep Auth_ build/flixlint/engine/src/Flixlint/Names.flix`. That file sits under `--build-dir`, outside your source
-path, so the editor does not complete it.
+the root module is `Mod.Root`). To find a name, run flixlint once and grep the list it writes (name, then case):
+`grep Auth_ build/flixlint/facts/names.tsv`. `Names.flix` has a case only for the names your rule file writes (every
+other name is `Unnamed("its.qualified.Name")`), so adding or renaming a function in the sources does not rebuild the
+engine; a name the rules write that the sources no longer have still fails to compile. Write the names as
+`Fn.X` (or `Flixlint.Names.Fn.X`): that is what flixlint looks for in the rule file.
 
 [`examples/rules.flix`](examples/rules.flix) is a complete rule file — `disallowFunction` with `transitivelyIn`
 and `allowIn`, `disallowEffectsTogether` with `allowUntil`, `disallowHandler` with `allowInFile`, and a custom rule —
@@ -419,7 +421,7 @@ the sources.
 ## Notes and limits
 
 - Names are matched exactly as the compiler qualifies them. When a rule does not hit what you expect, look at the
-  facts TSV (`grep Http build/flixlint/facts/effect_of.tsv`) or at `build/flixlint/engine/src/Flixlint/Names.flix`.
+  facts TSV (`grep Http build/flixlint/facts/effect_of.tsv`) or at `build/flixlint/facts/names.tsv`.
 - `Fn` has the functions the sources could call; it does not have Java methods the sources never call, so a Java
   method can be disallowed only once something calls it.
 - `PipedInto` follows one `|>` chain. A parse inside a lambda of a stage (`Option.flatMap(t -> parse(t) |> Result.toOption) |> Option.getWithDefault(d)`)
@@ -634,9 +636,11 @@ entry は `id`・禁じる物・`reason` を持つ record で、後ろに繋ぐ�
 `Fn.Auth_permit`、`Eff.Net_Http`、`Mod.Clock`、`Case.Column_Column`、`Enum.Predicate`、`Type.ColumnName`
 （qualified な名前の、英数字でない文字を全部 `_` にし、先頭を大文字にした物。
 `java.lang.System.currentTimeMillis` は `Fn.Java_lang_System_currentTimeMillis`、root のモジュールは
-`Mod.Root`）。名前を探すには 1 回走らせて、生成されたファイルを grep する:
-`grep Auth_ build/flixlint/engine/src/Flixlint/Names.flix`。このファイルは `--build-dir` の下、ソースの外に
-在るので、エディタの補完には出ない。
+`Mod.Root`）。名前を探すには 1 回走らせて、書き出された一覧（名前・case の順）を grep する:
+`grep Auth_ build/flixlint/facts/names.tsv`。`Names.flix` には rule のファイルが書いた名前の case だけが在り（他の名前は
+`Unnamed("qualified な名前")`）、ソースに関数を足したり名前を変えたりしてもエンジンは組み直さない。rule が書いた名前が
+ソースから消えれば、今まで通りコンパイルが通らない。名前は `Fn.X`（か `Flixlint.Names.Fn.X`）と書く。flixlint は
+rule のファイルからその形を探す。
 
 [`examples/rules.flix`](examples/rules.flix) は 1 つの完成した rule のファイルで、`transitivelyIn` と
 `allowIn` を付けた `disallowFunction`、`allowUntil` を付けた `disallowEffectsTogether`、`allowInFile` を付けた
@@ -852,7 +856,7 @@ test/expected*.txt           その 2 つが出さなければならない報告
 ## 注意と制限
 
 - 名前はコンパイラが qualify したそのままで突き合わせる。rule が思った所に当たらない時は、facts の TSV
-  （`grep Http build/flixlint/facts/effect_of.tsv`）か `build/flixlint/engine/src/Flixlint/Names.flix` を見る
+  （`grep Http build/flixlint/facts/effect_of.tsv`）か `build/flixlint/facts/names.tsv` を見る
 - `Fn` はソースが呼び得る関数を持つが、ソースが呼んでいない Java のメソッドは持たない。Java のメソッドを
   禁じられるのは、何かがそれを呼んでからになる
 - `PipedInto` は 1 つの `|>` の連なりだけを辿る。段の中のラムダの parse
