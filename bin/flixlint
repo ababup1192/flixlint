@@ -149,7 +149,7 @@ jar_id="$flix_jar $(wc -c < "$flix_jar") $jar_mtime"
 hash="$(export LC_ALL=C; { echo "$jar_id"; cat "$engine"/src/*.flix "$engine"/src/Flixlint/*.flix; } | shasum | cut -c1-16)"
 engine_jar="$engine/artifact/engine.jar"
 if [ ! -f "$engine_jar" ] || [ "$(cat "$engine/built-hash" 2>/dev/null)" != "$hash" ]; then
-    printf '[package]\nname = "flixlint-rules"\ndescription = "generated"\nversion = "0.0.0"\nflix = "0.0.0"\nauthors = []\n' > "$engine/flix.toml"
+    printf '[package]\nversion = "0.0.0"\nflix = "0.0.0"\n' > "$engine/flix.toml"
     rm -f "$engine/built-hash"
     # shellcheck disable=SC2086
     if ! (cd "$engine" && java $java_opts -jar "$flix_jar" build-jar --no-install >build.log 2>&1); then

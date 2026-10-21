@@ -1,10 +1,9 @@
 [package]
-name        = "flixlint"
-description = "Architecture rules for Flix, checked against facts taken from the compiler's AST instead of grep"
-version     = "0.4.0"
-flix        = "0.76.0"
-license     = "Apache-2.0"
-authors     = ["abab <ababup1192@gmail.com>"]
+# Flix 0.78 の [package] が持てるのは version・repository・flix だけ（name・description・license・authors は
+# ManifestParser が拒む）。名前はリポジトリ、説明は README、ライセンスは LICENSE.md に在る。
+version     = "0.5.0"
+repository  = "github:ababup1192/flixlint"
+flix        = "0.78.0"
 
 # WhyNot: [dependencies] に書いて配る形（sqlfx / logfx と同じ形）にしない。
 # 1) `flix build-pkg` が .fpkg に入れるのは flix.toml / README.md / LICENSE.md / src/**/*.flix だけで、

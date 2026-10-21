@@ -50,7 +50,7 @@ git submodule add https://github.com/ababup1192/flixlint.git flixlint
 
 The project to lint is an ordinary Flix project; an empty one is `java -jar flix.jar init` in an empty directory.
 
-You need a JDK and the Flix compiler jar of the version in `flix.toml` (`flix = "0.76.0"`). Download `flix.jar`
+You need a JDK and the Flix compiler jar of the version in `flix.toml` (`flix = "0.78.0"`). Download `flix.jar`
 from [Flix's GitHub releases](https://github.com/flix/flix/releases) and pass it with `--flix-jar` or `FLIX_JAR`;
 with neither, `bin/flix-jar` takes the `share/java/flix/flix.jar` next to the `flix` on `PATH`.
 
@@ -125,9 +125,9 @@ bin/flixlint --version
 
 | Option | Meaning |
 |---|---|
-| `--flix-jar JAR` | The Flix compiler (`flix.jar`, 0.76.0). `FLIX_JAR` in the environment works too; with neither, `bin/flix-jar` resolves it. |
+| `--flix-jar JAR` | The Flix compiler (`flix.jar`, 0.78.0). `FLIX_JAR` in the environment works too; with neither, `bin/flix-jar` resolves it. |
 | `--rules PATH/rules.flix` | The rule file: a Flix module with `pub def rules(): Flixlint.RuleSet` (see below). |
-| `--pkg FPKG` / `--jar JAR` | Dependencies the sources need (`lib/**/*.fpkg`, `lib/cache/**/*.jar`). Repeatable. With neither, they are read from the project's `flix.toml`. |
+| `--pkg FPKG` / `--jar JAR` | Dependencies the sources need (`lib/github/<owner>/<name>/<version>/<name>-<version>.fpkg`, `lib/cache/**/*.jar`). Repeatable. A package is named after that path (Flix 0.78 mounts packages by id). With neither, they are read from the project's `flix.toml`. |
 | `--project-root DIR` | The directory whose `flix.toml` names the dependencies (default: the nearest one at or above the sources, within the current directory). |
 | `--stage typed` (default) | Facts from the typed AST (`Flix.check()`): everything below, including compile errors. |
 | `--stage resolved` | Facts from the AST right after name resolution, before kinding and typing. Several times faster; the same facts except Java instance-method calls (the receiver's class is not known yet). |
@@ -327,7 +327,7 @@ large to compile.
 ## Layout
 
 ```
-flix.toml                    the package metadata (name, version, the Flix version the shim is compiled against)
+flix.toml                    the package metadata (version, repository, the Flix version the shim is compiled against)
 LICENSE.md                   Apache-2.0
 .github/workflows/ci.yml     make test and make test-resolved on the Flix release jar
 Makefile                     test / test-resolved / shim / clean / release
@@ -421,7 +421,7 @@ git submodule add https://github.com/ababup1192/flixlint.git flixlint
 
 check される側は普通の Flix のプロジェクト。空の物は、空のディレクトリで `java -jar flix.jar init`。
 
-JDK と、`flix.toml` の版（`flix = "0.76.0"`）の Flix のコンパイラ jar が要る。`flix.jar` は
+JDK と、`flix.toml` の版（`flix = "0.78.0"`）の Flix のコンパイラ jar が要る。`flix.jar` は
 [Flix の GitHub の release](https://github.com/flix/flix/releases) から取り、`--flix-jar` か `FLIX_JAR` で渡す。
 どちらも無ければ `bin/flix-jar` が、`PATH` の `flix` の隣の `share/java/flix/flix.jar` を取る。
 
@@ -495,9 +495,9 @@ bin/flixlint --version
 
 | オプション | 意味 |
 |---|---|
-| `--flix-jar JAR` | Flix のコンパイラ（`flix.jar`、0.76.0）。環境変数の `FLIX_JAR` でも良い。どちらも無ければ `bin/flix-jar` が解決する |
+| `--flix-jar JAR` | Flix のコンパイラ（`flix.jar`、0.78.0）。環境変数の `FLIX_JAR` でも良い。どちらも無ければ `bin/flix-jar` が解決する |
 | `--rules PATH/rules.flix` | rule のファイル。`pub def rules(): Flixlint.RuleSet` を持つ Flix のモジュール（後述） |
-| `--pkg FPKG` / `--jar JAR` | ソースが要る依存（`lib/**/*.fpkg`、`lib/cache/**/*.jar`）。繰り返せる。どちらも無ければプロジェクトの `flix.toml` から読む |
+| `--pkg FPKG` / `--jar JAR` | ソースが要る依存（`lib/github/<owner>/<name>/<version>/<name>-<version>.fpkg`、`lib/cache/**/*.jar`）。繰り返せる。package の名前はこのパスから取る（Flix 0.78 は package を id で mount する）。どちらも無ければプロジェクトの `flix.toml` から読む |
 | `--project-root DIR` | 依存を書いた `flix.toml` の在るディレクトリ（既定はソースの位置から上に辿って最初の物。カレントディレクトリの中まで） |
 | `--stage typed`（既定） | 型付き AST（`Flix.check()`）の facts。下の全部が出る。コンパイルエラーもここで出る |
 | `--stage resolved` | 名前解決の直後、kinding と typing の前の AST の facts。数倍速い。Java の instance method の呼び出し（受け手のクラスがまだ分からない）以外は同じ |
@@ -696,7 +696,7 @@ JVM のメソッドとして大きすぎてコンパイルできないため。
 ## ファイル構成
 
 ```
-flix.toml                    パッケージの情報（名前・版・shim を組む対象の Flix の版）
+flix.toml                    パッケージの情報（版・リポジトリ・shim を組む対象の Flix の版）
 LICENSE.md                   Apache-2.0
 .github/workflows/ci.yml     Flix の release の jar で make test と make test-resolved
 Makefile                     test / test-resolved / shim / clean / release

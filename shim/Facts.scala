@@ -1,11 +1,11 @@
 package flixlint
 
-import ca.uwaterloo.flix.api.Flix
-import ca.uwaterloo.flix.language.ast.shared.{Input, SecurityContext}
-import ca.uwaterloo.flix.language.ast.{ChangeSet, ResolvedAst, SourceLocation, Symbol, Type, TypeConstructor, TypedAst, UnkindedType}
+import ca.uwaterloo.flix.api.{Flix, InstalledPackage}
+import ca.uwaterloo.flix.language.ast.shared.{Mountpoint, Origin, PackageId, Repository, SecurityContext, Source, SourceName}
+import ca.uwaterloo.flix.language.ast.{ChangeSet, ReadAst, ResolvedAst, SourceLocation, Symbol, Type, TypeConstructor, TypedAst, UnkindedType}
 import ca.uwaterloo.flix.language.phase
 import ca.uwaterloo.flix.tools.pkg.{Dependency, Manifest, ManifestParser}
-import ca.uwaterloo.flix.util.{Formatter, LibLevel, Options, Result, Subeffecting}
+import ca.uwaterloo.flix.util.{Formatter, LibLevel, Options, Result}
 
 import java.io.PrintWriter
 import java.nio.file.{Files, Path, Paths}
@@ -24,7 +24,7 @@ import scala.jdk.CollectionConverters._
   */
 object Facts {
 
-  final case class Args(out: Path, namesOut: Option[Path], stage: String, pkgs: List[Path], jars: List[Path], srcs: List[Path], projectRoot: Option[Path], subeffecting: Boolean)
+  final case class Args(out: Path, namesOut: Option[Path], stage: String, pkgs: List[Path], jars: List[Path], srcs: List[Path], projectRoot: Option[Path])
 
   /** Thrown for anything the caller can fix: a bad option, a missing file, an unreadable flix.toml. Exit code 4. */
   final class UsageError(msg: String) extends RuntimeException(msg)
@@ -37,7 +37,6 @@ object Facts {
     var jars = List.empty[Path]
     var srcs = List.empty[Path]
     var projectRoot: Option[Path] = None
-    var sub = true
     var i = 0
     def value(opt: String): String =
       if (i + 1 < argv.length) argv(i + 1) else throw new UsageError(s"$opt needs a value")
@@ -49,7 +48,6 @@ object Facts {
         case "--pkg" => pkgs = pkgs :+ Paths.get(value("--pkg")); i += 2
         case "--jar" => jars = jars :+ Paths.get(value("--jar")); i += 2
         case "--project-root" => projectRoot = Some(Paths.get(value("--project-root"))); i += 2
-        case "--no-subeffecting" => sub = false; i += 1
         case opt if opt.startsWith("--") => throw new UsageError(s"unknown option $opt")
         case s => srcs = srcs :+ Paths.get(s); i += 1
       }
@@ -57,7 +55,7 @@ object Facts {
     if (out == null) throw new UsageError("--out DIR is required")
     if (srcs.isEmpty) throw new UsageError("at least one source directory or file is required")
     if (stage != "typed" && stage != "resolved") throw new UsageError(s"unknown --stage $stage (typed or resolved)")
-    Args(out, namesOut, stage, pkgs, jars, srcs, projectRoot, sub)
+    Args(out, namesOut, stage, pkgs, jars, srcs, projectRoot)
   }
 
   // Exit codes: 0 facts written, 3 the sources do not compile, 4 the caller or the environment is wrong.
@@ -78,19 +76,17 @@ object Facts {
   def run(argv: Array[String]): Unit = {
     val args = parseArgs(argv)
     val t0 = System.nanoTime()
-    val flix = new Flix()
-    val base = Options.Default
-    val opts = base.copy(
-      lib = LibLevel.All,
-      progress = false,
-      xsubeffecting = if (args.subeffecting) Set[Subeffecting](Subeffecting.Lambdas) else Set.empty[Subeffecting]
-    )
+    val deps =
+      if (args.pkgs.nonEmpty || args.jars.nonEmpty) Deps.ofPaths(args.pkgs, args.jars, args.projectRoot, args.srcs)
+      else Deps.ofProject(args.projectRoot, args.srcs)
+    // The packages, the jars and the mount table are fixed when the compiler is made (Flix 0.78).
+    val flix = new Flix(deps.pkgs, deps.jars, deps.mounts)
+    // WhyNot: subeffecting is not set here. The sources must type the same way `flix check` types them, and the
+    // compiler's default is what `flix check` uses (Flix 0.78 has none; a set the CLI does not use fails sources it accepts).
+    val opts = Options.Default.copy(lib = LibLevel.All, progress = false)
     flix.setOptions(opts)
     val files = args.srcs.flatMap(listFlix)
-    files.foreach(f => flix.addFile(f)(SecurityContext.Unrestricted))
-    val deps = if (args.pkgs.nonEmpty || args.jars.nonEmpty) Deps(args.pkgs, args.jars) else Deps.ofProject(args.projectRoot, args.srcs)
-    deps.pkgs.foreach(p => flix.addPkg(p)(SecurityContext.Unrestricted))
-    deps.jars.foreach(j => flix.addJar(j))
+    files.foreach(f => flix.addFile(f, SecurityContext.Unrestricted))
     val t1 = System.nanoTime()
 
     val sink = new Sink(args.out)
@@ -128,8 +124,10 @@ object Facts {
     else if (Files.isRegularFile(p)) List(p)
     else throw new UsageError(s"$p: no such source file or directory")
 
-  /** The packages and jars to put on the compiler's path. */
-  final case class Deps(pkgs: List[Path], jars: List[Path])
+  /** The packages and jars to put on the compiler's path, and the root project's mount table (`mount = "fge"` in
+    * `flix.toml` makes `use fge::X` name the package's `X`).
+    */
+  final case class Deps(pkgs: List[InstalledPackage], jars: List[Path], mounts: Map[Mountpoint, PackageId])
 
   /** Reads the project's `flix.toml` with the compiler's own `ManifestParser` and turns the dependencies it names
     * into the paths the compiler has already unpacked them to (`lib/github`, `lib/cache`, `lib/external`).
@@ -144,8 +142,28 @@ object Facts {
     */
   object Deps {
     def ofProject(explicitRoot: Option[Path], srcs: List[Path]): Deps = findRoot(explicitRoot, srcs) match {
-      case None => Deps(Nil, Nil)
+      case None => Deps(Nil, Nil, Map.empty)
       case Some(root) => ofRoot(root)
+    }
+
+    /** `--pkg` / `--jar` given by hand. A package is named after where `flix check` unpacks it
+      * (`lib/github/<owner>/<name>/<version>/<name>-<version>.fpkg`), its own mounts are read from the manifest next to
+      * it, and the root mounts from the project's `flix.toml` when there is one.
+      */
+    def ofPaths(pkgs: List[Path], jars: List[Path], explicitRoot: Option[Path], srcs: List[Path]): Deps = {
+      val installed = pkgs.map { p =>
+        val abs = p.toAbsolutePath.normalize
+        val parts = abs.iterator().asScala.map(_.toString).toVector
+        val i = parts.lastIndexOf("github")
+        if (i < 0 || i + 4 >= parts.length)
+          throw new UsageError(s"--pkg $p: expected a path of the form .../github/<owner>/<name>/<version>/<name>-<version>.fpkg")
+        val id = PackageId(Repository.GitHub, parts(i + 1), parts(i + 2))
+        val nested = abs.resolveSibling(abs.getFileName.toString.stripSuffix(".fpkg") + ".toml")
+        val mounts = if (Files.isRegularFile(nested)) parse(nested).mounts else Map.empty[Mountpoint, PackageId]
+        InstalledPackage(abs, id, SecurityContext.Unrestricted, mounts)
+      }
+      val rootMounts = findRoot(explicitRoot, srcs).map(r => parse(r.resolve("flix.toml")).mounts).getOrElse(Map.empty[Mountpoint, PackageId])
+      Deps(installed, jars, rootMounts)
     }
 
     /** WhyNot: the search upwards does not run to `/`. Above the current directory sits whatever the machine
@@ -170,25 +188,29 @@ object Facts {
 
     private def ofRoot(root: Path): Deps = {
       val lib = root.resolve("lib")
-      val fpkgs = scala.collection.mutable.LinkedHashMap.empty[String, Path]
+      val fpkgs = scala.collection.mutable.LinkedHashMap.empty[PackageId, InstalledPackage]
       val externals = scala.collection.mutable.LinkedHashMap.empty[String, Path]
+      // WhyNot: one version per package. Flix 0.78 keys the mount tables by the package id, so two versions of one
+      // package cannot both be given to the compiler; the first one met in the walk (depth first, from the root) wins.
       def walk(manifest: Manifest): Unit = {
         manifest.jarDependencies.foreach { d =>
           externals.getOrElseUpdate(d.fileName, need(lib.resolve("external").resolve(d.fileName), root))
         }
         manifest.flixDependencies.foreach { d =>
-          val version = d.version.toString
-          val dir = lib.resolve("github").resolve(d.username).resolve(d.projectName).resolve(version)
-          val key = s"${d.username}/${d.projectName}/$version"
-          if (!fpkgs.contains(key)) {
-            fpkgs += (key -> need(dir.resolve(s"${d.projectName}-$version.fpkg"), root))
-            val nested = dir.resolve(s"${d.projectName}-$version.toml")
-            if (Files.isRegularFile(nested)) walk(parse(nested))
+          if (!fpkgs.contains(d.id)) {
+            val version = d.version.toString
+            val dir = lib.resolve("github").resolve(d.id.owner).resolve(d.id.name).resolve(version)
+            val fpkg = need(dir.resolve(s"${d.id.name}-$version.fpkg"), root)
+            val nested = dir.resolve(s"${d.id.name}-$version.toml")
+            val nestedManifest = if (Files.isRegularFile(nested)) Some(parse(nested)) else None
+            fpkgs += (d.id -> InstalledPackage(fpkg, d.id, SecurityContext.Unrestricted, nestedManifest.map(_.mounts).getOrElse(Map.empty)))
+            nestedManifest.foreach(walk)
           }
         }
       }
-      walk(parse(root.resolve("flix.toml")))
-      Deps(fpkgs.values.toList, listJars(lib.resolve("cache")) ++ externals.values.toList)
+      val rootManifest = parse(root.resolve("flix.toml"))
+      walk(rootManifest)
+      Deps(fpkgs.values.toList, listJars(lib.resolve("cache")) ++ externals.values.toList, rootManifest.mounts)
     }
 
     private def parse(toml: Path): Manifest = ManifestParser.parse(toml) match {
@@ -215,8 +237,11 @@ object Facts {
 
   def field[A](node: Any, name: String): A = node.getClass.getMethod(name).invoke(node).asInstanceOf[A]
 
-  def sourceFile(loc: SourceLocation): Option[String] = loc.source.input match {
-    case Input.RealFile(p, _) => Some(p.toString)
+  /** The file a location is in, for the project's own sources only (the standard library is also a `PathName`,
+    * under a virtual path, so the origin is what tells them apart).
+    */
+  def sourceFile(loc: SourceLocation): Option[String] = (loc.source.origin, loc.source.sourceName) match {
+    case (Origin.User, SourceName.PathName(p)) => Some(p.toString)
     case _ => None
   }
 
@@ -562,7 +587,7 @@ object Typed {
     * listed by its own name and its arguments (its target is not); type variables and record / schema rows are left out.
     */
   def allNames(t: Type): List[String] = t match {
-    case Type.Alias(symUse, args, _, _) => symName(symUse.sym) :: args.flatMap(allNames)
+    case Type.Alias(symUse, args, tpe, _) => symName(symUse.sym) :: (args.flatMap(allNames) ++ allNames(tpe))
     case Type.Apply(t1, t2, _) => allNames(t1) ++ allNames(t2)
     case Type.Var(_, _) => Nil
     case Type.Cst(TypeConstructor.RecordRowExtend(_) | TypeConstructor.SchemaRowExtend(_), _) => Nil
@@ -606,8 +631,9 @@ object Typed {
 /** Stage 2: facts from the resolved AST, stopping before the kinder and the typer.
   *
   * WhyNot: `Flix.check()` has no public way to stop early, so the phases are called directly in the same order the
-  * compiler does. Inputs and the JVM class list live in private fields of `Flix`; they are read by reflection because
-  * building them by hand would duplicate the library-loading logic of the compiler.
+  * compiler does. The sources (the project's, the packages' and the bundled library's) come from a private method of
+  * `Flix`; it is called by reflection because building them by hand would duplicate the library-loading logic of the
+  * compiler.
   */
 object Resolved {
   import Facts._
@@ -618,14 +644,11 @@ object Resolved {
     initThreadPool.setAccessible(true)
     initThreadPool.invoke(flix)
     flix.phaseTimers = scala.collection.mutable.ArrayBuffer.empty
-    val getInputs = flix.getClass.getDeclaredMethod("getInputs")
-    getInputs.setAccessible(true)
-    val inputs = getInputs.invoke(flix).asInstanceOf[List[Input]]
-    val getClasses = flix.getClass.getDeclaredMethod("availableClasses")
-    getClasses.setAccessible(true)
-    val availableClasses = getClasses.invoke(flix).asInstanceOf[ca.uwaterloo.flix.language.ast.shared.AvailableClasses]
+    val getSources = flix.getClass.getDeclaredMethod("getSources")
+    getSources.setAccessible(true)
+    val sources = getSources.invoke(flix).asInstanceOf[List[Source]]
     val cs = ChangeSet.Everything
-    val (readAst, e1) = phase.Reader.run(inputs, availableClasses)
+    val readAst = ReadAst.Root(sources.map(src => src -> ()).toMap)
     val (tokens, e2) = phase.Lexer.run(readAst, Map.empty, cs)
     val (cst, e3) = phase.Parser2.run(tokens, ca.uwaterloo.flix.language.ast.SyntaxTree.empty, cs)
     val (optWeeded, e4) = phase.Weeder2.run(readAst, None, cst, ca.uwaterloo.flix.language.ast.WeededAst.empty, cs)
@@ -636,7 +659,7 @@ object Resolved {
     val shutdown = flix.getClass.getDeclaredMethod("shutdownThreadPool")
     shutdown.setAccessible(true)
     shutdown.invoke(flix)
-    (resolved, e1 ++ e2 ++ e3 ++ e4 ++ e5 ++ e6)
+    (resolved, e2 ++ e3 ++ e4 ++ e5 ++ e6)
   }
 
   /** The effects of a signature, with type aliases expanded to their members. */
@@ -667,7 +690,7 @@ object Resolved {
 
   /** Every named type constructor in a type, outermost first (see `Typed.allNames`). */
   def allNames(t: UnkindedType): List[String] = t match {
-    case UnkindedType.Alias(symUse, args, _, _) => symName(symUse.sym) :: args.flatMap(allNames)
+    case UnkindedType.Alias(symUse, args, tpe, _) => symName(symUse.sym) :: (args.flatMap(allNames) ++ allNames(tpe))
     case UnkindedType.Apply(t1, t2, _) => allNames(t1) ++ allNames(t2)
     case UnkindedType.Arrow(eff, _, _) => "Arrow" :: eff.toList.flatMap(allNames)
     case UnkindedType.Var(_, _) => Nil
