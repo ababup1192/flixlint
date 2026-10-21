@@ -475,7 +475,7 @@ pub mod Flixlint.Ast {
                         let ps = List.take(List.length(shown) - 1, shown);
                         let r = List.last(shown) |> Option.getWithDefault("?");
                         let e = show(ast, effect);
-                        "${String.intercalate(" -> ", ps ::: (r :: Nil))}${if (e == "Pure") "" else " \\ ${e}"}"
+                        "${String.intercalate(" -> ", ps ::: (r :: Nil))}${if (e == "Pure" or e == "NoEffect") "" else " \\ ${e}"}"
                     case Nil => "?"
                 }
                 case TypeForm.Record => "{ ${args |> List.map(show(ast)) |> String.intercalate(", ")} }"

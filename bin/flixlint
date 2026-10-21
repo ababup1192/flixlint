@@ -23,6 +23,8 @@
 # Environment: FLIX_JAR (the compiler), FLIXLINT_SHIM (a prebuilt shim jar), FLIXLINT_JAVA_OPTS,
 #              FLIXLINT_RESIDENT=1 (as --resident), FLIXLINT_RESIDENT_IDLE (as --idle-minutes; 30),
 #              FLIXLINT_TIMING=1 (the rule engine prints how long loading, judging and each custom rule took, on stderr).
+#              FLIXLINT_DUMP_REL=DIR (the rule engine writes the relations it builds from the generic AST into DIR as the old
+#              facts' TSV files, to compare them table by table: test/compare-old.sh).
 #
 # --resident keeps one JVM per project root (the current directory) and identity (the compiler jar and the shim jar)
 # with the compiler and the rule engines loaded (shim/Resident.scala): after the first run only the files that changed
@@ -67,6 +69,7 @@ idle_minutes="${FLIXLINT_RESIDENT_IDLE:-30}"
 run_limit=900
 timeout=""
 timing="${FLIXLINT_TIMING:-}"
+dump_rel="${FLIXLINT_DUMP_REL:-}"
 srcs=()
 setting_opts=()
 
@@ -300,7 +303,7 @@ engine_jar="$engine/artifact/engine.jar"
 # of its own (flixlint.Lint, engine.jar), and `--setting` of the request to the resident server.
 # WhyNot: the resident client does not read them from its environment. The server's engine never sees the caller's
 # environment, so a setting the client did not know by name was lost there alone (FLIXLINT_TIMING in 0.7.1).
-settings=("FLIXLINT_FACTS=$facts_out" "FLIXLINT_TODAY=$today" "FLIXLINT_LIMITS=$limits" "FLIXLINT_LIMITS_BASE=$limits_base" "FLIXLINT_TIMING=$timing")
+settings=("FLIXLINT_FACTS=$facts_out" "FLIXLINT_TODAY=$today" "FLIXLINT_LIMITS=$limits" "FLIXLINT_LIMITS_BASE=$limits_base" "FLIXLINT_TIMING=$timing" "FLIXLINT_DUMP_REL=$dump_rel")
 export "${settings[@]}"
 for s in "${settings[@]}"; do setting_opts+=(--setting "$s"); done
 

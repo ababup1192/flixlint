@@ -321,7 +321,8 @@ object Generic {
         case "UnappliedAlias" => row("Alias", Some(sym(f[Symbol]("sym"))), Nil, -1)
         // the resolved stage writes the effect inside the arrow; the typed stage applies the arrow to it
         case "Arrow" =>
-          val eff = f[Option[Any]]("eff").map(go).getOrElse(row("Cst", Some("Pure"), Nil, -1))
+          // an arrow written without an effect says so (the typed stage infers one; the resolved stage has none to give)
+          val eff = f[Option[Any]]("eff").map(go).getOrElse(row("Other", Some("NoEffect"), Nil, -1))
           apply(row("Arrow", Some(f[Int]("arity").toString), Nil, -1), eff)
         case "Enum" | "Struct" | "RestrictableEnum" => row("Cst", Some(sym(f[Symbol]("sym"))), Nil, -1)
         case "Effect" => row("Effect", Some(sym(f[Symbol]("sym"))), Nil, -1)

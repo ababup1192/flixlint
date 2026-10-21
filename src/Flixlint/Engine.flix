@@ -18,7 +18,7 @@ pub mod Flixlint.Engine {
     import java.lang.System
 
     /// What a run is told: the facts directory, today's date and the limits (`--limits`, `--limits-base`, each a file or a directory).
-    type alias Settings = { factsDir = String, today = String, limits = Option[String], limitsBase = Option[String], timing = Bool }
+    type alias Settings = { factsDir = String, today = String, limits = Option[String], limitsBase = Option[String], timing = Bool, dumpRel = Option[String] }
 
     /// The entry point of the generated engine `main`: the settings come from the environment (`FLIXLINT_FACTS`,
     /// `FLIXLINT_TODAY`, `FLIXLINT_LIMITS`, `FLIXLINT_LIMITS_BASE`, `FLIXLINT_TIMING`) and the exit code ends the JVM.
@@ -49,7 +49,8 @@ pub mod Flixlint.Engine {
           today = get("FLIXLINT_TODAY") |> Option.getWithDefault("0000-00-00"),
           limits = nonEmpty("FLIXLINT_LIMITS"),
           limitsBase = nonEmpty("FLIXLINT_LIMITS_BASE"),
-          timing = Option.nonEmpty(nonEmpty("FLIXLINT_TIMING")) }
+          timing = Option.nonEmpty(nonEmpty("FLIXLINT_TIMING")),
+          dumpRel = nonEmpty("FLIXLINT_DUMP_REL") }
 
     /// The value of `NAME=VALUE` among the arguments.
     def argOf(name: String, vars: List[String]): Option[String] =
@@ -66,6 +67,7 @@ pub mod Flixlint.Engine {
                 4
             case Ok(ast) =>
                 let facts = Flixlint.Facts.withAst(ast, facts0);
+                settings#dumpRel |> Option.forEach(dir -> Flixlint.Rel.dump(dir, ast));
                 let t1 = System.nanoTime();
                 let code = report(rules, settings, facts);
                 let t2 = nanoTimeAfter(code);
