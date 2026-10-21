@@ -215,6 +215,7 @@ fi
 for case in broken clean; do
     dir="$root/test/check/$case"; out="$root/build/check-$case"; mkdir -p "$out"
     (cd "$dir" && c=0 && { java -jar "$FLIX_JAR" check > "$out/cli.out" 2> "$out/cli.err" || c=$?; } && echo "$c" > "$out/cli.exit")
+    [ "$(cat "$out/cli.exit")" = "$([ $case = clean ] && echo 0 || echo 1)" ] || { echo "test/check/$case: flix check itself ends $(cat "$out/cli.exit")" >&2; exit 1; }
     for n in 1 2; do
         (cd "$dir" && c=0 && { "$lint" --check --version-file "$out/version" > "$out/res.out" 2> "$out/res.err" || c=$?; } && echo "$c" > "$out/res.exit")
         grep -v '^flixlint: starting the resident server' "$out/res.err" > "$out/res.err2" || true

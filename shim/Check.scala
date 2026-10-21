@@ -33,7 +33,8 @@ object Check {
     * server from the bytes it gave the compiler and a client from the disk after the answer; an answer is used only
     * when the two are the same.
     *
-    * The files are the project's `.flix` files under `src/` and `test/` (what `Bootstrap` finds) and its `flix.toml`
+    * The files are the project's `.flix` files under `src/` and `test/` (what `Bootstrap` finds: a symlink to a file
+    * counts, a symlinked directory is not entered) and its `flix.toml`
     * and `packages.lock` when they are there. Each is one entry: its path relative to the root with `/` between the
     * names, a NUL, the SHA-256 of its bytes in lower-case hex, a NUL. The entries are sorted by the path's UTF-8
     * bytes and the version is the SHA-256 of all of them, in lower-case hex (64 characters).

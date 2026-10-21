@@ -128,6 +128,7 @@ bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR
              [--today YYYY-MM-DD] [--limits FILE.json|DIR [--limits-base FILE.json|DIR]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--offline] [--shim JAR]
              [--java-opts "..."] [--spans FILE] [--resident [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS]] [--timeout SECONDS] SRC...
 bin/flixlint --resident-stop [--flix-jar JAR] [--shim JAR]
+bin/flixlint --check [--version-file FILE] [--flix-jar JAR] [--shim JAR] [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS] [--timeout SECONDS]
 bin/flixlint --socket-name ROOT IDENTITY
 bin/flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] [--offline] SRC...
 bin/flixlint --version
@@ -453,7 +454,7 @@ length and modified UTF-8 (a character outside the BMP is its two surrogates, 3 
 | Request (client to server) | |
 |---|---|
 | `int` | the protocol, `2` |
-| `UTF` | the kind: `check`, `lint`, `spans`, `test-jar`, `stop` (this version serves `lint`, `spans` and `stop`) |
+| `UTF` | the kind: `check`, `lint`, `spans`, `test-jar`, `stop` (this version serves `check`, `lint`, `spans` and `stop`) |
 | `UTF` `UTF` | the root, the identity (a server answers `X 11` to another) |
 | `int` then `UTF`s | the settings, `NAME=value` (`FLIXLINT_FACTS`, `FLIXLINT_TODAY`, `FLIXLINT_LIMITS`, `FLIXLINT_LIMITS_BASE`, `FLIXLINT_TIMING`) |
 | `int` then `UTF`s | the arguments of the run |
@@ -482,6 +483,23 @@ its tests.
   no number of its own for them, so a project sets them in the one place it calls flixlint from.
 - **Sources.** Each run reads its source files once and gives the compiler exactly the bytes it compared with the last
   run's (`addSource`), so a file written between the two cannot be checked in another version.
+- **Check.** `bin/flixlint --check [--version-file FILE]` runs `flix check` of the project in the current directory on its
+  server (started when none is up): `Bootstrap` as the CLI does (its progress on stderr), the check of the project's
+  sources on the server's compiler, the compiler's messages on stdout, exit 0 or 1; the same bytes and code as
+  `flix check` in a JVM of its own (`test/check/`, `test/check-same.sh`). The reply carries `V`, the version of the
+  sources checked, which `--version-file` writes; with no server to serve it, `flix check` runs on its own and no
+  version is written.
+- **Version.** The files: the project's `.flix` files under `src/` and `test/` (a symlink to a file counts, a symlinked
+  directory is not entered, as `Bootstrap`) and its `flix.toml` and `packages.lock` when there. Each is one entry: the
+  path relative to the root with `/` between the names, a NUL, the SHA-256 of its bytes in lower-case hex, a NUL. The
+  entries sorted by the path's UTF-8 bytes; the version is their SHA-256 in lower-case hex. The server makes it from the
+  bytes it gave the compiler; a client makes it from the disk once the answer is in and uses the answer only when the
+  two are the same (else it asks again). `test/version-of.sh DIR` is the formula in shell tools and
+  `test/resident/version/expected.txt` the 64 characters every client must give for that tree.
+  `test/check-fresh.sh BUILD_DIR [RUNS] [MAX_DELAY_MS]` counts the stale answers such a client still uses.
+- **One compiler.** In a project every kind compiles all the sources `Bootstrap` finds (`src/` and `test/`, by the paths
+  `flix check` uses), so a check, a lint and an index share one compiler; the SRC of a lint or an index only picks
+  the files its facts and index are about.
 - **Two runs on one build directory** at once overwrite each other's engine sources; give each caller its own.
 
 ## Layout
@@ -502,6 +520,7 @@ shim/AstSchema.scala         make ast-kinds: the compiler jar -> schema/ast_sche
 shim/AstNames.scala          the names and hash of AstKinds for the shim (generated; do not edit)
 schema/ast_schema.tsv        every field of every node class of both stages (stage, kind, slot, field type); generated
 shim/Resident.scala          --resident: the server, its client and the wire (Resident server)
+shim/Check.scala             the check of the resident server and the version of the sources (Resident server)
 src/Flixlint.flix            what a rule file uses: the family records and builders, transitivelyIn / allowIn / allowInFile / allowUntil, ruleSet
 src/Flixlint/Facts.flix      the facts built from the relations of layer 3, and the lookups custom rules use
 src/Flixlint/Engine.flix     the judgments, the allows, the report and the exit code
@@ -720,6 +739,7 @@ bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR
              [--today YYYY-MM-DD] [--limits FILE.json|DIR [--limits-base FILE.json|DIR]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--offline] [--shim JAR]
              [--java-opts "..."] [--spans FILE] [--resident [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS]] [--timeout SECONDS] SRC...
 bin/flixlint --resident-stop [--flix-jar JAR] [--shim JAR]
+bin/flixlint --check [--version-file FILE] [--flix-jar JAR] [--shim JAR] [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS] [--timeout SECONDS]
 bin/flixlint --socket-name ROOT IDENTITY
 bin/flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] [--offline] SRC...
 bin/flixlint --version
@@ -1033,7 +1053,7 @@ identity」（後ろに改行は付けない）の SHA-256 の頭 16 字に `.so
 | 頼み（クライアント → server） | |
 |---|---|
 | `int` | protocol（`2`） |
-| `UTF` | 種類: `check`・`lint`・`spans`・`test-jar`・`stop`（この版が流すのは `lint`・`spans`・`stop`） |
+| `UTF` | 種類: `check`・`lint`・`spans`・`test-jar`・`stop`（この版が流すのは `check`・`lint`・`spans`・`stop`） |
 | `UTF` `UTF` | 根・identity（違えば server は `X 11` を返す） |
 | `int` と `UTF` の列 | 設定 `NAME=値`（`FLIXLINT_FACTS`・`FLIXLINT_TODAY`・`FLIXLINT_LIMITS`・`FLIXLINT_LIMITS_BASE`・`FLIXLINT_TIMING`） |
 | `int` と `UTF` の列 | 走行の引数 |
@@ -1060,6 +1080,19 @@ identity」（後ろに改行は付けない）の SHA-256 の頭 16 字に `.so
   呼ぶ 1 か所で決める。
 - **ソース**: 走行ごとにソースを 1 回だけ読み、前回と比べたそのバイト列をコンパイラへ渡す（`addSource`）。比べた後に
   書き換わったファイルが、比べた物と違う中身で検査される事は無い。
+- **check**: `bin/flixlint --check [--version-file FILE]` は、今の作業場の `flix check` を常駐で流す（居なければ立てる）。
+  CLI と同じく `Bootstrap`（進み具合は stderr）・常駐のコンパイラでプロジェクトのソースの検査・コンパイラの文は stdout・exit は
+  0 か 1 で、別の JVM の `flix check` とバイトまで同じ（`test/check/`・`test/check-same.sh`）。答えに検査したソースの版 `V` が付き、
+  `--version-file` がそれを書く。常駐が使えない時は `flix check` を別に流し、版は書かない。
+- **版**: ファイルは、プロジェクトの `src/`・`test/` の下の `.flix`（ファイルの symlink は数え、symlink のディレクトリには入らない。
+  `Bootstrap` と同じ）と、在れば `flix.toml`・`packages.lock`。1 件ずつ「根からの相対パス（名前の間は `/`）・NUL・中身の SHA-256 の
+  小文字の 16 進・NUL」にし、パスの UTF-8 のバイト順に並べて、全体の SHA-256 の小文字の 16 進が版。常駐はコンパイラに渡したバイト列
+  から作り、クライアントは答えを受けた後にディスクから作って、2 つが同じ時だけ答えを使う（違えば頼み直す）。`test/version-of.sh DIR`
+  がシェルの道具だけの式、`test/resident/version/expected.txt` がその木でどのクライアントも出すべき 64 字。
+  `test/check-fresh.sh BUILD_DIR [RUNS] [MAX_DELAY_MS]` は、そういうクライアントがなお使ってしまう古い答えを数える。
+- **コンパイラは 1 つ**: プロジェクトでは、どの種類の走行も `Bootstrap` が見つけたソース全部（`src/`・`test/`。`flix check` と同じ
+  パス）をコンパイルするので、check・lint・索引が 1 つのコンパイラを共有する。lint や索引の SRC は、事実と索引に載せるファイルを
+  選ぶだけ。
 - **同じ build ディレクトリで 2 本を同時に**流すと、互いのエンジンのソースを上書きする。呼び手ごとに分ける。
 
 ## ファイル構成
@@ -1080,6 +1113,7 @@ shim/AstSchema.scala         make ast-kinds: コンパイラの jar -> schema/as
 shim/AstNames.scala          shim が使う AstKinds の名前と hash（生成物。手で直さない）
 schema/ast_schema.tsv        両段の全部の節のクラスの全部の欄（段・kind・欄・欄の型）。生成物
 shim/Resident.scala          --resident: server・クライアント・口（「常駐の server」）
+shim/Check.scala             常駐の check とソースの版（「常駐の server」）
 src/Flixlint.flix            rule のファイルが使う物: family の record と builder、transitivelyIn / allowIn / allowInFile / allowUntil、ruleSet
 src/Flixlint/Facts.flix      層 3 の関係から作った facts と、custom rule が使う引く関数
 src/Flixlint/Engine.flix     判定・allow・報告・exit code
