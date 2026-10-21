@@ -57,6 +57,9 @@ LIMITS=limits/stale.json lint test/fixture rules/rules.flix 2026-09-19 2 expecte
 LIMITS=limits/at.json BASE=limits/base-lower.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-raised.txt
 LIMITS=limits/raised-ok.json BASE=limits/base-lower.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-ratchet-at.txt
 LIMITS=limits/raised-ok.json BASE=limits/at.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-stale-reason.txt
+# A raiseReason the base has too came with a raise already merged: it passes, with a hint once the limit is under the base.
+LIMITS=limits/raised-ok.json BASE=limits/raised-ok.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-ratchet-at.txt
+LIMITS=limits/raised-ok.json BASE=limits/base-raised5.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-ratchet-inherited.txt
 # A limit the base does not have (a forbidden rule added back, or a new rule with violations) needs a raiseReason too.
 LIMITS=limits/at.json BASE=limits/base-forbidden.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-readded.txt
 LIMITS=limits/raised-ok.json BASE=limits/base-forbidden.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-ratchet-at.txt

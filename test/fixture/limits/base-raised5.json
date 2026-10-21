@@ -1,0 +1,25 @@
+{
+  "note": "the base after a raise was merged: clock at 5 with the reason raised-ok.json carries; raised-ok.json lowers it to 4 and keeps the reason",
+  "limits": {
+    "capability-leak": 1,
+    "capability-site": 1,
+    "capability-target": 1,
+    "clock-alone": 1,
+    "domain-isolation": 6,
+    "find-many": 2,
+    "guarded-write": 1,
+    "handler-site": 2,
+    "io-in-tx": 2,
+    "log-text": 2,
+    "pure-rules": 1,
+    "silent-parse": 3,
+    "raw-alias": 1,
+    "flat-rules": 6,
+    "bool-arg": 2,
+    "clock": {
+      "limit": 5,
+      "raiseReason": "Report.footer reads the clock through Wall.stamp until the report moves to the runner"
+    },
+    "wrapped-key": 4
+  }
+}

@@ -17,9 +17,10 @@ pub mod Flixlint.Ratchet {
     /// base limits (`--limits-base`); a limit written as a bare count has none.
     pub type alias Limit = { id = String, limit = Int32, raiseReason = Option[String] }
 
-    /// What the ratchet leaves of the judged violations: the ones to report, the lines that fail the run (exit 1)
+    /// What the ratchet leaves of the judged violations: the ones to report, the lines that fail the run (exit 1),
+    /// the hints that do not (a limit lowered under an inherited raiseReason)
     /// and the errors in the limits file (exit 2, like any other mistake in the rules).
-    pub type alias Outcome = { violations = List[Violation], failures = List[String], errors = List[String] }
+    pub type alias Outcome = { violations = List[Violation], failures = List[String], hints = List[String], errors = List[String] }
 
     /// The limits in the text of the limits file `path`, or why they cannot be read.
     pub def parse(path: String, text: String): Result[String, List[Limit]] =
@@ -49,23 +50,46 @@ pub mod Flixlint.Ratchet {
             case _ => Err("${path}: the limit of ${id} is not a number")
         }
 
-    /// The limits that went up against `base` (the limits where the work branched off, e.g. at the merge-base with
-    /// origin/master): a limit above its base fails the run unless it gives a `raiseReason`, and a `raiseReason` on a
-    /// limit that is not above its base fails too, so the reason does not stay behind once the limit is back down.
-    /// A limit the base does not have is a raise from nothing: a rule that reached 0 had its line removed to forbid it,
-    /// and a new rule that starts with violations lets them in, so a limit of 1 or more there needs a `raiseReason`
-    /// (a limit of 0 there forbids, and needs none).
-    pub def raised(path: String, basePath: String, limits: List[Limit], base: List[Limit]): List[String] =
-        let baseOf = base |> List.map(b -> (b#id, b#limit)) |> List.toMap;
-        limits |> List.filterMap(l -> match (Map.get(l#id, baseOf), l#raiseReason) {
-            case (Some(b), None) if l#limit > b =>
-                Some("flixlint: ratchet ${l#id}: the limit went up from ${b} to ${l#limit} against ${basePath}; lower it to ${b}, or write it as { \"limit\": ${l#limit}, \"raiseReason\": \"why\" } in ${path}")
-            case (Some(b), Some(_)) if l#limit <= b =>
-                Some("flixlint: ratchet ${l#id}: raiseReason is given, but the limit ${l#limit} is not above ${b} in ${basePath} (remove raiseReason from ${path})")
+    /// What checking a limit against its base finds: a line that fails the run, or a hint that does not.
+    enum Finding {
+        case Failure(String)
+        case Hint(String)
+    }
+
+    def failureOf(f: Finding): Option[String] = match f {
+        case Finding.Failure(m) => Some(m)
+        case Finding.Hint(_) => None
+    }
+
+    def hintOf(f: Finding): Option[String] = match f {
+        case Finding.Hint(m) => Some(m)
+        case Finding.Failure(_) => None
+    }
+
+    /// The limits checked against `base` (the limits where the work branched off, e.g. at the merge-base with
+    /// origin/master): the lines that fail the run, and the hints that do not.
+    /// - A limit above its base fails unless it gives a `raiseReason`.
+    /// - A limit the base does not have is a raise from nothing (a rule that reached 0 had its line removed to forbid it,
+    ///   and a new rule that starts with violations lets them in): 1 or more needs a `raiseReason`; 0 forbids, and needs none.
+    /// - A `raiseReason` on a limit that is not above its base passes when the base has the same reason (it came with the
+    ///   raise that is already merged), with a hint to remove it once the limit is under the base; a reason the base does
+    ///   not have (written or changed here) fails, so a reason is not slipped in without a raise.
+    pub def raised(path: String, basePath: String, limits: List[Limit], base: List[Limit]): (List[String], List[String]) =
+        let baseOf = base |> List.map(b -> (b#id, (b#limit, b#raiseReason))) |> List.toMap;
+        let checked = limits |> List.filterMap(l -> match (Map.get(l#id, baseOf), l#raiseReason) {
+            case (Some((b, _)), None) if l#limit > b =>
+                Some(Finding.Failure("flixlint: ratchet ${l#id}: the limit went up from ${b} to ${l#limit} against ${basePath}; lower it to ${b}, or write it as { \"limit\": ${l#limit}, \"raiseReason\": \"why\" } in ${path}"))
+            case (Some((b, inherited)), Some(why)) if l#limit <= b and inherited == Some(why) =>
+                if (l#limit < b)
+                    Some(Finding.Hint("flixlint: ratchet ${l#id}: the limit ${l#limit} is under ${b} in ${basePath}; the raiseReason it came with can go (remove it from ${path})"))
+                else None
+            case (Some((b, _)), Some(_)) if l#limit <= b =>
+                Some(Finding.Failure("flixlint: ratchet ${l#id}: raiseReason is new or changed, but the limit ${l#limit} is not above ${b} in ${basePath} (remove it from ${path}, or keep the reason the base has)"))
             case (None, None) if l#limit > 0 =>
-                Some("flixlint: ratchet ${l#id}: ${basePath} has no limit for it (forbidden, or a new rule), and ${path} allows ${l#limit}; remove the line to forbid it, or write it as { \"limit\": ${l#limit}, \"raiseReason\": \"why\" }")
+                Some(Finding.Failure("flixlint: ratchet ${l#id}: ${basePath} has no limit for it (forbidden, or a new rule), and ${path} allows ${l#limit}; remove the line to forbid it, or write it as { \"limit\": ${l#limit}, \"raiseReason\": \"why\" }"))
             case _ => None
-        })
+        });
+        (checked |> List.filterMap(failureOf), checked |> List.filterMap(hintOf))
 
     /// Applies the limits to the judged violations. `ruleIds` are the ids the rule set has: a limit for an id that
     /// is not among them is an error, so that a renamed or removed rule does not leave a limit that checks nothing.
@@ -83,5 +107,5 @@ pub mod Flixlint.Ratchet {
             else None);
         let errors = limits |> List.filter(l -> not Set.memberOf(l#id, ruleIds))
             |> List.map(l -> "flixlint: ratchet ${l#id}: no rule has this id (remove it from ${path})");
-        { violations = kept, failures = failures, errors = errors }
+        { violations = kept, failures = failures, hints = Nil, errors = errors }
 }
