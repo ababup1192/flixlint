@@ -8,6 +8,7 @@
 #   fixture, rules/clean.flix  -> exit 0
 #   fixture, rules/deep.flix   -> exit 1, test/expected-deep.txt (a custom rule on the Deep type relations, parsed only when read)
 #   fixture, rules/uses.flix   -> exit 1, test/expected-uses.txt (a `use` its module never uses, on the generic AST; the same at both stages)
+#   fixture, rules/nextcms.flix -> exit 1, test/expected-nextcms.txt (the shapes nextcms writes the families in; the same at both stages)
 #   fixture, rules/rules.flix --limits limits/*.json -> the ratchet: exit 0 at the count, 1 over or under it, 2 for a limit of no rule
 #   examples/rules.flix        -> exit 1, test/expected-examples.txt (the four rules of examples/README.md)
 #   test/spans, --spans alone  -> exit 0, test/expected-spans-<stage>.txt (the name index: every kind, a receiver known by each way)
@@ -52,6 +53,7 @@ lint test/fixture rules/broken.flix 2026-09-19 2
 lint test/fixture rules/clean.flix 2026-09-19 0
 lint test/fixture rules/deep.flix 2026-09-19 1 expected-deep.txt
 lint test/fixture rules/uses.flix 2026-09-19 1 expected-uses.txt
+lint test/fixture rules/nextcms.flix 2026-09-19 1 expected-nextcms.txt
 lint examples rules.flix 2026-09-19 1 expected-examples.txt
 
 # The ratchet: the same rules judged by count against limits/*.json (at the count: silent; over: listed; under:

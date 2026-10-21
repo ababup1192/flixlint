@@ -1,0 +1,106 @@
+src/Effects.flix:20: visible: Predicate.AnyOf: takes ColumnName
+    a predicate names a column through Column, never a raw ColumnName (nor a List of them)
+    fix it, or add |> allowInFile("src/Effects.flix", "reason") to rule visible
+src/Effects.flix:20: visible: Predicate.Eq: takes ColumnName
+    a predicate names a column through Column, never a raw ColumnName (nor a List of them)
+    fix it, or add |> allowInFile("src/Effects.flix", "reason") to rule visible
+src/Effects.flix:20: visible: Predicate.In: takes ColumnName
+    a predicate names a column through Column, never a raw ColumnName (nor a List of them)
+    fix it, or add |> allowInFile("src/Effects.flix", "reason") to rule visible
+src/Effects.flix:58: log-text: Log.freeTextKeys: lists "error.message", which no Log.text call writes
+    a key that is not written anywhere is stale; remove it from the list
+    fix it, or add |> allowIn(Fn.Log_freeTextKeys, "reason") to rule log-text
+src/api/Endpoints.flix:14: auth-in-tx: Endpoints.pairedPermit: has Db and Auth in its signature
+    the proof is asked for before the Tx
+    fix it, or add |> allowIn(Fn.Endpoints_pairedPermit, "reason") to rule auth-in-tx
+src/api/Endpoints.flix:19: auth-in-tx: Endpoints.orderPermit: has Db and Auth in its signature
+    the proof is asked for before the Tx
+    fix it, or add |> allowIn(Fn.Endpoints_orderPermit, "reason") to rule auth-in-tx
+src/api/Endpoints.flix:23: auth-in-tx: Endpoints.leaky: has Db and Auth in its signature
+    the proof is asked for before the Tx
+    fix it, or add |> allowIn(Fn.Endpoints_leaky, "reason") to rule auth-in-tx
+src/api/Endpoints.flix:25: grant-leak: Endpoints.leaky: calls Auth.permitOn and Auth.permit
+    an id proved with permitOn is not checked again with a target-less permit
+    fix it, or add |> allowIn(Fn.Endpoints_leaky, "reason") to rule grant-leak
+src/api/Endpoints.flix:28: auth-in-tx: Endpoints.bulkUpdateGuarded: has Db and Auth in its signature
+    the proof is asked for before the Tx
+    fix it, or add |> allowIn(Fn.Endpoints_bulkUpdateGuarded, "reason") to rule auth-in-tx
+src/api/Endpoints.flix:32: auth-in-tx: Endpoints.bulkUpdateBare: has Db and Auth in its signature
+    the proof is asked for before the Tx
+    fix it, or add |> allowIn(Fn.Endpoints_bulkUpdateBare, "reason") to rule auth-in-tx
+src/api/Endpoints.flix:41: find-many: Endpoints.eachInLambda: calls Orders.find inside a lambda passed to List.map
+    one read per id over a list of ids is N+1
+    fix it, or add |> allowIn(Fn.Endpoints_eachInLambda, "reason") to rule find-many
+src/api/Endpoints.flix:45: find-many: Endpoints.eachByName: calls Orders.find inside a lambda passed to List.map
+    one read per id over a list of ids is N+1
+    fix it, or add |> allowIn(Fn.Endpoints_eachByName, "reason") to rule find-many
+src/api/Endpoints.flix:49: find-many: Endpoints.eachInFilter: calls Orders.find inside a lambda passed to List.filter
+    one read per id over a list of ids is N+1
+    fix it, or add |> allowIn(Fn.Endpoints_eachInFilter, "reason") to rule find-many
+src/app/Runner.flix:2: auth-in-tx: Runner.transact: has Db and Auth in its signature
+    the proof is asked for before the Tx
+    fix it, or add |> allowIn(Fn.Runner_transact, "reason") to rule auth-in-tx
+src/app/Runner.flix:5: handler-site: Runner.transact: installs a handler for Db
+    the Db handler is installed by the runner only
+    fix it, or add |> allowIn(Fn.Runner_transact, "reason") to rule handler-site
+src/app/Runner.flix:20: handler-site: main: calls Runner.transact
+    the Db handler is installed by the runner only
+    Runner.transact -> handler Db
+    fix it, or add |> allowIn(Fn.Main, "reason") to rule handler-site
+src/domain/Orders.flix:7: auth-in-tx: Orders.createAndFetch: has Db and Http in its signature
+    the proof is asked for before the Tx
+    fix it, or add |> allowIn(Fn.Orders_createAndFetch, "reason") to rule auth-in-tx
+src/domain/Orders.flix:11: auth-in-tx: Orders.viaAlias: has Db and Http in its signature
+    the proof is asked for before the Tx
+    fix it, or add |> allowIn(Fn.Orders_viaAlias, "reason") to rule auth-in-tx
+src/domain/Orders.flix:15: auth-in-tx: Orders.confirm: has Db and Http in its signature
+    the proof is asked for before the Tx
+    fix it, or add |> allowIn(Fn.Orders_confirm, "reason") to rule auth-in-tx
+src/domain/Orders.flix:19: auth-in-tx: Orders.selfPermitting: has Db and Auth in its signature
+    the proof is asked for before the Tx
+    fix it, or add |> allowIn(Fn.Orders_selfPermitting, "reason") to rule auth-in-tx
+src/domain/Orders.flix:27: handler-site: Orders.forgesProof: builds Auth.Permit.Permit
+    Permit is built inside Auth only
+    fix it, or add |> allowIn(Fn.Orders_forgesProof, "reason") to rule handler-site
+src/domain/Orders.flix:30: clock: Orders.stamped: calls Clock.now
+    the clock is read by the runner only
+    fix it, or add |> allowIn(Fn.Orders_stamped, "reason") to rule clock
+src/domain/Orders.flix:33: clock: Orders.stampedRow: calls Clock.now
+    the clock is read by the runner only
+    fix it, or add |> allowIn(Fn.Orders_stampedRow, "reason") to rule clock
+src/domain/Orders.flix:36: domain-isolation: Orders.listMine: calls Generated.findOrders
+    the domain does not know the generated API
+    fix it, or add |> allowIn(Fn.Orders_listMine, "reason") to rule domain-isolation
+src/domain/Orders.flix:36: domain-isolation: Orders.listMine: calls Scope.currentId
+    the domain does not know the generated API
+    fix it, or add |> allowIn(Fn.Orders_listMine, "reason") to rule domain-isolation
+src/domain/Orders.flix:36: generated: Orders.listMine: calls Generated.findOrders
+    the generated API is called from the mapping only
+    fix it, or add |> allowIn(Fn.Orders_listMine, "reason") to rule generated
+src/domain/Orders.flix:38: domain-isolation: Orders.count: takes Generated.Query
+    the domain does not know the generated API
+    fix it, or add |> allowIn(Fn.Orders_count, "reason") to rule domain-isolation
+src/domain/Orders.flix:39: domain-isolation: Orders.count: calls Generated.limitOf
+    the domain does not know the generated API
+    fix it, or add |> allowIn(Fn.Orders_count, "reason") to rule domain-isolation
+src/domain/Orders.flix:39: generated: Orders.count: calls Generated.limitOf
+    the generated API is called from the mapping only
+    fix it, or add |> allowIn(Fn.Orders_count, "reason") to rule generated
+src/domain/Orders.flix:54: domain-isolation: Orders.defaultRole: returns Generated.Role
+    the domain does not know the generated API
+    fix it, or add |> allowIn(Fn.Orders_defaultRole, "reason") to rule domain-isolation
+src/domain/Orders.flix:55: domain-isolation: Orders.defaultRole: builds Generated.Role.Owner
+    the domain does not know the generated API
+    fix it, or add |> allowIn(Fn.Orders_defaultRole, "reason") to rule domain-isolation
+src/domain/Orders.flix:55: role: Orders.defaultRole: builds Generated.Role.Owner
+    a role comes from the generated API's answer
+    fix it, or add |> allowIn(Fn.Orders_defaultRole, "reason") to rule role
+src/domain/Orders.flix:57: domain-isolation: Orders.rolesOf: returns Generated.Role
+    the domain does not know the generated API
+    fix it, or add |> allowIn(Fn.Orders_rolesOf, "reason") to rule domain-isolation
+src/domain/Orders.flix:60: log-text: Orders.logged: calls Log.str with "error.message"
+    a key that carries a sentence is written with Log.text only
+    fix it, or add |> allowIn(Fn.Orders_logged, "reason") to rule log-text
+src/domain/Orders.flix:72: domain-isolation: Wrapped.Of: takes Generated.Query
+    the domain does not know the generated API
+    fix it, or add |> allowInFile("src/domain/Orders.flix", "reason") to rule domain-isolation
