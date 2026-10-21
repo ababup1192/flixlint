@@ -276,22 +276,34 @@ pub mod Flixlint.Flix {
               file = Flixlint.Ast.file(ast, u), line = Flixlint.Ast.line(ast, u), isImport = isImport }
         })
 
-    /// The names the declarations of each module use, by (file, module): the functions they call, the cases they build and
-    /// match, the effects and types they write (aliases as written), and the Java classes they name. A `use` of a name is
-    /// used when one of these is the name or a name inside it (`Auth.Permit` for `Auth.Permit.Permit`).
+    /// The names the declarations of each module write, by (file, module): the functions they call, the cases they build
+    /// and match, the Java classes they name, and the names in the types they write (parameters, results, effects, cases,
+    /// aliases, ascriptions and casts, constraints). A `use` of a name is used when one of these is the name or a name inside
+    /// it (`Auth.Permit` for `Auth.Permit.Permit`).
+    /// WhyNot: the types the typed stage infers for expressions are not read. A name that only an inferred type mentions is
+    /// not written, so a `use` of it is still unused; reading them made the typed stage count fewer unused uses than the
+    /// resolved one.
     pub def namesUsed(ast: Ast): Map[(String, String), Set[String]] =
         let named = Set#{Attr.Sym, Attr.SymUse, Attr.Clazz, Attr.Owner};
-        let typeNames = t -> Flixlint.Ast.typeNames(ast, t, Flixlint.Ast.AliasMode.Closed);
+        // the fields a type is written in (both names where the stages name them differently); a parameter of the typed
+        // stage gets a type inferred when none is written, which its `src` tells
+        let written = Set#{(Kind.Case, Attr.Tpes), (Kind.TypeAlias, Attr.Tpe), (Kind.Spec, Attr.RetTpe), (Kind.Spec, Attr.Tpe),
+            (Kind.Spec, Attr.Eff), (Kind.FormalParam, Attr.Tpe), (Kind.TraitConstraint, Attr.Arg), (Kind.TraitConstraint, Attr.Tpe),
+            (Kind.EqualityConstraint, Attr.Tpe1), (Kind.EqualityConstraint, Attr.Tpe2), (Kind.Expr_Ascribe, Attr.ExpectedType),
+            (Kind.Expr_Ascribe, Attr.ExpectedEff), (Kind.Expr_UncheckedCast, Attr.DeclaredType), (Kind.Expr_UncheckedCast, Attr.DeclaredEff),
+            (Kind.Expr_Unsafe, Attr.AsEff), (Kind.Expr_Unsafe, Attr.Eff)};
         let isUse = r -> Flixlint.Ast.is(ast, Kind.UseOrImport_Use, r) or Flixlint.Ast.is(ast, Kind.UseOrImport_Import, r);
         Flixlint.Ast.nodes(ast) |> List.filter(n -> not isUse(Flixlint.Ast.root(ast, n))) |> List.foldLeft((acc, n) -> {
-            let root = Flixlint.Ast.root(ast, n);
-            let key = (Flixlint.Ast.file(ast, n), moduleOf(nameOf(ast, root)));
+            let kind = Flixlint.Ast.kind(ast, n);
             let leaves = Flixlint.Ast.leaves(ast, n);
+            let inferred = Flixlint.Ast.attr(ast, n, Attr.Src) == Some("Inferred");
             let fromValues = leaves |> List.filter(l -> Set.memberOf(l#attr, named)) |> List.filterMap(l -> l#value)
                 |> List.filter(v -> not String.contains(substr = "#", v));
-            let types = (leaves |> List.filterMap(l -> l#tpe)) ::: (Flixlint.Ast.typeOf(ast, n) |> Option.toList) ::: (Flixlint.Ast.effectOf(ast, n) |> Option.toList);
-            let names = fromValues ::: List.flatMap(typeNames, types);
-            if (List.isEmpty(names)) acc else Map.insertWith(Set.union, key, List.toSet(names), acc)
+            let fromTypes = if (inferred) Nil else leaves |> List.filter(l -> Set.memberOf((kind, l#attr), written))
+                |> List.filterMap(l -> l#tpe) |> List.flatMap(t -> Flixlint.Ast.typeNames(ast, t, Flixlint.Ast.AliasMode.Closed));
+            let names = fromValues ::: fromTypes;
+            if (List.isEmpty(names)) acc
+            else Map.insertWith(Set.union, (Flixlint.Ast.file(ast, n), moduleOf(nameOf(ast, Flixlint.Ast.root(ast, n)))), List.toSet(names), acc)
         }, Map.empty())
 
     /// Whether a `use` brings in a name its module never uses.
@@ -304,8 +316,7 @@ pub mod Flixlint.Flix {
 
     /// The calls of `fn`, in id order.
     pub def callsTo(ast: Ast, fn: Flixlint.Names.Fn): List[Node] =
-        let name = Flixlint.Names.fnName(fn);
-        calls(ast) |> List.filter(c -> callee(ast, c) == name)
+        Flixlint.Ast.withLeaf(ast, Attr.SymUse, Flixlint.Names.fnName(fn)) |> List.filter(isCall(ast))
 
     /// Whether a call calls one of `fns`.
     pub def callsOneOf(ast: Ast, fns: Set[Flixlint.Names.Fn], call: Node): Bool =
@@ -313,8 +324,7 @@ pub mod Flixlint.Flix {
 
     /// The tags that build `c` (`Option.Some`), in id order.
     pub def tagsOf(ast: Ast, c: Flixlint.Names.Case): List[Node] =
-        let name = Flixlint.Names.caseName(c);
-        tags(ast) |> List.filter(t -> tagCase(ast, t) == name)
+        Flixlint.Ast.withLeaf(ast, Attr.SymUse, Flixlint.Names.caseName(c)) |> List.filter(Flixlint.Ast.is(ast, Kind.Expr_Tag))
 
     /// Whether a tag builds one of `cs`.
     pub def buildsOneOf(ast: Ast, cs: Set[Flixlint.Names.Case], tag: Node): Bool =
