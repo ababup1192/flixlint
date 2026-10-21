@@ -1,6 +1,6 @@
 package flixlint
 
-import ca.uwaterloo.flix.api.{Flix, InstalledPackage}
+import ca.uwaterloo.flix.api.{Bootstrap, Flix, InstalledPackage}
 import ca.uwaterloo.flix.language.ast.shared.{Mountpoint, Origin, PackageId, Repository, SecurityContext, Source, SourceName}
 import ca.uwaterloo.flix.language.ast.{ChangeSet, ReadAst, ResolvedAst, SourceLocation, Symbol, Type, TypeConstructor, TypedAst, UnkindedType}
 import ca.uwaterloo.flix.language.phase
@@ -16,7 +16,7 @@ import scala.jdk.CollectionConverters._
   * so that rules refer to functions, effects and types as enum cases and a stale name fails to compile.
   *
   * Usage: Facts --out DIR [--names-out FILE] [--names-of RULES] [--stage typed|resolved] [--spans FILE (see Spans)] [--pkg FPKG]... [--jar JAR]...
-  *               [--project-root DIR] SRC...
+  *               [--project-root DIR] [--offline] SRC...
   *
   * WhyNot: the walker dispatches on `productPrefix` and reads fields by name instead of pattern matching on the
   * TypedAst / ResolvedAst case classes. The two ASTs share the node names and field names that matter here, so one
@@ -25,7 +25,7 @@ import scala.jdk.CollectionConverters._
 object Facts {
 
   final case class Args(out: Path, namesOut: Option[Path], stage: String, pkgs: List[Path], jars: List[Path], srcs: List[Path], projectRoot: Option[Path],
-                        namesOf: Option[Path] = None)
+                        namesOf: Option[Path] = None, offline: Boolean = false)
 
   /** Thrown for anything the caller can fix: a bad option, a missing file, an unreadable flix.toml. Exit code 4. */
   final class UsageError(msg: String) extends RuntimeException(msg)
@@ -39,6 +39,7 @@ object Facts {
     var srcs = List.empty[Path]
     var projectRoot: Option[Path] = None
     var namesOf: Option[Path] = None
+    var offline = false
     var i = 0
     def value(opt: String): String =
       if (i + 1 < argv.length) argv(i + 1) else throw new UsageError(s"$opt needs a value")
@@ -51,6 +52,7 @@ object Facts {
         case "--jar" => jars = jars :+ Paths.get(value("--jar")); i += 2
         case "--project-root" => projectRoot = Some(Paths.get(value("--project-root"))); i += 2
         case "--names-of" => namesOf = Some(Paths.get(value("--names-of"))); i += 2
+        case "--offline" => offline = true; i += 1
         case opt if opt.startsWith("--") => throw new UsageError(s"unknown option $opt")
         case s => srcs = srcs :+ Paths.get(s); i += 1
       }
@@ -58,7 +60,7 @@ object Facts {
     if (out == null) throw new UsageError("--out DIR is required")
     if (srcs.isEmpty) throw new UsageError("at least one source directory or file is required")
     if (stage != "typed" && stage != "resolved") throw new UsageError(s"unknown --stage $stage (typed or resolved)")
-    Args(out, namesOut, stage, pkgs, jars, srcs, projectRoot, namesOf)
+    Args(out, namesOut, stage, pkgs, jars, srcs, projectRoot, namesOf, offline)
   }
 
   // Exit codes: 0 facts written, 3 the sources do not compile, 4 the caller or the environment is wrong.
@@ -92,16 +94,39 @@ object Facts {
   def run(argv: Array[String], spans: Option[Path] = None): Int = {
     val args = parseArgs(argv)
     val t0 = System.nanoTime()
-    val flix = compiler(depsOf(args))
-    val files = args.srcs.flatMap(listFlix)
+    val project = projectOf(args)
+    val flix = compiler(project.deps)
+    val files = filesOf(args, project)
     files.foreach(f => flix.addFile(f, SecurityContext.Unrestricted))
     write(flix, args, files, spans, t0)
   }
 
-  /** The packages and jars of the run: the ones given by hand, or those of the project's `flix.toml`. */
-  def depsOf(args: Args): Deps =
-    if (args.pkgs.nonEmpty || args.jars.nonEmpty) Deps.ofPaths(args.pkgs, args.jars, args.projectRoot, args.srcs)
-    else Deps.ofProject(args.projectRoot, args.srcs)
+  /** The packages and jars of the run and the project's own sources: the ones given by hand (`--pkg` / `--jar`), those of
+    * `lib/` read as they are (`--offline`), or those Flix's `Bootstrap` sets up for the project's `flix.toml`, the way
+    * `flix check` does (it installs what is missing, so it may reach the network).
+    */
+  def projectOf(args: Args): Project =
+    if (args.pkgs.nonEmpty || args.jars.nonEmpty) Project(Deps.ofPaths(args.pkgs, args.jars, args.projectRoot, args.srcs), None)
+    else if (args.offline) Project(Deps.ofProject(args.projectRoot, args.srcs), None)
+    else Deps.findRoot(args.projectRoot, args.srcs) match {
+      case None => Project(Deps(Nil, Nil, Map.empty), None)
+      case Some(root) => Deps.ofBootstrap(root)
+    }
+
+  /** The dependencies of a run, and the sources `Bootstrap` found for the project (None when it was not used). */
+  final case class Project(deps: Deps, sources: Option[List[Path]])
+
+  /** The files to compile: the `.flix` files under each SRC. Under the project, the ones `Bootstrap` found there (the
+    * set `flix check` compiles), so a file it would leave out is left out here too; a SRC outside the project is walked.
+    */
+  def filesOf(args: Args, project: Project): List[Path] = args.srcs.flatMap { s =>
+    val abs = s.toAbsolutePath.normalize
+    project.sources match {
+      case Some(found) if Files.isDirectory(abs) && found.exists(_.startsWith(abs)) =>
+        found.filter(_.startsWith(abs)).sorted.map(f => s.resolve(abs.relativize(f)))
+      case _ => listFlix(s)
+    }
+  }
 
   /** A compiler over the dependencies, with no source added yet. */
   def compiler(deps: Deps): Flix = {
@@ -192,12 +217,13 @@ object Facts {
     */
   final case class Deps(pkgs: List[InstalledPackage], jars: List[Path], mounts: Map[Mountpoint, PackageId])
 
-  /** Reads the project's `flix.toml` with the compiler's own `ManifestParser` and turns the dependencies it names
-    * into the paths the compiler has already unpacked them to (`lib/github`, `lib/cache`, `lib/external`).
+  /** The dependencies of the project: set up by `Bootstrap` as `flix check` does (`ofBootstrap`), or, with `--offline`,
+    * read from `flix.toml` with the compiler's own `ManifestParser` and turned into the paths the compiler has already
+    * unpacked them to (`lib/github`, `lib/cache`, `lib/external`; `ofProject`).
     *
-    * WhyNot: `FlixPackageManager.findTransitiveDependencies` is not used. It reaches GitHub, and a linter must not
-    * need the network; the manifest of every installed package sits next to its fpkg, so the closure is taken from
-    * disk. Nothing is downloaded: a package that is not there is an error telling the caller to run `flix check`.
+    * WhyNot (`--offline`): `FlixPackageManager.findTransitiveDependencies` is not used. It reaches GitHub; the manifest of
+    * every installed package sits next to its fpkg, so the closure is taken from disk. Nothing is downloaded: a package
+    * that is not there is an error telling the caller to run `flix check`.
     *
     * WhyNot: `lib/**/*.fpkg` is not passed wholesale. lib/ keeps every version ever resolved, and two versions of
     * one package bring the same definitions in twice. Jars are passed whole: two versions of one artifact on the
@@ -234,7 +260,7 @@ object Facts {
     /** WhyNot: the search upwards does not run to `/`. Above the current directory sits whatever the machine
       * happens to have, and a `flix.toml` found there describes another project.
       */
-    private def findRoot(explicitRoot: Option[Path], srcs: List[Path]): Option[Path] = {
+    def findRoot(explicitRoot: Option[Path], srcs: List[Path]): Option[Path] = {
       val cwd = Paths.get("").toAbsolutePath.normalize
       explicitRoot match {
         case Some(r) =>
@@ -248,6 +274,28 @@ object Facts {
             if (Files.isRegularFile(p.resolve("flix.toml"))) found = Some(p) else p = p.getParent
           }
           found.orElse(Some(cwd).filter(c => Files.isRegularFile(c.resolve("flix.toml"))))
+      }
+    }
+
+    /** The packages and jars `Bootstrap` installs for the project (into `lib/`, as `flix check`), and its sources.
+      * A failure (no network for a package that is not installed, a bad `flix.toml`) is a usage error that names
+      * `--offline`. What `Bootstrap` prints goes to stderr only when it fails.
+      *
+      * WhyNot: `Bootstrap.mkFlix` is not used. It sets the options `flix check` uses for building, and the walk needs
+      * `LibLevel.All` and no progress bar (`compiler`); the packages, jars and mounts are the same.
+      */
+    def ofBootstrap(root: Path): Project = {
+      val said = new java.io.ByteArrayOutputStream()
+      val out = new java.io.PrintStream(said, true, "UTF-8")
+      Bootstrap.bootstrap(root, None)(Formatter.NoFormatter, out) match {
+        case Result.Ok(b) =>
+          val pf = b.projectFiles
+          val mounts = parse(root.resolve("flix.toml")).mounts
+          Project(Deps(pf.pkgs, pf.jars, mounts), Some(pf.sources.map(_.toAbsolutePath.normalize)))
+        case Result.Err(e) =>
+          System.err.print(said.toString("UTF-8"))
+          throw new UsageError(s"$root: Flix could not set up the project's dependencies (${e.message(Formatter.NoFormatter)}); " +
+            "run 'flix check' there, or pass --offline to read lib/ as it is")
       }
     }
 

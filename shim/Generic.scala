@@ -100,8 +100,9 @@ object Generic {
     val args = Facts.parseArgs(argv)
     val nodeRatio = ratio.map(r => scala.util.Try(r.toInt).getOrElse(throw new Facts.UsageError(s"--node-ratio $r is not a number"))).getOrElse(20)
     val t0 = System.nanoTime()
-    val flix = Facts.compiler(Facts.depsOf(args))
-    val files = args.srcs.flatMap(Facts.listFlix)
+    val project = Facts.projectOf(args)
+    val flix = Facts.compiler(project.deps)
+    val files = Facts.filesOf(args, project)
     files.foreach(f => flix.addFile(f, SecurityContext.Unrestricted))
     val t1 = System.nanoTime()
     val (nErrors, root) = args.stage match {

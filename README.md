@@ -88,15 +88,19 @@ lint:
 | the facts, the generated `Names.flix`, the rule engine and its jar | `--build-dir` (default `build/flixlint`) | no, `.gitignore` it |
 | the shim jar | flixlint's own `build/`, or wherever `--shim` points | no |
 
-When neither `--pkg` nor `--jar` is given, the shim reads your `flix.toml` with
-the compiler's own `ManifestParser` and passes the versions it names out of `lib/`, where the compiler has unpacked
-them: `lib/github/<owner>/<name>/<version>/` for a Flix package (its own manifest is read there too, so a package's
-own dependencies come along), `lib/external/` for a `[jar-dependencies]` jar, and every jar under `lib/cache/` for
-`[mvn-dependencies]`. Nothing is downloaded. The project is the nearest directory with a `flix.toml` at or above the
-sources, never above the current directory; `--project-root DIR` names it when that is not where it is. A project
-with no dependencies gets nothing, and `--pkg` / `--jar` override the whole thing. The packages do
-have to be unpacked: one that `flix.toml` names and `lib/` does not have is exit 4, with the message to run
-`flix check` once; if you pass `--pkg` / `--jar` yourself and miss one, the sources do not compile and it is exit 3.
+When neither `--pkg` nor `--jar` is given, the shim sets the project up with the compiler's own `Bootstrap`, the way
+`flix check` does: the packages and jars your `flix.toml` names (a package's own dependencies come along), installed
+into `lib/` if they are not there yet, and the project's `.flix` files, of which the ones under the SRC you give are
+compiled. A run whose packages are all installed does not reach the network. The project is the nearest directory with
+a `flix.toml` at or above the sources, never above the current directory; `--project-root DIR` names it when that is
+not where it is. A project with no `flix.toml` gets no dependencies, and `--pkg` / `--jar` override the whole thing.
+When the setup fails (a package to download and no network, a broken `flix.toml`) it is exit 4 with Flix's message.
+
+`--offline` does not set the project up: it reads `flix.toml` with the compiler's `ManifestParser` and passes the
+versions it names out of `lib/` as they are: `lib/github/<owner>/<name>/<version>/` for a Flix package (its own
+manifest is read there too), `lib/external/` for a `[jar-dependencies]` jar, and every jar under `lib/cache/` for
+`[mvn-dependencies]`. Nothing is downloaded, and a package `lib/` does not have is exit 4 with the message to run
+`flix check` once. If you pass `--pkg` / `--jar` yourself and miss one, the sources do not compile and it is exit 3.
 
 Your rule file names things through the generated module, so it starts with
 `use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}`.
@@ -118,11 +122,11 @@ the shim runs: the shim runs on the compiler jar's classpath inside `bin/flixlin
 
 ```
 bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
-             [--today YYYY-MM-DD] [--limits FILE.json|DIR [--limits-base FILE.json|DIR]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
+             [--today YYYY-MM-DD] [--limits FILE.json|DIR [--limits-base FILE.json|DIR]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--offline] [--shim JAR]
              [--java-opts "..."] [--spans FILE] [--resident [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS]] [--timeout SECONDS] SRC...
 bin/flixlint --resident-stop [--flix-jar JAR] [--shim JAR]
 bin/flixlint --socket-name ROOT IDENTITY
-bin/flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] SRC...
+bin/flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] [--offline] SRC...
 bin/flixlint --version
 ```
 
@@ -130,8 +134,9 @@ bin/flixlint --version
 |---|---|
 | `--flix-jar JAR` | The Flix compiler (`flix.jar`, 0.78.0). `FLIX_JAR` in the environment works too; with neither, `bin/flix-jar` resolves it. |
 | `--rules PATH/rules.flix` | The rule file: a Flix module with `pub def rules(): Flixlint.RuleSet` (see below). |
-| `--pkg FPKG` / `--jar JAR` | Dependencies the sources need (`lib/github/<owner>/<name>/<version>/<name>-<version>.fpkg`, `lib/cache/**/*.jar`). Repeatable. A package is named after that path (Flix 0.78 mounts packages by id). With neither, they are read from the project's `flix.toml`. |
+| `--pkg FPKG` / `--jar JAR` | Dependencies the sources need (`lib/github/<owner>/<name>/<version>/<name>-<version>.fpkg`, `lib/cache/**/*.jar`). Repeatable. A package is named after that path (Flix 0.78 mounts packages by id). With neither, they come from the project's `flix.toml` (`Bootstrap`, or `lib/` with `--offline`). |
 | `--project-root DIR` | The directory whose `flix.toml` names the dependencies (default: the nearest one at or above the sources, within the current directory). |
+| `--offline` | Read the dependencies out of `lib/` as they are instead of setting the project up with `Bootstrap` (no install, no network). |
 | `--stage typed` (default) | Facts from the typed AST (`Flix.check()`): everything below, including compile errors. |
 | `--stage resolved` | Facts from the AST right after name resolution, before kinding and typing. Several times faster; the same facts except Java instance-method calls (the receiver's class is not known yet). |
 | `--today YYYY-MM-DD` | The date `allowUntil` is compared with (default: the real date). Tests fix it. |
@@ -672,15 +677,19 @@ lint:
 | facts・生成した `Names.flix`・rule engine とその jar | `--build-dir`（既定は `build/flixlint`） | しない。`.gitignore` に入れる |
 | shim の jar | flixlint 自身の `build/`、または `--shim` の指す先 | しない |
 
-`--pkg` も `--jar` も渡さなければ、shim が利用側の `flix.toml` をコンパイラ自身の
-`ManifestParser` で読み、そこに書かれた版を、コンパイラが既に展開している `lib/` から渡す。Flix の package は
-`lib/github/<owner>/<name>/<version>/`（その package 自身の manifest もそこで読むので、package の依存も
-付いてくる）、`[jar-dependencies]` の jar は `lib/external/`、`[mvn-dependencies]` は `lib/cache/` の下の jar を
-全部。何もダウンロードしない。プロジェクトはソースの位置から上に辿って最初に `flix.toml` が在るディレクトリで、
-カレントディレクトリより上には行かない。そこに無い時は `--project-root DIR` で指す。依存の無い
-プロジェクトには何も渡らない。`--pkg` / `--jar` を渡せば全部そちらが勝つ。展開されている事は
-必要で、`flix.toml` に在って `lib/` に無い package は exit 4 になり、`flix check` を 1 回回すよう促す。
-`--pkg` / `--jar` を自分で渡して取りこぼした時は、ソースがコンパイルできず exit 3 になる。
+`--pkg` も `--jar` も渡さなければ、shim はコンパイラ自身の `Bootstrap` で、`flix check` と同じようにプロジェクトを
+組む: `flix.toml` に書かれた package と jar（package の依存も付いてくる。`lib/` に無ければ入れる）と、プロジェクトの
+`.flix` のファイル（そのうち渡した SRC の下の物をコンパイルする）。package が全部入っていればネットには出ない。
+プロジェクトはソースの位置から上に辿って最初に `flix.toml` が在るディレクトリで、カレントディレクトリより上には
+行かない。そこに無い時は `--project-root DIR` で指す。`flix.toml` の無いプロジェクトには依存が渡らない。
+`--pkg` / `--jar` を渡せば全部そちらが勝つ。組めない時（落とす package が在るのにネットが無い・`flix.toml` が
+壊れている）は Flix の文を添えて exit 4 になる。
+
+`--offline` はプロジェクトを組まず、`flix.toml` をコンパイラの `ManifestParser` で読み、そこに書かれた版を `lib/` から
+そのまま渡す。Flix の package は `lib/github/<owner>/<name>/<version>/`（その package 自身の manifest もそこで読む）、
+`[jar-dependencies]` の jar は `lib/external/`、`[mvn-dependencies]` は `lib/cache/` の下の jar を全部。何も
+ダウンロードせず、`lib/` に無い package は exit 4 になり、`flix check` を 1 回回すよう促す。`--pkg` / `--jar` を
+自分で渡して取りこぼした時は、ソースがコンパイルできず exit 3 になる。
 
 rule のファイルは生成されたモジュール越しに名前を指すので、
 `use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}` で始まる。
@@ -701,11 +710,11 @@ shim は `bin/flixlint` の中で、コンパイラの jar の classpath の上�
 
 ```
 bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
-             [--today YYYY-MM-DD] [--limits FILE.json|DIR [--limits-base FILE.json|DIR]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
+             [--today YYYY-MM-DD] [--limits FILE.json|DIR [--limits-base FILE.json|DIR]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--offline] [--shim JAR]
              [--java-opts "..."] [--spans FILE] [--resident [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS]] [--timeout SECONDS] SRC...
 bin/flixlint --resident-stop [--flix-jar JAR] [--shim JAR]
 bin/flixlint --socket-name ROOT IDENTITY
-bin/flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] SRC...
+bin/flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] [--offline] SRC...
 bin/flixlint --version
 ```
 
@@ -713,8 +722,9 @@ bin/flixlint --version
 |---|---|
 | `--flix-jar JAR` | Flix のコンパイラ（`flix.jar`、0.78.0）。環境変数の `FLIX_JAR` でも良い。どちらも無ければ `bin/flix-jar` が解決する |
 | `--rules PATH/rules.flix` | rule のファイル。`pub def rules(): Flixlint.RuleSet` を持つ Flix のモジュール（後述） |
-| `--pkg FPKG` / `--jar JAR` | ソースが要る依存（`lib/github/<owner>/<name>/<version>/<name>-<version>.fpkg`、`lib/cache/**/*.jar`）。繰り返せる。package の名前はこのパスから取る（Flix 0.78 は package を id で mount する）。どちらも無ければプロジェクトの `flix.toml` から読む |
+| `--pkg FPKG` / `--jar JAR` | ソースが要る依存（`lib/github/<owner>/<name>/<version>/<name>-<version>.fpkg`、`lib/cache/**/*.jar`）。繰り返せる。package の名前はこのパスから取る（Flix 0.78 は package を id で mount する）。どちらも無ければプロジェクトの `flix.toml` から取る（`Bootstrap`。`--offline` なら `lib/` から） |
 | `--project-root DIR` | 依存を書いた `flix.toml` の在るディレクトリ（既定はソースの位置から上に辿って最初の物。カレントディレクトリの中まで） |
+| `--offline` | `Bootstrap` でプロジェクトを組まず、依存を `lib/` からそのまま読む（入れない・ネットに出ない） |
 | `--stage typed`（既定） | 型付き AST（`Flix.check()`）の facts。下の全部が出る。コンパイルエラーもここで出る |
 | `--stage resolved` | 名前解決の直後、kinding と typing の前の AST の facts。数倍速い。Java の instance method の呼び出し（受け手のクラスがまだ分からない）以外は同じ |
 | `--today YYYY-MM-DD` | `allowUntil` と比べる日付（既定は実日付）。テストは固定する |

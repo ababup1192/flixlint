@@ -2,10 +2,10 @@
 # flixlint: architecture rules for Flix, checked on the compiler's AST.
 #
 #   flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
-#            [--today YYYY-MM-DD] [--limits FILE.json|DIR [--limits-base FILE.json|DIR]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
+#            [--today YYYY-MM-DD] [--limits FILE.json|DIR [--limits-base FILE.json|DIR]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--offline] [--shim JAR]
 #            [--java-opts "..."] [--spans FILE] [--resident [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS]] [--timeout SECONDS] SRC...
 #   flixlint --resident-stop [--flix-jar JAR] [--shim JAR]
-#   flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] SRC...
+#   flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] [--offline] SRC...
 #   flixlint --socket-name ROOT IDENTITY
 #   flixlint --version
 #
@@ -51,6 +51,7 @@ version="$(sed -n 's/^version *= *"\(.*\)"/\1/p' "$here/flix.toml")"
 flix_jar="${FLIX_JAR:-}"
 rules=""
 project_root=""
+offline=()
 pkgs=()
 jars=()
 stage="typed"
@@ -107,6 +108,7 @@ while [ $# -gt 0 ]; do
         --shim) shim="$2"; shift 2 ;;
         --java-opts) java_opts="$2"; shift 2 ;;
         --project-root) project_root="$2"; shift 2 ;;
+        --offline) offline=(--offline); shift ;;
         --resident) resident=1; shift ;;
         --resident-stop) resident_stop=1; shift ;;
         --heap-mb) heap_mb="$2"; shift 2 ;;
@@ -233,7 +235,7 @@ spans_opt=()
 [ -n "$spans" ] && spans_opt=(--spans "$spans")
 names_of=()
 [ -n "$rules" ] && names_of=(--names-of "$rules")
-facts_args=(--out "$facts_out" --names-out "$engine/src/Flixlint/Names.flix" "${names_of[@]}" --stage "$stage" "${spans_opt[@]}" "${root_opt[@]}" "${pkgs[@]}" "${jars[@]}" "${srcs[@]}")
+facts_args=(--out "$facts_out" --names-out "$engine/src/Flixlint/Names.flix" "${names_of[@]}" --stage "$stage" "${spans_opt[@]}" "${root_opt[@]}" "${offline[@]}" "${pkgs[@]}" "${jars[@]}" "${srcs[@]}")
 
 # Says why the facts could not be written, and leaves with the shim's exit code.
 facts_failed() {

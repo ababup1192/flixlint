@@ -461,13 +461,13 @@ object Resident {
     def facts(argv: Array[String], spans: Option[Path]): Int = {
       val args = Facts.parseArgs(argv)
       val t0 = System.nanoTime()
-      val d = Facts.depsOf(args)
-      if (!deps.contains(d)) {
-        deps = Some(d)
-        flix = Facts.compiler(d)
+      val project = Facts.projectOf(args)
+      if (!deps.contains(project.deps)) {
+        deps = Some(project.deps)
+        flix = Facts.compiler(project.deps)
         sent = Map.empty
       }
-      val files = args.srcs.flatMap(Facts.listFlix)
+      val files = Facts.filesOf(args, project)
       sent = Resident.give(flix, sent, files)
       Facts.write(flix, args, files, spans, t0)
     }
