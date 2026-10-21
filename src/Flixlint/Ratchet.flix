@@ -128,7 +128,11 @@ pub mod Flixlint.Ratchet {
             else if (n < l#limit)
                 Some("flixlint: ratchet ${l#id}: ${n} violations, the limit is ${l#limit}; lower the limit to ${n} in ${l#source}")
             else None);
-        let errors = limits |> List.filter(l -> not Set.memberOf(l#id, ruleIds))
+        let unknown = limits |> List.filter(l -> not Set.memberOf(l#id, ruleIds))
             |> List.map(l -> "flixlint: ratchet ${l#id}: no rule has this id (remove it from ${l#source})");
+        // WhyNot: a limit of 0 is not kept: a rule without a limit already stops at the first violation, and a 0 left behind reads as a rule that still holds violations
+        let zero = limits |> List.filter(l -> l#limit == 0 and Set.memberOf(l#id, ruleIds))
+            |> List.map(l -> "flixlint: ratchet ${l#id}: the limit is 0; remove the limit from ${l#source} (without a limit the rule stops at the first violation)");
+        let errors = unknown ::: zero;
         { violations = kept, failures = failures, hints = Nil, errors = errors, held = held }
 }

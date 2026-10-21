@@ -1,0 +1,1 @@
+flixlint: ratchet db-handler: the limit is 0; remove the limit from limits/zero.json (without a limit the rule stops at the first violation)

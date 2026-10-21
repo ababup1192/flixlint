@@ -1,0 +1,4 @@
+{
+  "note": "a limit of 0 for a rule of rules/clean.flix (which has no violation): the limit is to be removed, not kept",
+  "limits": { "db-handler": 0 }
+}

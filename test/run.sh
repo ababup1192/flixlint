@@ -10,7 +10,7 @@
 #   fixture, rules/uses.flix   -> exit 1, test/expected-uses.txt (a `use` its module never uses, on the generic AST; the same at both stages)
 #   fixture, rules/nextcms.flix -> exit 1, test/expected-nextcms.txt (the shapes nextcms writes the families in; the same at both stages)
 #   fixture, rules/rules.flix --limits limits/*.json -> the ratchet: exit 0 at the count (the violations held: a line on
-#                                 stderr and build/fixture/held.txt; --held lists them), 1 over or under it, 2 for a limit of no rule
+#                                 stderr and build/fixture/held.txt; --held lists them), 1 over or under it, 2 for a limit of no rule or of 0
 #   examples/rules.flix        -> exit 1, test/expected-examples.txt (the four rules of examples/README.md)
 #   test/spans, --spans alone  -> exit 0, test/expected-spans-<stage>.txt (the name index: every kind, a receiver known by each way)
 #   test/fixture, flixlint.Generic -> the kind number of every node names the same kind in the shim and in AstKinds.flix;
@@ -77,6 +77,7 @@ set -e
 LIMITS=limits/over.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-over.txt
 LIMITS=limits/lower.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-lower.txt
 LIMITS=limits/stale.json lint test/fixture rules/rules.flix 2026-09-19 2 expected-ratchet-stale.txt
+LIMITS=limits/zero.json lint test/fixture rules/clean.flix 2026-09-19 2 expected-ratchet-zero.txt
 # Against the base the work goes into (--limits-base): a limit that went up fails unless it gives a raiseReason, and a
 # raiseReason on a limit that did not go up fails too.
 LIMITS=limits/at.json BASE=limits/base-lower.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-raised.txt
