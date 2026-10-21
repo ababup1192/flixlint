@@ -427,13 +427,20 @@ object Facts {
               case List(rule) => loc.isReal && field[SourceLocation](rule, "loc") == loc && field[Option[Any]](rule, "guard").isEmpty
               case _ => false
             }
+            // WhyNot: a generator of `forM` (`s <- xs`) is not counted either. The compiler makes it a lambda whose body is a
+            // match with a single bare variable (or `_`) rule at a synthetic location; a `match` lambda the source wrote
+            // has a pattern there (`match (a, b) -> …`).
+            val generator = rules match {
+              case List(rule) => loc.isSynthetic && Set("Var", "Wild").contains(field[Product](rule, "pat").productPrefix)
+              case _ => false
+            }
             val kind = p.productPrefix match {
               case "IfThenElse" => "if"
               case "Match" => "match"
               case "TypeMatch" => "typematch"
               case _ => "extmatch"
             }
-            if (!destructuringLet) sink.branch(fn, kind, lineOf(p))
+            if (!destructuringLet && !generator) sink.branch(fn, kind, lineOf(p))
             rules.foreach(rule => field[Option[Any]](rule, "guard").foreach(g => sink.branch(fn, "guard", lineOf(g.asInstanceOf[Product]))))
             p.productIterator.foreach(x => go(x, outers, env, inPipe = false))
           case "Tag" if p.getClass.getName.contains("Expr") =>

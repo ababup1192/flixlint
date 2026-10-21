@@ -39,7 +39,8 @@ pub mod Flixlint.Facts {
     /// In a `|>` chain, the result of `source` reaches `target` (through any number of stages); `line` is the line of `target`.
     pub type alias PipedInto = { caller = Fn, source = Fn, target = Fn, line = Int32 }
 
-    /// A branch in the body of `fn`: `kind` is `if`, `match` (a `match` lambda too), `typematch` or `extmatch`.
+    /// A branch in the body of `fn`: `kind` is `if`, `match` (a `match` lambda too), `typematch`, `extmatch` or `guard`
+    /// (the `if` of a `case … if …` rule, one row per rule). A `let (a, b) = e` and a `forM` generator are not branches.
     pub type alias Branch = { fn = Fn, kind = String, line = Int32 }
 
     /// A string literal in the body of `fn`.
@@ -306,7 +307,6 @@ pub mod Flixlint.Facts {
     def inverse(t: List[(String, String, a)]): Map[a, String] with Order[a] =
         t |> List.map(match (n, _, k) -> (k, n)) |> List.toMap
 
-    /// Groups a list that is already sorted by the key, keeping the order inside each group.
     /// The type relations read by `loadTypes`.
     type alias TypeRows = {
         argTypes = List[ArgType], argTypesAll = List[ArgType], argTypesDeep = List[ArgType],
@@ -349,6 +349,7 @@ pub mod Flixlint.Facts {
         let stands = rows(dir, "alias_type_all") |> List.filterMap(c -> forM (a <- typeOf(col(0, c)); t <- typeOf(col(1, c))) yield (a, t));
         (defs, setsBy(stands))
 
+    /// Groups a list that is already sorted by the key, keeping the order inside each group.
     def grouped(key: a -> k, xs: List[a]): Map[k, List[a]] with Order[k] =
         List.foldRight((x, m) -> Map.insertWith((newer, older) -> newer ::: older, key(x), x :: Nil, m), Map.empty(), xs)
 

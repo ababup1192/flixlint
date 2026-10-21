@@ -99,6 +99,15 @@ src/domain/rules/Pricing.flix:8: flat-rules: Pricing.bandOf: branches with match
 src/domain/rules/Pricing.flix:9: flat-rules: Pricing.bandOf: branches with guard
     a rule is a table read by a lookup; the branching lives in the caller
     fix it, or add |> allowIn(Fn.Pricing_bandOf, "reason") to rule flat-rules
-src/domain/rules/Pricing.flix:13: pure-rules: Pricing.priceFromDb: has Db
+src/domain/rules/Pricing.flix:14: flat-rules: Pricing.sumOf: branches with match
+    a rule is a table read by a lookup; the branching lives in the caller
+    fix it, or add |> allowIn(Fn.Pricing_sumOf, "reason") to rule flat-rules
+src/domain/rules/Pricing.flix:19: flat-rules: Pricing.bigOf: branches with if
+    a rule is a table read by a lookup; the branching lives in the caller
+    fix it, or add |> allowIn(Fn.Pricing_bigOf, "reason") to rule flat-rules
+src/domain/rules/Pricing.flix:21: flat-rules: Pricing.tierOf: branches with extmatch
+    a rule is a table read by a lookup; the branching lives in the caller
+    fix it, or add |> allowIn(Fn.Pricing_tierOf, "reason") to rule flat-rules
+src/domain/rules/Pricing.flix:26: pure-rules: Pricing.priceFromDb: has Db
     rules are pure and table-tested; the time comes in as nowMillis
     fix it, or add |> allowIn(Fn.Pricing_priceFromDb, "reason") to rule pure-rules
