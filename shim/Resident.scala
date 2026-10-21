@@ -188,7 +188,8 @@ object Resident {
 
   /** `--socket FILE --root DIR --identity ID` and the options of each side, in front of the rest. */
   private final case class Opts(socket: Path, root: String, identity: String, kind: String, idleMinutes: Long, runLimit: Long,
-                                waitSeconds: Long, timeout: Long, settings: List[String], rest: List[String])
+                                waitSeconds: Long, timeout: Long, settings: List[String], rest: List[String],
+                                versionFile: Option[Path] = None)
 
   private def opts(argv: List[String]): Opts = {
     def go(a: List[String], o: Opts): Opts = a match {
@@ -201,6 +202,7 @@ object Resident {
       case "--wait" :: v :: t => go(t, o.copy(waitSeconds = v.toLong))
       case "--timeout" :: v :: t => go(t, o.copy(timeout = v.toLong))
       case "--setting" :: v :: t => go(t, o.copy(settings = o.settings :+ v))
+      case "--version-file" :: v :: t => go(t, o.copy(versionFile = Some(Paths.get(v))))
       case rest => o.copy(rest = rest)
     }
     val o = go(argv, Opts(null, null, null, "lint", 30, 900, 0, 0, Nil, Nil))
@@ -238,7 +240,7 @@ object Resident {
           val out = new DataOutputStream(new BufferedOutputStream(Channels.newOutputStream(ch)))
           Wire.writeRequest(out, Request(o.kind, o.root, o.identity, o.settings, o.rest))
           out.flush()
-          relay(new DataInputStream(Channels.newInputStream(ch)), () => started.set(System.nanoTime()))
+          relay(new DataInputStream(Channels.newInputStream(ch)), () => started.set(System.nanoTime()), o.versionFile)
         } catch {
           case _: IOException if timedOut.get =>
             System.out.flush()
@@ -261,16 +263,17 @@ object Resident {
   }
 
   /** Writes the frames of the reply to stdout and stderr until the exit code. A `Q` frame is said once per change of
-    * the number ahead; the one with none ahead marks the start of the run (`started`).
+    * the number ahead; the one with none ahead marks the start of the run (`started`). The `V` of a check goes into
+    * `versionFile` (one line), when one is given.
     */
-  private def relay(in: DataInputStream, started: () => Unit): Int = {
+  private def relay(in: DataInputStream, started: () => Unit, versionFile: Option[Path]): Int = {
     var ahead = -1
     var code = -1
     while (code < 0) Wire.readFrame(in) match {
       case Frame.Exit(c) => code = c
       case Frame.Out(b) => System.out.write(b.toArray)
       case Frame.Err(b) => System.err.write(b.toArray)
-      case Frame.Version(_) => ()
+      case Frame.Version(v) => versionFile.foreach(f => Files.writeString(f, v + "\n"))
       case Frame.Queued(0, _, _) => started()
       case Frame.Queued(a, k, s) =>
         if (a != ahead) System.err.println(s"flixlint: the resident server is busy; $a run(s) ahead of this one (running: $k, for ${s}s)")
@@ -398,7 +401,7 @@ object Resident {
             code.set(
               try {
                 w.out.synchronized { Wire.writeFrame(w.out, Frame.Queued(0, w.req.kind, 0)); w.out.flush() }
-                runOne(w.req, state, () => tEngine.set(System.nanoTime()))
+                runOne(w.req, state, () => tEngine.set(System.nanoTime()), f => w.out.synchronized { Wire.writeFrame(w.out, f); w.out.flush() })
               } catch {
                 case e: IOException => realErr.println(s"flixlint resident: a caller left during its run: ${e.getMessage}"); 4
                 case e: Throwable =>
@@ -435,8 +438,10 @@ object Resident {
     }
   }
 
-  /** One run of `req` on the kept state; its exit code. `engineStarts` marks when the rule engine starts. */
-  private def runOne(req: Request, state: State, engineStarts: () => Unit): Int = {
+  /** One run of `req` on the kept state; its exit code. `engineStarts` marks when the rule engine starts; `say` sends a
+    * frame of the reply (the `V` of a check).
+    */
+  private def runOne(req: Request, state: State, engineStarts: () => Unit, say: Frame => Unit): Int = {
     val argv = req.args.toArray
     val hasEngine = argv.contains("--engine")
     req.kind match {
@@ -445,6 +450,10 @@ object Resident {
         4
       case "lint" | "spans" =>
         Lint.run(argv, rest => Facts.guardedWith(rest)(state.facts), state.build, jar => { engineStarts(); state.engine(jar, req.settings) })
+      case "check" =>
+        val (code, version) = Check.run(Paths.get(req.root), state.compilerFor, state.give)
+        version.foreach(v => say(Frame.Version(v)))
+        code
       case other =>
         System.err.println(s"flixlint: this resident server does not serve the kind $other yet")
         4
@@ -457,19 +466,33 @@ object Resident {
     private var flix: Flix = _
     private var sent = Map.empty[Path, Array[Byte]]
 
-    /** `Facts.run` on the kept compiler: a new one only when the dependencies change. */
+    /** The kept compiler for `d`: a new one only when the dependencies change (a check and a lint of one project ask
+      * for the same ones, and share it).
+      */
+    def compilerFor(d: Facts.Deps): Flix = {
+      if (!deps.contains(d)) {
+        deps = Some(d)
+        flix = Facts.compiler(d)
+        sent = Map.empty
+      }
+      flix
+    }
+
+    /** Gives the kept compiler `files` as they are on disk now (`Resident.give`); what it was given. */
+    def give(f: Flix, files: List[Path]): Map[Path, Array[Byte]] = {
+      sent = Resident.give(f, sent, files)
+      sent
+    }
+
+    /** `Facts.run` on the kept compiler. */
     def facts(argv: Array[String], spans: Option[Path]): Int = {
       val args = Facts.parseArgs(argv)
       val t0 = System.nanoTime()
       val project = Facts.projectOf(args)
-      if (!deps.contains(project.deps)) {
-        deps = Some(project.deps)
-        flix = Facts.compiler(project.deps)
-        sent = Map.empty
-      }
       val sources = Facts.sourcesOf(args, project)
-      sent = Resident.give(flix, sent, sources.compiled)
-      Facts.write(flix, args, sources, spans, t0)
+      val f = compilerFor(project.deps)
+      give(f, sources.compiled)
+      Facts.write(f, args, sources, spans, t0)
     }
 
     private var engineFlix = Map.empty[Path, (Flix, Map[Path, Array[Byte]])]

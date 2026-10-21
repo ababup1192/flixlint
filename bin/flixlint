@@ -5,6 +5,7 @@
 #            [--today YYYY-MM-DD] [--limits FILE.json|DIR [--limits-base FILE.json|DIR] [--held]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--offline] [--shim JAR]
 #            [--java-opts "..."] [--spans FILE] [--resident [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS]] [--timeout SECONDS] SRC...
 #   flixlint --resident-stop [--flix-jar JAR] [--shim JAR]
+#   flixlint --check [--version-file FILE] [--flix-jar JAR] [--shim JAR] [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS] [--timeout SECONDS]
 #   flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] [--offline] SRC...
 #   flixlint --socket-name ROOT IDENTITY
 #   flixlint --version
@@ -68,6 +69,8 @@ shim="${FLIXLINT_SHIM:-}"
 java_opts="${FLIXLINT_JAVA_OPTS:--Xss32m -XX:MaxRAMPercentage=35}"
 resident="${FLIXLINT_RESIDENT:-0}"
 resident_stop=0
+check=0
+version_file=""
 heap_mb=""
 idle_minutes="${FLIXLINT_RESIDENT_IDLE:-30}"
 run_limit=900
@@ -116,6 +119,8 @@ while [ $# -gt 0 ]; do
         --offline) offline=(--offline); shift ;;
         --resident) resident=1; shift ;;
         --resident-stop) resident_stop=1; shift ;;
+        --check) check=1; shift ;;
+        --version-file) version_file="$2"; shift 2 ;;
         --heap-mb) heap_mb="$2"; shift 2 ;;
         --idle-minutes) idle_minutes="$2"; shift 2 ;;
         --run-limit) run_limit="$2"; shift 2 ;;
@@ -130,9 +135,9 @@ done
 # 何も指さなかった時だけ bin/flix-jar の解決に落ちる（FLIX_JAR か --flix-jar が在ればそちらが勝つ）。
 if [ -z "$flix_jar" ] && [ -x "$here/bin/flix-jar" ]; then flix_jar="$("$here/bin/flix-jar" || true)"; fi
 [ -n "$flix_jar" ] && [ -f "$flix_jar" ] || die "--flix-jar JAR (or FLIX_JAR) must point at flix.jar"
-[ "$resident_stop" = 1 ] || [ -n "$rules" ] || [ -n "$spans" ] || die "--rules PATH/rules.flix is required (or --spans FILE for the index alone)"
+[ "$resident_stop" = 1 ] || [ "$check" = 1 ] || [ -n "$rules" ] || [ -n "$spans" ] || die "--rules PATH/rules.flix is required (or --spans FILE for the index alone)"
 [ -z "$rules" ] || [ -f "$rules" ] || die "rules file not found: $rules"
-[ "$resident_stop" = 1 ] || [ ${#srcs[@]} -gt 0 ] || die "at least one source directory is required"
+[ "$resident_stop" = 1 ] || [ "$check" = 1 ] || [ ${#srcs[@]} -gt 0 ] || die "at least one source directory is required"
 case "$stage" in typed|resolved) ;; *) die "unknown --stage $stage (typed or resolved)" ;; esac
 [ -n "$today" ] || today="$(date +%Y-%m-%d)"
 if [ -n "$limits" ] && [ ! -e "$limits" ]; then die "limits file or directory not found: $limits"; fi
@@ -142,7 +147,7 @@ for n in "$heap_mb" "$idle_minutes" "$run_limit" "$timeout"; do
     case "$n" in ''|*[!0-9]*) [ -z "$n" ] || die "--heap-mb, --idle-minutes, --run-limit and --timeout take a whole number ($n)" ;; esac
 done
 [ -n "$facts_out" ] || facts_out="$build_dir/facts"
-[ "$resident_stop" = 1 ] || mkdir -p "$build_dir"
+[ "$resident_stop" = 1 ] || [ "$check" = 1 ] || mkdir -p "$build_dir"
 
 # ---- the dependencies, when the caller passed none ----
 # WhyNot: flix.toml is not read here. It is TOML, the short and the table form of a dependency both have to be
@@ -234,8 +239,9 @@ if [ "$resident_stop" = 1 ]; then
     if [ -S "$socket" ]; then resident_client stop >/dev/null 2>&1 || true; fi
     exit 0
 fi
+
 engine="$build_dir/engine"
-rm -rf "$engine/src"; mkdir -p "$engine/src/Flixlint"
+[ "$check" = 1 ] || { rm -rf "$engine/src"; mkdir -p "$engine/src/Flixlint"; }
 spans_opt=()
 [ -n "$spans" ] && spans_opt=(--spans "$spans")
 names_of=()
@@ -277,6 +283,22 @@ via_resident() {
     fi
     if [ "$status" -eq 13 ]; then status=4; fi
 }
+
+# --check: `flix check` of the project in the current directory on the resident server (started when none is up), which
+# shares its compiler with the lints; the version of the sources it checked goes into --version-file
+# (checkd-freshness §3). With no server to serve it, `flix check` in a JVM of its own (no version is written then).
+if [ "$check" = 1 ]; then
+    resident=1
+    [ -z "$version_file" ] || rm -f "$version_file"
+    set +e
+    via_resident check ${version_file:+--version-file "$version_file"}
+    if [ "$status" -eq 11 ]; then
+        # shellcheck disable=SC2086
+        java $java_opts -jar "$flix_jar" check
+        status=$?
+    fi
+    exit "$status"
+fi
 
 # --spans without --rules: the index is what was asked for, and the rule engine has nothing to run. The resident
 # server serves it too (a tool that looks names up runs it again after every edit, and the warm compiler is the point).

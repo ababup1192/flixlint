@@ -338,6 +338,9 @@ object Facts {
       }
     }
 
+    /** The mount table of the project's `flix.toml` (`mount = "fge"`). */
+    def mountsOf(root: Path): Map[Mountpoint, PackageId] = parse(root.resolve("flix.toml")).mounts
+
     private def parse(toml: Path): Manifest = ManifestParser.parse(toml) match {
       case Result.Ok(m) => m
       case Result.Err(e) => throw new UsageError(s"$toml: ${e.message(Formatter.NoFormatter)}")

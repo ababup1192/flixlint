@@ -183,6 +183,12 @@ while IFS="$(printf '\t')" read -r r id want; do
     got="$("$lint" --socket-name "$r" "$id")"
     [ "$got" = "$want" ] || { echo "test/resident/socket-name.txt: $r: $got, not $want" >&2; exit 1; }
 done < "$root/test/resident/socket-name.txt"
+# The version of the sources a check answers with (shim/Check.scala, checkd-freshness 3.1): the server and the
+# shell reference give the 64 characters test/resident/version/expected.txt has (every client checks against it too).
+want="$(cat "$root/test/resident/version/expected.txt")"
+for got in "$(java -cp "$FLIX_JAR:$shim" flixlint.Check version "$root/test/resident/version")" "$("$root/test/version-of.sh" "$root/test/resident/version")"; do
+    [ "$got" = "$want" ] || { echo "test/resident/version: $got, not $want" >&2; exit 1; }
+done
 
 # Under FLIXLINT_RESIDENT=1 (make test-resident) every run above went through a resident server: one per project root,
 # whatever the build directory and the stage. Two runs sent at once wait for each other and report as alone.
@@ -201,5 +207,24 @@ if [ "${FLIXLINT_RESIDENT:-0}" = 1 ]; then
         (cd "$root/$dir" && "$lint" --resident-stop)
     done
 fi
+
+
+# The check of the resident server (shim/Check.scala): on test/check/<case>, the same stdout, stderr and exit code as
+# `flix check` in a JVM of its own, on the server's first run and on the next (a warm compiler), and the version of the
+# sources test/version-of.sh gives. The server is stopped after each case.
+for case in broken clean; do
+    dir="$root/test/check/$case"; out="$root/build/check-$case"; mkdir -p "$out"
+    (cd "$dir" && c=0 && { java -jar "$FLIX_JAR" check > "$out/cli.out" 2> "$out/cli.err" || c=$?; } && echo "$c" > "$out/cli.exit")
+    for n in 1 2; do
+        (cd "$dir" && c=0 && { "$lint" --check --version-file "$out/version" > "$out/res.out" 2> "$out/res.err" || c=$?; } && echo "$c" > "$out/res.exit")
+        grep -v '^flixlint: starting the resident server' "$out/res.err" > "$out/res.err2" || true
+        cmp -s "$out/cli.exit" "$out/res.exit" && cmp -s "$out/cli.out" "$out/res.out" && cmp -s "$out/cli.err" "$out/res.err2" \
+            || { echo "test/check/$case: run $n of the server's check differs from flix check (build/check-$case)" >&2; exit 1; }
+        [ "$(cat "$out/version")" = "$("$root/test/version-of.sh" "$dir")" ] \
+            || { echo "test/check/$case: the version of run $n is not test/version-of.sh's" >&2; exit 1; }
+    done
+    (cd "$dir" && "$lint" --resident-stop) || true
+    rm -rf "$dir/build" "$dir/lib"
+done
 
 echo "flixlint test: ok ($(grep -c ': .*: .*: ' "$root/test/expected.txt") violations on the fixture, $(grep -c ': .*: .*: ' "$root/test/expected-examples.txt") on examples; generic AST ${generic#generic: ok }; $(head -1 "$gen/compare.txt" | sed "s/^compare: //; s/ are the same.*//") the same)"
