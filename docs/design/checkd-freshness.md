@@ -309,3 +309,26 @@ server は 1 本の thread で、1 つ accept してその走行を終えてか�
 - §6: test を別の JVM へ移す C-T を C-3 の前に足し、C-3 で repl を全部消す（完了は grep で 0 行）とした。前の段 4・5 の行き先を書いた。
 - §6.1（新）: 2 枚を合わせた順と、触るリポとファイル、並べられる段を書いた。
 - 言葉: 「名乗り」を「identity（身元）」、「記憶」を「メモリ」、「見回り」を「ポーリング」、「道連れ」を「巻き込む」にした。
+
+## C-1 の記録（2026-10-22・flixlint ababup1192/c1-check）
+
+- 入れた物: 常駐の kind `check`（shim/Check.scala）。CLI と同じ順と出力先: `Bootstrap.bootstrap`（進み具合は stderr）→ 残したコンパイラに
+  Bootstrap の sources を 1 回読んだ bytes のまま `addSource` → `Bootstrap.check`。誤りは stdout に `e.message(formatter)`、exit は 0 / 1
+  （`Main.exitOnResult` と同じ【確: javap】）。formatter は CLI と同じ `Formatter.getDefault`。答えに 'V'（検査した版）。
+  `bin/flixlint --check [--version-file FILE]`。コンパイルの集まりは lint・spans も Bootstrap の sources 全部（§4.2 の 1・§4.4 の 4）で、
+  SRC は事実と索引の絞りだけ（`Facts.sourceFile` の 1 か所）。
+- 版の式（§3.1 を具体に）: src/・test/ の .flix（ファイルの symlink は数え、symlink のディレクトリには入らない。Bootstrap と同じ【確】）と
+  flix.toml・packages.lock。1 件ずつ「根からの相対パス（/ 区切り）NUL SHA-256 の小文字 16 進 NUL」、パスの UTF-8 のバイト順、全体の SHA-256。
+  2.1 の 6 の「flix.jar の版 ‖ 依存の版」は入れない: flix.jar と shim は identity（違えば別の常駐）、lib/ は flix.toml と packages.lock に従う。
+  手本は test/version-of.sh（シェルだけ）と test/resident/version/expected.txt（C-2 の Go もこれに合わせる）。
+- 完了条件の数【確: Mac mini】:
+  - C-0 の (a) `test/check-fresh.sh` 200 回・待ち 0〜3000 ms・版を比べる: 古い答え 0 / 200（retry 30・素の CLI 0）。版を比べない形では 40 回で
+    2 回の古い答え（check の間の書き換えの回）を拾う＝試験が拾える事の確かめ。
+  - (b) `test/check-same.sh` 20 / 20 一致（10 通りは resolved の索引の後）。test/check/broken・clean は常駐の 1 回目と 2 回目とも一致（run.sh）。
+  - symlink: ファイルの symlink のソースで CLI と同じ赤（その先の書き換えは (a) にも混ぜた）。
+  - 版の式の fixture: Scala（`Check version`）とシェルが 64 字まで一致。
+  - オプションを揃えた前後（0.8.2 と比べ）: ゲームの違反一覧と spans の索引が SRC「src test」「src」× 両段の 8 通りとも同じ。src だけの typed の索引で
+    1 行（FlowVideo の label-select の受け手が test の同じ形の別名と並んで ambiguous）が出たので、SRC の外の別名を受け手の候補から除いた。
+  - 共有の常駐の最大 RSS（ゲーム・src＋test）: 既定のヒープ（MaxRAMPercentage=35）では check だけ 4.87 GB・check の後に resolved の lint 6.90 GB・
+    check の後に typed の索引 7.88 GB（掴んだ量）。`--heap-mb 4096` で 3.92 / 3.34 GB、`--heap-mb 3072` で 3.65 / 3.45 GB（resolved / typed）で、どれも通る。
+    **線の案**: 常駐のヒープ 3072 MB（`hooks.json` の `heapMinMB` 3072 のまま）・RSS の上限 4096 MB のままで収まる。C-2 で同じ線のまま秒を見る。
