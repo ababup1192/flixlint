@@ -373,6 +373,9 @@ and an emoji 2); `owner` is the top-level def the occurrence is in (lambdas and 
 | `match-arm` | both | one arm, `case` to the end of its body | the case of a top-level case pattern, else empty | `match=L:C pat=wild\|var\|tag\|other at=sl:sc:el:ec guard=0\|1`, `full=1` (below), `name=x uses=0\|1` for a variable |
 | `label-select` | typed | `x` in `e#x` | the label | `recv=A via=V` (below) |
 | `label-update` | typed | `x` in `{ x = v \| e }` (a bare `{ +x = v \| e }` is not one) | the label | `recv=A via=V` |
+| `use` | resolved | a `use` declaration (`owner` is the module it is in) | what it brings in | `alias=x` the name it brings in, `what=def\|enum\|case\|alias\|module\|effect\|op\|trait\|sig\|struct\|other` |
+| `type-use` | resolved | an enum, a type alias or a struct named in a type: a signature, an ascription, a case's fields, an alias's body, an instance's type (`owner` is the def, enum, alias, effect or trait it is in) | the type | `what=enum\|alias\|struct` |
+| `alias-decl` | resolved | the name of a `type alias` | the alias | |
 
 - `match-site`: `wild` and `var` count the arms whose top-level pattern is `_` / a variable, `guard` the arms with an
   `if`; `enum` is the enum of the first top-level case pattern (`-` when there is none, e.g. a match on a tuple);
@@ -389,6 +392,10 @@ and an emoji 2); `owner` is the top-level def the occurrence is in (lambdas and 
 - An occurrence is written once per kind, place and symbol (the desugarer walks some expressions twice).
 - The resolved and the typed stage write the same rows for every kind they share (on a 179-file project: 65,443 rows,
   identical); the typed stage adds the `label-*` rows and `scrut=`. `test/expected-spans-<stage>.txt` holds both.
+- `use`, `type-use` and `alias-decl` are the resolved stage's only, and its header says so with
+  `adds=use,type-use,alias-decl` after the columns (a reader that finds no `adds=` knows the index predates them, not
+  that the sources have none). The typed stage has no `type-use`: its types are inferred, and their places are the
+  expressions', not names the sources wrote. A `type-use` of an applied alias does not look inside the alias's body.
 
 ## Layout
 
@@ -410,7 +417,7 @@ src/Flixlint/Glob.flix       the glob of `files`
 src/Flixlint/Ratchet.flix    `--limits`: rules judged by their count against a limits file
 examples/                    a six-file project and four rules, small enough to read in a minute
 test/fixture/                a 7-file project that violates every family and three custom rules; test/run.sh checks the report
-test/spans/                  a 1-file project for --spans; test/run.sh compares its index with test/expected-spans-<stage>.txt
+test/spans/                  a 2-file project for --spans; test/run.sh compares its index with test/expected-spans-<stage>.txt
 test/expected*.txt           the reports both of them must produce
 ```
 
@@ -810,6 +817,9 @@ UTF-16 の単位なので日本語の字は 1、絵文字は 2）。`owner` は�
 | `match-arm` | 両方 | 腕 1 つ（`case` から本体の終わりまで） | 一番上の型が case ならその case、ほかは空 | `match=L:C pat=wild\|var\|tag\|other at=sl:sc:el:ec guard=0\|1`、`full=1`（下）、変数なら `name=x uses=0\|1` |
 | `label-select` | typed | `e#x` の `x` | 欄の名前 | `recv=A via=V`（下） |
 | `label-update` | typed | `{ x = v \| e }` の `x`（`{ +x = v \| e }` は足すだけなので入らない） | 欄の名前 | `recv=A via=V` |
+| `use` | resolved | `use` の宣言（`owner` はそれを書いた mod） | 入れる物 | `alias=x` 入れる名前、`what=def\|enum\|case\|alias\|module\|effect\|op\|trait\|sig\|struct\|other` |
+| `type-use` | resolved | 型に書いた enum・型 alias・struct の名前（シグネチャ・型の注記・case の欄・alias の本体・instance の型。`owner` は囲む def・enum・alias・effect・trait） | その型 | `what=enum\|alias\|struct` |
+| `alias-decl` | resolved | `type alias` の名前 | その alias | |
 
 - `match-site`: `wild`・`var` は一番上の型が `_`・変数の腕の数、`guard` は `if` つきの腕の数。`enum` は一番上の
   型の最初の case の enum（無ければ `-`。tuple への match など）。`scrut` は match する値の型の頭。
@@ -824,6 +834,9 @@ UTF-16 の単位なので日本語の字は 1、絵文字は 2）。`owner` は�
 - 1 出現は種類・場所・名前ごとに 1 行（desugar が同じ式を 2 度通る事がある）。
 - resolved と typed の段は、共通の種類で同じ行を書く（179 ファイルのプロジェクトで 65,443 行が一致）。typed の段は
   `label-*` の行と `scrut=` を足す。両方の期待は `test/expected-spans-<段>.txt`。
+- `use`・`type-use`・`alias-decl` は resolved の段だけが書き、頭の行の列の後に `adds=use,type-use,alias-decl` と書く
+  （`adds=` の無い索引は、ソースに無いのでなく、それより古い shim の物と分かる）。typed の段に `type-use` は無い
+  （型は推論の物で、位置は式の位置になり、書かれた名前を指さない）。alias を当てた型の `type-use` は alias の本体の中を見ない。
 
 ## ファイル構成
 
@@ -845,7 +858,7 @@ src/Flixlint/Glob.flix       `files` の glob
 src/Flixlint/Ratchet.flix    `--limits`: 上限のファイルと数で判じる rule
 examples/                    6 ファイルのプロジェクトと 4 つの rule。1 分で読める大きさ
 test/fixture/                全 family と 3 つの custom rule に違反する 7 ファイルのプロジェクト。報告を test/run.sh が確かめる
-test/spans/                  --spans の 1 ファイルのプロジェクト。索引を test/run.sh が test/expected-spans-<段>.txt と突き合わせる
+test/spans/                  --spans の 2 ファイルのプロジェクト。索引を test/run.sh が test/expected-spans-<段>.txt と突き合わせる
 test/expected*.txt           その 2 つが出さなければならない報告
 ```
 

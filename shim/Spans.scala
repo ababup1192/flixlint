@@ -31,6 +31,13 @@ import java.nio.file.{Files, Path}
   *    extra `recv=A via=V`: `A` the type alias the receiver `e` is declared with, `via` how it was known: `decl` (the
   *    declared type of a parameter, an ascribed `let`, an ascription or the return type of the def called), `row` (the
   *    receiver's closed record type has exactly the fields of one alias; `recv=A|B via=ambiguous` when several have them), or `recv=? via=open|none`
+  *  - resolved stage only (the header says `adds=use,type-use,alias-decl`):
+  *    - `use` a `use` declaration (owner: the module it is in; sym: what it brings in): extra `alias=x` the name it
+  *      brings in and `what=def|enum|case|alias|module|effect|op|trait|sig|struct|other`
+  *    - `type-use` an enum, a type alias or a struct named in a type (a signature, an ascription, a case's fields, an
+  *      alias's body; owner: the def, enum, alias, effect or trait it is in): extra `what=enum|alias|struct`. The span
+  *      is the name as written (`World.Scene` or, after a `use`, `Scene`)
+  *    - `alias-decl` the name of a `type alias`
   *
   * `owner` is the top-level def the occurrence is in (lambdas and local defs count as their enclosing def).
   *
@@ -52,7 +59,7 @@ object Spans {
 
   private final case class Row(kind: String, file: String, sl: Int, sc: Int, el: Int, ec: Int, sym: String, owner: String, extra: String)
 
-  private final class Out(stage: String) {
+  private final class Out(stage: String, adds: String = "") {
     private val rows = scala.collection.mutable.LinkedHashMap.empty[(String, String, Int, Int, Int, Int, String), Row]
 
     /** WhyNot: an occurrence is kept once per (kind, place, symbol). The desugarer walks some expressions twice (a
@@ -69,7 +76,7 @@ object Spans {
       val sorted = rows.values.toVector.sortBy(r => (r.file, r.sl, r.sc, r.el, r.ec, r.kind, r.sym))
       val w = new PrintWriter(Files.newBufferedWriter(path))
       try {
-        w.println(s"# flixlint-spans $FormatVersion stage=$stage columns=kind,file,sl,sc,el,ec,sym,owner,extra")
+        w.println(s"# flixlint-spans $FormatVersion stage=$stage columns=kind,file,sl,sc,el,ec,sym,owner,extra$adds")
         sorted.foreach(r => w.println(Seq(r.kind, r.file, r.sl, r.sc, r.el, r.ec, clean(r.sym), clean(r.owner), clean(r.extra)).mkString("\t")))
       } finally w.close()
       sorted.length
@@ -98,7 +105,8 @@ object Spans {
 
   /** The generic walk over a definition body. `hook` sees every node first and may add rows of its own. */
   private def walk(out: Out, node: Any, owner: String, parentCls: String, hook: (Product, String) => Unit): Unit = node match {
-    case null | _: Type | _: UnkindedType | _: SourceLocation | _: String | _: java.lang.Number | _: java.lang.Boolean => ()
+    case t: UnkindedType => typesIn(out, t, owner)
+    case null | _: Type | _: SourceLocation | _: String | _: java.lang.Number | _: java.lang.Boolean => ()
     case u: SymUse.DefSymUse => out.add("def-use", symName(u.sym), u.loc, owner, sugar(u.loc, u.sym.name))
     case u: SymUse.CaseSymUse => out.add(if (isPattern(parentCls)) "case-pattern" else "case-construct", symName(u.sym), u.loc, owner, sugar(u.loc, u.sym.name))
     case _: Symbol => ()
@@ -108,6 +116,39 @@ object Spans {
       p.productIterator.foreach(x => walk(out, x, owner, cls, hook))
     case xs: Iterable[_] => xs.foreach(x => walk(out, x, owner, parentCls, hook))
     case _ => ()
+  }
+
+  /** The enums, aliases and structs a type names (`type-use`). Only the resolved stage has these nodes: the typed
+    * stage's types are inferred, and their locations are the expressions', not names the sources wrote.
+    *
+    * WhyNot: the body of an applied alias (`Alias.tpe`) is not walked. It is the alias already expanded, so its
+    * names belong to the alias's declaration, not to this place.
+    */
+  private def typesIn(out: Out, node: Any, owner: String): Unit = node match {
+    case t: UnkindedType.Enum => out.add("type-use", symName(t.sym), t.loc, owner, "what=enum")
+    case t: UnkindedType.Struct => out.add("type-use", symName(t.sym), t.loc, owner, "what=struct")
+    case t: UnkindedType.UnappliedAlias => out.add("type-use", symName(t.sym), t.loc, owner, "what=alias")
+    case t: UnkindedType.Alias =>
+      out.add("type-use", symName(t.symUse.sym), t.symUse.loc, owner, "what=alias")
+      t.args.foreach(typesIn(out, _, owner))
+    case null | _: Type | _: SourceLocation | _: String | _: java.lang.Number | _: java.lang.Boolean | _: Symbol => ()
+    case p: Product => p.productIterator.foreach(typesIn(out, _, owner))
+    case xs: Iterable[_] => xs.foreach(typesIn(out, _, owner))
+    case _ => ()
+  }
+
+  private def symKind(sym: Symbol): String = sym match {
+    case _: Symbol.DefnSym => "def"
+    case _: Symbol.EnumSym => "enum"
+    case _: Symbol.CaseSym => "case"
+    case _: Symbol.TypeAliasSym => "alias"
+    case _: Symbol.ModuleSym => "module"
+    case _: Symbol.EffSym => "effect"
+    case _: Symbol.OpSym => "op"
+    case _: Symbol.TraitSym => "trait"
+    case _: Symbol.SigSym => "sig"
+    case _: Symbol.StructSym => "struct"
+    case _ => "other"
   }
 
   /** `sugar` when the name is not what the sources wrote there: `a :: b` builds `List.Cons` and the span is the whole
@@ -167,18 +208,35 @@ object Spans {
   }
 
   def resolved(root: ResolvedAst.Root, path: Path): Int = {
-    val out = new Out("resolved")
+    val out = new Out("resolved", " adds=use,type-use,alias-decl")
     val allDefs: Iterable[ResolvedAst.Declaration.Def] = root.defs.values ++ root.instances.values.flatMap(_.defs)
     val instDefs: Set[Any] = root.instances.values.flatMap(_.defs).toSet
     def insts(d: Any): Boolean = instDefs.contains(d)
     for (d <- allDefs if !synthetic(d)) {
       val fn = symName(d.sym)
       out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, insts(d), d.spec.ann, d.loc))
+      typesIn(out, d.spec, fn)
       walk(out, d.exp, fn, "", (p, cls) => if (p.productPrefix == "Match" && isExpr(cls)) matchRow(out, p, fn, ""))
     }
     for ((sym, e) <- root.enums) {
       out.add("enum-decl", symName(sym), sym.loc, symName(sym))
-      e.cases.foreach(c => out.add("case-decl", symName(c.sym), c.sym.loc, symName(sym), s"arity=${c.tpes.length}"))
+      e.cases.foreach { c =>
+        out.add("case-decl", symName(c.sym), c.sym.loc, symName(sym), s"arity=${c.tpes.length}")
+        typesIn(out, c.tpes, symName(sym))
+      }
+    }
+    for ((sym, a) <- root.typeAliases) {
+      out.add("alias-decl", symName(sym), sym.loc, symName(sym))
+      typesIn(out, a.tpe, symName(sym))
+    }
+    // An instance has no name of its own: its type is owned by `<the module it is in>.<the trait>`.
+    for (i <- root.instances.values) typesIn(out, i.tpe, Facts.qname(i.ns.parts, i.symUse.sym.name))
+    for ((sym, e) <- root.effects) typesIn(out, e.ops, symName(sym))
+    for ((sym, t) <- root.traits) typesIn(out, t.sigs.values, symName(sym))
+    for ((mod, u) <- root.uses.m.toList.flatMap { case (k, vs) => vs.map(k -> _) }) u match {
+      case use: ca.uwaterloo.flix.language.ast.shared.UseOrImport.Use =>
+        out.add("use", symName(use.sym), use.loc, mod.toString, s"alias=${use.alias.name} what=${symKind(use.sym)}")
+      case _ => ()
     }
     out.write(path)
   }

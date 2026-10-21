@@ -36,7 +36,7 @@ object Lint {
     * `bin/flixlint` runs it in a JVM of its own (`main`), the resident server (`Resident`) with its warm compiler.
     */
   def run(argv: Array[String], facts: Array[String] => Int, build: Path => Boolean, engine: Path => Int): Int = {
-    val (dir, key, rest) =
+    val (dirOpt, key, rest) =
       try split(argv)
       catch {
         case e: Facts.UsageError =>
@@ -44,7 +44,9 @@ object Lint {
           return 4
       }
     val code = facts(rest)
-    if (code != 0) return code
+    // No engine: a run for the index alone (`--spans` without `--rules`), so the facts are all there is to do.
+    if (code != 0 || dirOpt.isEmpty) return code
+    val dir = dirOpt.get
     val names = dir.resolve("src").resolve("Flixlint").resolve("Names.flix")
     val hash = hashOf(key, Files.readAllBytes(names))
     val jar = dir.resolve("artifact").resolve("engine.jar")
@@ -56,7 +58,8 @@ object Lint {
     }
   }
 
-  private def split(argv: Array[String]): (Path, String, Array[String]) = {
+  /** `--engine DIR --engine-key KEY` and the rest. Neither: a run without the engine (the index alone). */
+  private def split(argv: Array[String]): (Option[Path], String, Array[String]) = {
     var engine: Option[Path] = None
     var key: Option[String] = None
     val rest = Array.newBuilder[String]
@@ -68,8 +71,8 @@ object Lint {
         case a => rest += a; i += 1
       }
     }
-    (engine.getOrElse(throw new Facts.UsageError("Lint needs --engine DIR")),
-      key.getOrElse(throw new Facts.UsageError("Lint needs --engine-key KEY")), rest.result())
+    if (engine.isDefined != key.isDefined) throw new Facts.UsageError("Lint needs both --engine DIR and --engine-key KEY, or neither")
+    (engine, key.getOrElse(""), rest.result())
   }
 
   /** The first 16 hex digits of the SHA-1 of the key, a newline, and the names. */

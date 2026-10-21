@@ -187,12 +187,31 @@ facts_failed() {
     exit "$1"
 }
 
-# --spans without --rules: the index is what was asked for, and the rule engine has nothing to run.
+# The resident server when one is up (or --resident starts it); exit 11 when no server served the run.
+# $1 is what to run: the facts and the engine (--engine ...), or the facts alone (the index).
+via_resident() {
+    status=11
+    if [ -S "$socket" ]; then resident_client "$identity" "$@"; status=$?; fi
+    if [ "$status" -eq 11 ] && [ "$resident" = 1 ]; then
+        echo "flixlint: starting the resident server (log: $build_dir/resident.log)" >&2
+        # shellcheck disable=SC2086
+        java $java_opts -cp "$flix_jar:$shim" flixlint.Resident server --socket "$socket" --identity "$identity" \
+            --idle-minutes "${FLIXLINT_RESIDENT_IDLE:-30}" </dev/null >>"$build_dir/resident.log" 2>&1 &
+        resident_client "$identity" --wait 60 "$@"
+        status=$?
+    fi
+}
+
+# --spans without --rules: the index is what was asked for, and the rule engine has nothing to run. The resident
+# server serves it too (a tool that looks names up runs it again after every edit, and the warm compiler is the point).
 if [ -z "$rules" ]; then
     set +e
-    # shellcheck disable=SC2086
-    java $java_opts -cp "$flix_jar:$shim" flixlint.Facts "${facts_args[@]}"
-    status=$?
+    via_resident "${facts_args[@]}"
+    if [ "$status" -eq 11 ]; then
+        # shellcheck disable=SC2086
+        java $java_opts -cp "$flix_jar:$shim" flixlint.Facts "${facts_args[@]}"
+        status=$?
+    fi
     set -e
     [ "$status" -eq 0 ] || facts_failed "$status"
     exit 0
@@ -218,18 +237,9 @@ export FLIXLINT_FACTS="$facts_out" FLIXLINT_TODAY="$today" FLIXLINT_LIMITS="$lim
 # the Flix runtime, on every run; only a rebuild of the engine (exit 10) still takes a JVM of its own.
 rm -f "$engine/wanted-hash"
 lint_args=(--engine "$engine" --engine-key "$key" "${facts_args[@]}")
-# The resident server when one is up (or --resident starts it), else a JVM of its own. Exit 11: no server served the run.
-status=11
+# The resident server when one is up (or --resident starts it), else a JVM of its own.
 set +e
-if [ -S "$socket" ]; then resident_client "$identity" "${lint_args[@]}"; status=$?; fi
-if [ "$status" -eq 11 ] && [ "$resident" = 1 ]; then
-    echo "flixlint: starting the resident server (log: $build_dir/resident.log)" >&2
-    # shellcheck disable=SC2086
-    java $java_opts -cp "$flix_jar:$shim" flixlint.Resident server --socket "$socket" --identity "$identity" \
-        --idle-minutes "${FLIXLINT_RESIDENT_IDLE:-30}" </dev/null >>"$build_dir/resident.log" 2>&1 &
-    resident_client "$identity" --wait 60 "${lint_args[@]}"
-    status=$?
-fi
+via_resident "${lint_args[@]}"
 if [ "$status" -eq 11 ]; then
     # shellcheck disable=SC2086
     java $java_opts -cp "$flix_jar:$shim" flixlint.Lint "${lint_args[@]}"
