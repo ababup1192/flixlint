@@ -6,6 +6,7 @@
 #            [--java-opts "..."] [--spans FILE] [--resident [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS]] [--timeout SECONDS] SRC...
 #   flixlint --resident-stop [--flix-jar JAR] [--shim JAR]
 #   flixlint --check [--version-file FILE] [--flix-jar JAR] [--shim JAR] [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS] [--timeout SECONDS]
+#   flixlint --test [--build-dir DIR] [--flix-jar JAR] [--shim JAR] [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS] [--timeout SECONDS]
 #   flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] [--offline] SRC...
 #   flixlint --socket-name ROOT IDENTITY
 #   flixlint --version
@@ -70,6 +71,7 @@ java_opts="${FLIXLINT_JAVA_OPTS:--Xss32m -XX:MaxRAMPercentage=35}"
 resident="${FLIXLINT_RESIDENT:-0}"
 resident_stop=0
 check=0
+test_mode=0
 version_file=""
 heap_mb=""
 idle_minutes="${FLIXLINT_RESIDENT_IDLE:-30}"
@@ -120,6 +122,7 @@ while [ $# -gt 0 ]; do
         --resident) resident=1; shift ;;
         --resident-stop) resident_stop=1; shift ;;
         --check) check=1; shift ;;
+        --test) test_mode=1; shift ;;
         --version-file) version_file="$2"; shift 2 ;;
         --heap-mb) heap_mb="$2"; shift 2 ;;
         --idle-minutes) idle_minutes="$2"; shift 2 ;;
@@ -135,9 +138,9 @@ done
 # 何も指さなかった時だけ bin/flix-jar の解決に落ちる（FLIX_JAR か --flix-jar が在ればそちらが勝つ）。
 if [ -z "$flix_jar" ] && [ -x "$here/bin/flix-jar" ]; then flix_jar="$("$here/bin/flix-jar" || true)"; fi
 [ -n "$flix_jar" ] && [ -f "$flix_jar" ] || die "--flix-jar JAR (or FLIX_JAR) must point at flix.jar"
-[ "$resident_stop" = 1 ] || [ "$check" = 1 ] || [ -n "$rules" ] || [ -n "$spans" ] || die "--rules PATH/rules.flix is required (or --spans FILE for the index alone)"
+[ "$resident_stop" = 1 ] || [ "$check" = 1 ] || [ "$test_mode" = 1 ] || [ -n "$rules" ] || [ -n "$spans" ] || die "--rules PATH/rules.flix is required (or --spans FILE for the index alone)"
 [ -z "$rules" ] || [ -f "$rules" ] || die "rules file not found: $rules"
-[ "$resident_stop" = 1 ] || [ "$check" = 1 ] || [ ${#srcs[@]} -gt 0 ] || die "at least one source directory is required"
+[ "$resident_stop" = 1 ] || [ "$check" = 1 ] || [ "$test_mode" = 1 ] || [ ${#srcs[@]} -gt 0 ] || die "at least one source directory is required"
 case "$stage" in typed|resolved) ;; *) die "unknown --stage $stage (typed or resolved)" ;; esac
 [ -n "$today" ] || today="$(date +%Y-%m-%d)"
 if [ -n "$limits" ] && [ ! -e "$limits" ]; then die "limits file or directory not found: $limits"; fi
@@ -298,6 +301,26 @@ if [ "$check" = 1 ]; then
         status=$?
     fi
     exit "$status"
+fi
+
+# --test: `flix test` of the project in the current directory. The resident server compiles the tests (test-jar: the
+# classes and the list of tests under the build directory, named after the version of the sources) and they run in a
+# JVM of their own (flixlint.TestRun), so a test that loops or exits never takes the server down (checkd-freshness
+# §4.3). With no server to serve it, `flix test` in a JVM of its own.
+if [ "$test_mode" = 1 ]; then
+    resident=1
+    out="$build_dir/test"; mkdir -p "$out"; rm -f "$out/version"
+    set +e
+    via_resident test-jar --version-file "$out/version" "$out"
+    if [ "$status" -eq 11 ]; then
+        # shellcheck disable=SC2086
+        java $java_opts -Djava.awt.headless=true -jar "$flix_jar" test
+        exit $?
+    fi
+    [ "$status" -eq 0 ] && [ -s "$out/version" ] || exit "$status"
+    # shellcheck disable=SC2086
+    java $java_opts -Djava.awt.headless=true -cp "$flix_jar:$shim" flixlint.TestRun "$out/test-$(cat "$out/version").tests"
+    exit $?
 fi
 
 # --spans without --rules: the index is what was asked for, and the rule engine has nothing to run. The resident

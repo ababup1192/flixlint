@@ -454,6 +454,10 @@ object Resident {
         val (code, version) = Check.run(Paths.get(req.root), state.compilerFor, state.give)
         version.foreach(v => say(Frame.Version(v)))
         code
+      case "test-jar" if req.args.length == 1 =>
+        val (code, version) = TestJar.run(Paths.get(req.root), Paths.get(req.args.head), state.compilerFor, state.give)
+        version.foreach(v => say(Frame.Version(v)))
+        code
       case other =>
         System.err.println(s"flixlint: this resident server does not serve the kind $other yet")
         4

@@ -106,3 +106,57 @@ object Check {
     }
   }
 }
+
+/** The `test-jar` of the resident server (checkd-freshness §4.3, C-T): the tests compiled on the kept compiler and
+  * written for a short JVM of their own (`TestRun`), so a test that loops, exits or holds a window never reaches the
+  * server that the checks and the lints share.
+  *
+  * A run does what `flix check` does (`Check.run`, its output and exit code when the sources do not compile), then
+  * compiles the classes and writes, in the directory it is given, `test-<version>.jar` (every class) and
+  * `test-<version>.tests`, the list `TestRun` reads: `jar<TAB>path`, `cp<TAB>path` for each jar of the dependencies, and
+  * `test<TAB>namespace<TAB>name<TAB>file<TAB>line<TAB>column<TAB>end line<TAB>end column<TAB>skip<TAB>class<TAB>method`
+  * for each test, as `JvmLoader` finds them for `flix test` (the place is the test's, which the report names).
+  */
+object TestJar {
+
+  def run(root: Path, out: Path, compilerFor: Facts.Deps => Flix, give: (Flix, List[Path]) => Map[Path, Array[Byte]]): (Int, Option[String]) = {
+    var kept: Option[(Flix, List[Path])] = None
+    val (code, version) = Check.run(root, d => compilerFor(d), (f, files) => { kept = Some((f, files)); give(f, files) })
+    (code, version, kept) match {
+      case (0, Some(v), Some((flix, _))) =>
+        flix.compile() match {
+          case Result.Ok(result) =>
+            write(out, v, result, Bootstrap.bootstrap(root, None)(Formatter.NoFormatter, new java.io.PrintStream(java.io.OutputStream.nullOutputStream())) match {
+              case Result.Ok(b) => b.projectFiles.jars
+              case Result.Err(_) => Nil
+            })
+            (0, Some(v))
+          case Result.Err(errors) =>
+            errors.foreach(e => System.out.println(e.messageWithLoc(flix.getFormatter)(None)))
+            (1, Some(v))
+        }
+      case _ => (code, version)
+    }
+  }
+
+  private def write(out: Path, version: String, result: ca.uwaterloo.flix.runtime.CompilationResult, jars: List[Path]): Unit = {
+    Files.createDirectories(out)
+    val jar = out.resolve(s"test-$version.jar")
+    val part = out.resolve(s"test-$version.jar.part")
+    val j = new java.util.jar.JarOutputStream(Files.newOutputStream(part))
+    try result.getClasses.values.toList.sortBy(_.name.descriptorString).foreach { c =>
+      j.putNextEntry(new java.util.jar.JarEntry(c.name.descriptorString.drop(1).dropRight(1) + ".class"))
+      j.write(c.bytecode)
+      j.closeEntry()
+    } finally j.close()
+    Files.move(part, jar, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    val lines = s"jar\t${jar.toAbsolutePath}" :: jars.map(p => s"cp\t${p.toAbsolutePath}") :::
+      result.root.tests.toList.map { case (sym, t) =>
+        val l = sym.loc
+        val path = l.source.name
+        List("test", sym.namespace.mkString("."), sym.text, path, l.start.lineOneIndexed, l.start.colOneIndexed, l.end.lineOneIndexed,
+          l.end.colOneIndexed, t.isSkip, t.className.descriptorString.drop(1).dropRight(1).replace('/', '.'), t.methodName).mkString("\t")
+      }.sorted
+    Files.writeString(out.resolve(s"test-$version.tests"), lines.mkString("", "\n", "\n"))
+  }
+}

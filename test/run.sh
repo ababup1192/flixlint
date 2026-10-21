@@ -229,4 +229,16 @@ for case in broken clean; do
     rm -rf "$dir/build" "$dir/lib"
 done
 
+# The tests compiled on the resident server and run in a JVM of their own (bin/flixlint --test: test-jar and TestRun)
+# report what `flix test` reports on test/check/tests (one test passes, one fails; exit 1), but for the time a test took,
+# the time of the run and the frames of the caller that invoked the test (JvmLoader there, TestRun here).
+dir="$root/test/check/tests"; out="$root/build/check-tests"; mkdir -p "$out"
+norm() { sed 's/\x1b\[[0-9;]*m//g; s/ [0-9.]*ms$//; s/\$[0-9]*\./$N./g; s/Elapsed: .*//' | grep -v 'JvmLoader\|flixlint\.TestRun\|DirectMethodHandleAccessor'; }
+(cd "$dir" && c=0 && { java -Djava.awt.headless=true -jar "$FLIX_JAR" test > "$out/cli.out" 2> /dev/null || c=$?; } && echo "$c" > "$out/cli.exit")
+(cd "$dir" && c=0 && { "$lint" --test > "$out/res.out" 2> "$out/res.err" || c=$?; } && echo "$c" > "$out/res.exit")
+[ "$(cat "$out/cli.exit")" = 1 ] && cmp -s "$out/cli.exit" "$out/res.exit" && diff <(norm < "$out/cli.out") <(norm < "$out/res.out") > /dev/null \
+    || { echo "test/check/tests: the resident test differs from flix test (build/check-tests)" >&2; exit 1; }
+(cd "$dir" && "$lint" --resident-stop) || true
+rm -rf "$dir/build" "$dir/lib"
+
 echo "flixlint test: ok ($(grep -c ': .*: .*: ' "$root/test/expected.txt") violations on the fixture, $(grep -c ': .*: .*: ' "$root/test/expected-examples.txt") on examples; generic AST ${generic#generic: ok }; $(head -1 "$gen/compare.txt" | sed "s/^compare: //; s/ are the same.*//") the same)"
