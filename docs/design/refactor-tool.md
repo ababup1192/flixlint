@@ -460,3 +460,21 @@ safe-delete（E）」にする。rename・safe-delete は Fight の記録に当�
 - usages の正しさ: 8.0 の表の 4 つ（39・7・29・679）と `--unused` の def（402・45・126・231）を
   `go/internal/refactor/game_test.go`（絞った索引 `testdata/game-0877ab5d-resolved.tsv.gz`・作り直しは `-game-index`）に固定。
   使っていない use 35 はソースの字が要るので写しでだけ確かめた。
+
+## 共-2（段 C）の記録（2026-10-22・flixlint 0.8.1）
+
+- 8.1 の A を入れた（c3b553c・53ac4ba）。shim の `Deps.ofRoot`・`ofProject`・`need`・`listJars` は 0 行（grep）。自前の道は手で渡す
+  `--pkg`/`--jar`（`ofPaths`）だけ。依存とソースは `Bootstrap.bootstrap(根, token)` の `ProjectFiles`、mounts は flix.toml から。
+- `Bootstrap` に網へ出ない形は無い【確: flix.jar の javap。`bootstrap(path, token)(formatter, out)` だけ】。なので `--offline` は
+  Java の proxy selector を閉じた口へ向けた間に `Bootstrap` を呼び、出ようとしたら最初の URI を名指して exit 4 にした。
+  揃った lib/ では網を塞いでも通る【確: 下の full-offline。JFR のソケットの出来事 0 件】。8.1 の表の「未確認」はこれで「出ない」。
+- オプション: CLI の check は `Options.Default` に lib = All・installDeps = true・GitHub の token・progress = true【確: Main$ の javap
+  と Options.Default・CmdOpts() を出した試し】。flixlint は progress だけ切って同じにした。揃えた前後でゲームの違反一覧（3279 行）と
+  spans の索引（resolved 182,837・typed 188,170 行）が両段とも cmp で同じ【確】。
+- 4 つの場面（と揃った lib/）は `test/bootstrap-cases.sh PROJECT BUILD_DIR [LOCAL_FPKG LOCAL_TOML]`。ゲームの写しで全部 flix check と
+  揃った【確】: full-offline・no-lib（flixlint は「Flix installed 31 …」の 1 行）・no-lib-off（両方止まる。flixlint は GitHub の
+  flix.toml の URI を名指す）・no-maven・local-fpkg（配布版を詰め直して指紋を変えた fpkg に lock を揃え、網を塞いで両方通る。流した後も
+  lib/ の fpkg は手元の物）。
+- 残す物: SRC は今もコンパイルの集まりを絞る（`Bootstrap` の sources のうち SRC の下）。「コンパイルは `Bootstrap` の sources 全部・SRC は
+  出力の絞りだけ」（checkd §4.2 の 1・§4.4 の 4）は walker・Generic・Spans・Names の出力の絞りが要るので共-1（または C-1）で入れる。
+  Fight の止まり方の再現と `bin/fge refactor usages X` が make を挟まずに通る事は、エンジンの側（R-A の prepare を消す所）で確かめる。
