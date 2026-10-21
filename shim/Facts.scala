@@ -96,9 +96,9 @@ object Facts {
     val t0 = System.nanoTime()
     val project = projectOf(args)
     val flix = compiler(project.deps)
-    val files = filesOf(args, project)
-    files.foreach(f => flix.addFile(f, SecurityContext.Unrestricted))
-    write(flix, args, files, spans, t0)
+    val sources = sourcesOf(args, project)
+    sources.compiled.foreach(f => flix.addFile(f, SecurityContext.Unrestricted))
+    write(flix, args, sources, spans, t0)
   }
 
   /** The packages and jars of the run and the project's own sources: the ones given by hand (`--pkg` / `--jar`), or
@@ -115,16 +115,25 @@ object Facts {
   /** The dependencies of a run, and the sources `Bootstrap` found for the project (None when it was not used). */
   final case class Project(deps: Deps, sources: Option[List[Path]])
 
-  /** The files to compile: the `.flix` files under each SRC. Under the project, the ones `Bootstrap` found there (the
-    * set `flix check` compiles), so a file it would leave out is left out here too; a SRC outside the project is walked.
+  /** What a run compiles, and which of those files its facts and index are about.
+    *
+    * `compiled` are the paths the compiler keys the sources by: in a project, every source `Bootstrap` found (the set
+    * `flix check` compiles, by the same absolute paths, so a `check` and a lint share one compiler), and a SRC outside
+    * the project. `files` are the `.flix` files under each SRC as the facts name them (the path as given on the command
+    * line), and `shown` names each compiled path that is one of them; a compiled file under no SRC is compiled and left
+    * out of the facts, the index and `Names.flix` (`sourceFile`).
     */
-  def filesOf(args: Args, project: Project): List[Path] = args.srcs.flatMap { s =>
-    val abs = s.toAbsolutePath.normalize
-    project.sources match {
-      case Some(found) if Files.isDirectory(abs) && found.exists(_.startsWith(abs)) =>
-        found.filter(_.startsWith(abs)).sorted.map(f => s.resolve(abs.relativize(f)))
-      case _ => listFlix(s)
+  final case class Sources(compiled: List[Path], files: List[Path], shown: Map[Path, Path])
+
+  def sourcesOf(args: Args, project: Project): Sources = {
+    val all = project.sources.getOrElse(Nil)
+    val under = args.srcs.flatMap { s =>
+      val abs = s.toAbsolutePath.normalize
+      if (Files.isDirectory(abs) && all.exists(_.startsWith(abs)))
+        all.filter(_.startsWith(abs)).sorted.map(f => f -> s.resolve(abs.relativize(f)))
+      else listFlix(s).map(f => (if (all.isEmpty) f.normalize else f.toAbsolutePath.normalize) -> f)
     }
+    Sources((all ++ under.map(_._1).filterNot(all.contains)).distinct, under.map(_._2), under.toMap)
   }
 
   /** A compiler over the dependencies, with no source added yet. */
@@ -140,7 +149,8 @@ object Facts {
   /** Compiles `files` (already added to `flix`) to the stage of `args` and writes the facts; 0, or 3 when they do
     * not compile. `t0` is when the run started, for the timing line.
     */
-  def write(flix: Flix, args: Args, files: List[Path], spans: Option[Path], t0: Long): Int = {
+  def write(flix: Flix, args: Args, sources: Sources, spans: Option[Path], t0: Long): Int = showing(sources) {
+    val files = sources.files
     val t1 = System.nanoTime()
     var genericJob: Option[Background] = None
 
@@ -358,11 +368,31 @@ object Facts {
   }
 
   /** The file a location is in, for the project's own sources only (the standard library is also a `PathName`,
-    * under a virtual path, so the origin is what tells them apart).
+    * under a virtual path, so the origin is what tells them apart). While a run writes its facts (`showing`), only the
+    * files under its SRC, by the name the facts give them.
     */
   def sourceFile(loc: SourceLocation): Option[String] = (loc.source.origin, loc.source.sourceName) match {
-    case (Origin.User, SourceName.PathName(p)) => Some(p.toString)
+    case (Origin.User, SourceName.PathName(p)) => shown match {
+      case Some(names) => names.get(p.normalize).map(_.toString)
+      case None => Some(p.toString)
+    }
     case _ => None
+  }
+
+  /** Whether a location is in a project file that is compiled but under no SRC of the run (`sourcesOf`). */
+  def hidden(loc: SourceLocation): Boolean = (loc.source.origin, loc.source.sourceName) match {
+    case (Origin.User, SourceName.PathName(_)) => sourceFile(loc).isEmpty
+    case _ => false
+  }
+
+  @volatile private var shown: Option[Map[Path, Path]] = None
+
+  /** `body` with `sourceFile` naming the files of `sources` only. The walkers of one run (the facts, the generic AST on
+    * its own thread, the index) all read it; runs never overlap (the resident server runs one at a time).
+    */
+  def showing[A](sources: Sources)(body: => A): A = {
+    shown = Some(sources.shown.map { case (k, v) => k.normalize -> v })
+    try body finally shown = None
   }
 
   def qname(ns: List[String], name: String): String = (ns :+ name).mkString(".")

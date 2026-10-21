@@ -467,9 +467,9 @@ object Resident {
         flix = Facts.compiler(project.deps)
         sent = Map.empty
       }
-      val files = Facts.filesOf(args, project)
-      sent = Resident.give(flix, sent, files)
-      Facts.write(flix, args, files, spans, t0)
+      val sources = Facts.sourcesOf(args, project)
+      sent = Resident.give(flix, sent, sources.compiled)
+      Facts.write(flix, args, sources, spans, t0)
     }
 
     private var engineFlix = Map.empty[Path, (Flix, Map[Path, Array[Byte]])]

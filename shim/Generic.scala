@@ -102,8 +102,9 @@ object Generic {
     val t0 = System.nanoTime()
     val project = Facts.projectOf(args)
     val flix = Facts.compiler(project.deps)
-    val files = Facts.filesOf(args, project)
-    files.foreach(f => flix.addFile(f, SecurityContext.Unrestricted))
+    val sources = Facts.sourcesOf(args, project)
+    val files = sources.files
+    sources.compiled.foreach(f => flix.addFile(f, SecurityContext.Unrestricted))
     val t1 = System.nanoTime()
     val (nErrors, root) = args.stage match {
       case "typed" =>
@@ -118,7 +119,7 @@ object Generic {
     val t2 = System.nanoTime()
     root match {
       case Some(r) =>
-        val out = emitTo(r.asInstanceOf[Product], args.stage, files, args.out, rules.map(Paths.get(_)), nodeRatio)
+        val out = Facts.showing(sources)(emitTo(r.asInstanceOf[Product], args.stage, files, args.out, rules.map(Paths.get(_)), nodeRatio))
         tsv.foreach(d => out.writeTsv(Paths.get(d)))
         val t3 = System.nanoTime()
         System.err.println(f"flixlint generic: stage=${args.stage} ${out.counts.map { case (k, v) => s"$k=$v" }.mkString(" ")} compile=${(t2 - t1) / 1e9}%.1fs walk+write=${(t3 - t2) / 1e9}%.2fs (walk=${out.walkNs / 1e9}%.2fs cpu=${out.walkCpuNs / 1e9}%.2fs external=${out.extNs / 1e9}%.2fs write=${out.writeNs / 1e9}%.2fs) total=${(t3 - t0) / 1e9}%.1fs")

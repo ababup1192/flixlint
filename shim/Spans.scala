@@ -324,7 +324,8 @@ object Spans {
   private final class Receivers(root: TypedAst.Root) {
     private val declared = scala.collection.mutable.HashMap.empty[Symbol.VarSym, Type]
 
-    private val aliasFields: Map[String, Set[String]] = root.typeAliases.toList.flatMap { case (sym, a) =>
+    // An alias of a file under no SRC (test/ when only src is indexed) cannot be what a shown file's record is.
+    private val aliasFields: Map[String, Set[String]] = root.typeAliases.toList.filterNot { case (sym, _) => Facts.hidden(sym.loc) }.flatMap { case (sym, a) =>
       closedLabels(unalias(a.tpe)).map(ls => symName(sym) -> ls)
     }.toMap
 
