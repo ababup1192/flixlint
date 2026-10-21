@@ -565,11 +565,14 @@ the sources.
   classes, the node's location by its field position and each symbol's name once took about 0.1 s off; taking more off is
   work on the warm-up or on the walk itself. Maximum RSS of one run 4.02 GB -> 5.26 GB resolved (1.31 times, but 3.7 to
   6.1 GB from run to run in 0.7.2: two walks alive at once) and 7.81 GB -> 7.25 GB typed.
-- v0.8 against 0.7.2 the same way (the game with the rules of `id-x-lintrules2`; load average [to measure]), medians: one
-  run [to measure] resolved and [to measure] typed; the second run of a resident server [to measure] resolved and
-  [to measure] typed; maximum RSS of one run [to measure] resolved and [to measure] typed. v0.8 builds the facts from the
+- v0.8 against 0.7.2 the same way (the game with the rules of `id-x-lintrules2`; load average 5 at the start, 8 to 15 during the
+  runs), medians: one run 6.83 s -> 7.31 s resolved (+0.48 s) and 13.20 s -> 13.81 s typed (+0.61 s); the second run of a
+  resident server 3.85 s -> 4.72 s resolved (+0.87 s) and 4.93 s -> 5.47 s typed (+0.54 s); maximum RSS of one run
+  4.48 GB -> 3.68 GB resolved and 7.45 GB -> 8.54 GB typed (3.4 to 5.8 GB and 6.7 to 8.8 GB from run to run). v0.8 builds the facts from the
   generic AST (`Flixlint.Rel`) instead of reading the shim's TSV, so `load=` carries building the relations and `judge=`
-  is lighter by the deep tables, which are cheaper to build: `load=` [to measure], `judge=` [to measure]. What is left is
+  is lighter by the deep tables, which are cheaper to build: `load=` 0.70 s -> 1.39 s resolved and 0.75 s -> 1.49 s typed (0.45 s -> 0.91 s and 0.41 s -> 0.99 s
+  on a resident server, which builds the relations at every run), `judge=` 1.87 s -> 1.64 s resolved and 2.08 s -> 1.87 s
+  typed (about the same on a resident server). What is left is
   the walk of the bodies (Rel's bodyTables, about 0.5 s). The old fact walk and its TSV go in v0.9.
 - Two compiles of the same sources give the same generic relations, byte for byte: the walk numbers variables, regions
   and labels in the order it meets them (`x#0`) and drops the compiler's counter from the names it made (`arg$63098`).
@@ -1129,10 +1132,14 @@ spike/                       汎用の AST のスパイク（32caeb9）と、ゲ
   直に読む・節の位置を欄の番号で読む・シンボルの名前を 1 度だけ作る、で削れたのは約 0.1 秒で、さらに削るなら温まるまでか walk
   そのものの直しになる。1 回きりの最大 RSS は resolved 4.02GB → 5.26GB（1.31 倍。ただし 0.7.2 は回ごとに 3.7〜6.1GB 振れる: 2 つの
   walk が同時に生きている）・typed 7.81GB → 7.25GB。
-- v0.8 と 0.7.2 を同じやり方で（ゲームは id-x-lintrules2 の規則で。load average は【測る】）。中央値: 1 回きり resolved
-  【測る】・typed【測る】、常駐の 2 回目 resolved【測る】・typed【測る】、最大 RSS（1 回きり）resolved【測る】・typed【測る】。
+- v0.8 と 0.7.2 を同じやり方で（ゲームは id-x-lintrules2 の規則で。load average は始めが 5・流している間は 8〜15）。中央値:
+  1 回きり resolved 6.83 秒 → 7.31 秒（+0.48 秒）・typed 13.20 秒 → 13.81 秒（+0.61 秒）、常駐の 2 回目 resolved 3.85 秒 → 4.72 秒
+  （+0.87 秒）・typed 4.93 秒 → 5.47 秒（+0.54 秒）、最大 RSS（1 回きり）resolved 4.48GB → 3.68GB・typed 7.45GB → 8.54GB
+  （回ごとに 3.4〜5.8GB・6.7〜8.8GB と振れる）。
   v0.8 は事実（Facts）を shim の TSV ではなく汎用の AST から作る（`Flixlint.Rel`）ので、`load=` に関係を作る秒が乗り、
-  deep の表を作るのが安くなった分だけ `judge=` が減る: `load=`【測る】・`judge=`【測る】。残る重さは本体の walk（Rel の
+  deep の表を作るのが安くなった分だけ `judge=` が減る: `load=` は resolved 0.70 秒 → 1.39 秒・typed 0.75 秒 → 1.49 秒（常駐でも
+  回ごとに関係を作るので 0.45 秒 → 0.91 秒・0.41 秒 → 0.99 秒）、`judge=` は resolved 1.87 秒 → 1.64 秒・typed 2.08 秒 → 1.87 秒
+  （常駐ではほぼ同じ）。残る重さは本体の walk（Rel の
   bodyTables・約 0.5 秒）。旧い事実の walk と TSV は v0.9 で消える。
 - 同じソースを 2 回コンパイルしても、汎用の事実はバイトまで同じ。変数・region・label は walk が出会った順の番号（`x#0`）で書き、
   コンパイラが作った名前の中の通し番号（`arg$63098`）は落とす。
