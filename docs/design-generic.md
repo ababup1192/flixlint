@@ -348,6 +348,7 @@ families（disallowFunction など 11 本）は層 3 の関係の上で判定す
 | 汎用の walk と書き出しの秒 | walk の CPU は typed 4.8 秒・resolved 2.6 秒、書き出し 0.4〜0.9 秒。読み込み（`Flixlint.Ast.load` 全部）は中央値 typed 498 ms・resolved 434 ms | 【測った】v0.7 の手順 3（10-21・Mac mini・load average 30 前後で、静かな時の数ではない。手順 7 で測り直す） |
 | 0.6.5 の常駐 | 1 回目 resolved 27.9 秒・typed 61.8 秒。2 回目から（4 回）resolved 8.7〜11.9 秒（中央値 11.4 秒）・typed 7.3〜11.6 秒（中央値 9.3 秒） | 【測った】同上。4.2 の常駐の行の基準 |
 | 最大 RSS（0.6.5） | 1 回きり resolved 1.86〜3.55GB（中央値 2.43GB）・typed 3.94〜5.06GB（中央値 4.61GB）。常駐の server は 2 回流した後の heap が resolved 3.46GB 確保・1.28GB 使用、typed 4.47GB 確保・1.90GB 使用（この機械の sandbox では server の RSS を ps・top で読めないので jcmd GC.heap_info） | 【測った】同上（`/usr/bin/time -l` の maximum resident set size。JVM は -XX:MaxRAMPercentage=35） |
+| 0.7.0 と 0.6.5（静かな時・交互に 5 回ずつ） | 1 回きり resolved 4.64 → 5.78 秒（+1.14）・typed 10.30 → 12.29 秒（+1.99）。常駐の 2 回目 resolved 2.44 → 3.20 秒（+0.76）・typed 2.25 → 3.78 秒（+1.53）。最大 RSS（1 回きり）resolved 4.42 → 3.56GB・typed 8.70 → 7.85GB。事実と汎用の AST の読み込み 0.70 秒。汎用の walk と書き出し resolved 1.04 秒・typed 2.09 秒（**typed は目標の 1.5 秒を超えている**。0.7.1 か v0.8 の初めに直す） | 【測った】v0.7 の手順 7（10-21・Mac mini・ほかの仕事を止め、load average は始め 4・流している間 10〜18。中央値） |
 
 **4.2 の「基準」は 0.6.5（speed を main に入れた版）を Mac mini で 5 回流した中央値**にする。v0.6.4 の 9〜11s / 28〜31s は speed の前の数で、speed の絞りで resolved は 7.5s 前後まで下がっている見込みがあるため【見込み: 上の f7d741f の数は機械が書かれていない】。v0.7 の手順 0 として、0.6.5 の resolved・typed の 1 回きり・常駐の 2 回目・最大 RSS を Mac mini で取り、この表に書いてから手順 1 に入る。
 

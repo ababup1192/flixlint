@@ -298,7 +298,7 @@ A custom rule takes allows like any entry when it is written as `customRule({ id
 `allowIn` / `allowInFile` / `allowUntil` and lifted with `Flixlint.customs(List#{...})`; `Flixlint.custom(id, check)` is the
 short form without allows.
 
-(v0.7, in progress) A custom rule can also read the generic AST, `Flixlint.Facts.ast(facts)`: the tree, its leaves and the
+A custom rule can also read the generic AST, `Flixlint.Facts.ast(facts)`: the tree, its leaves and the
 types as `Flixlint.Ast` (layer 1, with the generated `Flixlint.AstKinds.Kind` / `Slot` / `Attr`), and the Flix words on it
 as `Flixlint.Flix` (layer 2: `defs`, `calls`, `callsTo(ast, Fn.X)`, `tagsOf`, `placement`, `branches`, `violation`).
 `test/fixture/rules/generic.flix` writes the fixture's custom rules this way. A `Kind.X` / `Slot.Y` / `Attr.Z` the rule
@@ -417,7 +417,7 @@ bin/flix-jar                 where the compiler jar is, when neither --flix-jar 
 shim/Facts.scala             AST -> TSV facts and Flixlint/Names.flix (typed stage, and the resolved stage that stops before the typer)
 shim/Spans.scala             --spans: AST -> the position of every name (README "Spans"), kept out of the facts
 shim/Lint.scala              the facts, then the built engine jar in the same JVM
-shim/Generic.scala           (v0.7, in progress) AST -> the generic relations: nodes, leaves, the shared type table, the
+shim/Generic.scala           AST -> the generic relations: nodes, leaves, the shared type table, the
                              external declarations, meta (binary columns; --facts-tsv for reading); a size limit
 shim/AstSchema.scala         make ast-kinds: the compiler jar -> schema/ast_schema.tsv, src/Flixlint/AstKinds.flix, shim/AstNames.scala
 shim/AstNames.scala          the names and hash of AstKinds for the shim (generated; do not edit)
@@ -428,8 +428,8 @@ src/Flixlint/Engine.flix     the judgments, the allows, the report and the exit 
 src/Flixlint/Violation.flix  the violation record and how it is rendered
 src/Flixlint/Glob.flix       the glob of `files`
 src/Flixlint/Ratchet.flix    `--limits`: rules judged by their count against a limits file
-src/Flixlint/Ast.flix        (v0.7, in progress) layer 1: the generic relations loaded (tree, leaves, types, externals)
-src/Flixlint/Flix.flix       (v0.7, in progress) layer 2: the Flix words on layer 1 (defs, calls, tags, placement, branches)
+src/Flixlint/Ast.flix        layer 1: the generic relations loaded (tree, leaves, types, externals)
+src/Flixlint/Flix.flix       layer 2: the Flix words on layer 1 (defs, calls, tags, placement, branches)
 src/Flixlint/AstKinds.flix   the generated Kind / Slot / Attr enums, their numbers and the schema hash (do not edit)
 examples/                    a six-file project and four rules, small enough to read in a minute
 test/fixture/                a 7-file project that violates every family and three custom rules; test/run.sh checks the report
@@ -473,8 +473,14 @@ the sources.
   304,319 leaves, 11,017 types, 18MB. The types are one shared table, so a record alias used everywhere is written once
   (the spike wrote its expansion at every use and grew to 5.76M nodes). The full `Flixlint.Ast.load` took 267, 548, 498,
   433, 613 ms typed (median 498 ms) and 303, 449, 363, 434, 500 ms resolved (median 434 ms) on the Mac mini with a load
-  average near 30 from other jobs. The walk is 4.8 s (typed) and 2.6 s (resolved) of CPU on the same machine, over the
-  design's 1.5 s for the walk and the write; to be measured again on a quiet machine before 0.7.0.
+  average near 30 from other jobs.
+- 0.7.0 against 0.6.5 on the game (`src` and `test`), 5 runs each taken alternately on the Mac mini with the other jobs
+  stopped (load average 4 at the start, 10 to 18 during the runs, mostly the runs' own JVMs), medians: one run 4.64 s ->
+  5.78 s resolved (+1.14 s) and 10.30 s -> 12.29 s typed (+1.99 s); the second run of a resident server 2.44 s -> 3.20 s
+  resolved (+0.76 s) and 2.25 s -> 3.78 s typed (+1.53 s); maximum RSS of one run 4.42 GB -> 3.56 GB resolved and 8.70 GB ->
+  7.85 GB typed (it moves by 3 to 5 GB from run to run with the JVM's heap sizing). Reading the facts and the generic AST
+  (`FLIXLINT_TIMING=1`, `load=`) took 0.70 s. The generic walk and write (`generic=` of the shim's line) took 1.04 s resolved
+  and 2.09 s typed: the typed stage is over the design's 1.5 s, and is the next thing to make faster (0.7.1 or v0.8).
 - Two compiles of the same sources give the same generic relations, byte for byte: the walk numbers variables, regions
   and labels in the order it meets them (`x#0`) and drops the compiler's counter from the names it made (`arg$63098`).
 
@@ -781,7 +787,7 @@ custom rule も `customRule({ id = ..., check = ... })` の形で書き、`allow
 繋いで `Flixlint.customs(List#{...})` に渡せば、他の entry と同じに allow を取れる。allow の要らない短い形が
 `Flixlint.custom(id, check)`。
 
-（v0.7・作りかけ）custom rule は汎用の AST も読める（`Flixlint.Facts.ast(facts)`）。木・葉・型は `Flixlint.Ast`（層 1。生成した
+custom rule は汎用の AST も読める（`Flixlint.Facts.ast(facts)`）。木・葉・型は `Flixlint.Ast`（層 1。生成した
 `Flixlint.AstKinds.Kind` / `Slot` / `Attr` で引く）、その上の Flix の語は `Flixlint.Flix`（層 2: `defs`・`calls`・`callsTo(ast, Fn.X)`・
 `tagsOf`・`placement`・`branches`・`violation`）。`test/fixture/rules/generic.flix` が fixture の custom 規則をこの形で書いている。
 規則のファイルが書いた `Kind.X` / `Slot.Y` / `Attr.Z` のうち、その段に無い物・ソースに 1 つも無い物と、`Unnamed(` は
@@ -894,7 +900,7 @@ bin/flix-jar                 --flix-jar も FLIX_JAR も無い時の、コンパ
 shim/Facts.scala             AST -> TSV の facts と Flixlint/Names.flix（typed の段と、typer の手前で止まる resolved の段）
 shim/Spans.scala             --spans: AST -> 名前の位置の索引（「spans（名前の位置）」）。facts には入れない
 shim/Lint.scala              facts を書き、組んであるエンジンの jar を同じ JVM で流す
-shim/Generic.scala           （v0.7・作りかけ）AST -> 汎用の事実: 節・葉・型の共有の表・外の宣言・メタ（列ごとの二進。
+shim/Generic.scala           AST -> 汎用の事実: 節・葉・型の共有の表・外の宣言・メタ（列ごとの二進。
                              読むための --facts-tsv）と量の上限
 shim/AstSchema.scala         make ast-kinds: コンパイラの jar -> schema/ast_schema.tsv・src/Flixlint/AstKinds.flix・shim/AstNames.scala
 shim/AstNames.scala          shim が使う AstKinds の名前と hash（生成物。手で直さない）
@@ -905,8 +911,8 @@ src/Flixlint/Engine.flix     判定・allow・報告・exit code
 src/Flixlint/Violation.flix  違反の record と、その出し方
 src/Flixlint/Glob.flix       `files` の glob
 src/Flixlint/Ratchet.flix    `--limits`: 上限のファイルと数で判じる rule
-src/Flixlint/Ast.flix        （v0.7・作りかけ）層 1: 汎用の事実の読み込み（木・葉・型・外の宣言）
-src/Flixlint/Flix.flix       （v0.7・作りかけ）層 2: 層 1 の上の Flix の語（def・呼び出し・tag・置き場・分岐）
+src/Flixlint/Ast.flix        層 1: 汎用の事実の読み込み（木・葉・型・外の宣言）
+src/Flixlint/Flix.flix       層 2: 層 1 の上の Flix の語（def・呼び出し・tag・置き場・分岐）
 src/Flixlint/AstKinds.flix   生成した Kind・Slot・Attr の enum と番号と schema の hash（手で直さない）
 examples/                    6 ファイルのプロジェクトと 4 つの rule。1 分で読める大きさ
 test/fixture/                全 family と 3 つの custom rule に違反する 7 ファイルのプロジェクト。報告を test/run.sh が確かめる
@@ -950,8 +956,13 @@ spike/                       汎用の AST のスパイク（32caeb9）と、ゲ
   46,263 文字列・5,498 宣言・外の宣言 916・25MB、resolved は 292,018 節・304,319 葉・11,017 型・18MB。型は共有の表 1 つなので、
   どこでも使う record の alias も 1 回だけ書かれる（スパイクは使う所ごとに展開を書いて 5.76M 節に膨らんだ）。
   `Flixlint.Ast.load` 全部は typed で 267・548・498・433・613 ms（中央値 498 ms）、resolved で 303・449・363・434・500 ms
-  （中央値 434 ms。Mac mini・ほかの仕事で load average 30 前後）。walk は同じ機械で CPU 4.8 秒（typed）・2.6 秒（resolved）で、
-  設計の「walk と書き出しで 1.5 秒」を超えている。0.7.0 の前に静かな機械で測り直す。
+  （中央値 434 ms。Mac mini・ほかの仕事で load average 30 前後）。
+- 0.7.0 と 0.6.5 をゲーム（`src` と `test`）で、ほかの仕事を止めた Mac mini で交互に 5 回ずつ（load average は始めが 4・流している
+  間は 10〜18 で、多くはこの測りの JVM そのもの）。中央値: 1 回きりは resolved 4.64 秒 → 5.78 秒（+1.14 秒）・typed 10.30 秒 →
+  12.29 秒（+1.99 秒）、常駐の 2 回目は resolved 2.44 秒 → 3.20 秒（+0.76 秒）・typed 2.25 秒 → 3.78 秒（+1.53 秒）、1 回きりの最大 RSS は
+  resolved 4.42GB → 3.56GB・typed 8.70GB → 7.85GB（JVM の heap の取り方で回ごとに 3〜5GB 振れる）。事実と汎用の AST の読み込み
+  （`FLIXLINT_TIMING=1` の `load=`）は 0.70 秒。汎用の walk と書き出し（shim の行の `generic=`）は resolved 1.04 秒・typed 2.09 秒で、
+  typed は設計の 1.5 秒を超えている。次に速くするのはここ（0.7.1 か v0.8）。
 - 同じソースを 2 回コンパイルしても、汎用の事実はバイトまで同じ。変数・region・label は walk が出会った順の番号（`x#0`）で書き、
   コンパイラが作った名前の中の通し番号（`arg$63098`）は落とす。
 

@@ -158,7 +158,7 @@ expect4 "$lint" --rules rules/clean.flix --pkg lib/github/extra/owner/name/1.0.0
 
 # Under FLIXLINT_RESIDENT=1 (make test-resident) every run above went through a resident server; they are stopped here.
 if [ "${FLIXLINT_RESIDENT:-0}" = 1 ]; then
-    for dir in test/fixture examples; do
+    for dir in test/fixture examples test/spans; do
         (cd "$root/$dir" && "$lint" --resident-stop --build-dir "$root/build/$(basename "$dir")")
     done
 fi
