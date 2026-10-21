@@ -67,5 +67,7 @@ expect4 "$lint" --rules rules/clean.flix --stage bogus src
 expect4 "$lint" --rules rules/does-not-exist.flix src
 expect4 "$lint" --rules rules/clean.flix --nonsense src
 expect4 "$lint" --rules rules/clean.flix --limits limits/does-not-exist.json src
+# A --pkg path one segment too deep would read owner and name off by one: it is refused, not misread.
+expect4 "$lint" --rules rules/clean.flix --pkg lib/github/extra/owner/name/1.0.0/name-1.0.0.fpkg src
 
 echo "flixlint test: ok ($(grep -c ': .*: .*: ' "$root/test/expected.txt") violations on the fixture, $(grep -c ': .*: .*: ' "$root/test/expected-examples.txt") on examples)"

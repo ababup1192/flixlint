@@ -155,7 +155,9 @@ object Facts {
         val abs = p.toAbsolutePath.normalize
         val parts = abs.iterator().asScala.map(_.toString).toVector
         val i = parts.lastIndexOf("github")
-        if (i < 0 || i + 4 >= parts.length)
+        // WhyNot: not just "enough segments after github/". A deeper path would shift owner and name by a segment and
+        // give the package another id, so the shape is matched exactly, file name included.
+        if (i < 0 || parts.length != i + 5 || parts(i + 4) != s"${parts(i + 2)}-${parts(i + 3)}.fpkg")
           throw new UsageError(s"--pkg $p: expected a path of the form .../github/<owner>/<name>/<version>/<name>-<version>.fpkg")
         val id = PackageId(Repository.GitHub, parts(i + 1), parts(i + 2))
         val nested = abs.resolveSibling(abs.getFileName.toString.stripSuffix(".fpkg") + ".toml")
@@ -189,16 +191,22 @@ object Facts {
     private def ofRoot(root: Path): Deps = {
       val lib = root.resolve("lib")
       val fpkgs = scala.collection.mutable.LinkedHashMap.empty[PackageId, InstalledPackage]
+      val versions = scala.collection.mutable.Map.empty[PackageId, String]
       val externals = scala.collection.mutable.LinkedHashMap.empty[String, Path]
       // WhyNot: one version per package. Flix 0.78 keys the mount tables by the package id, so two versions of one
-      // package cannot both be given to the compiler; the first one met in the walk (depth first, from the root) wins.
+      // package cannot both be given to the compiler; the first one met in the walk (depth first, from the root) wins,
+      // and each other version is named on stderr.
       def walk(manifest: Manifest): Unit = {
         manifest.jarDependencies.foreach { d =>
           externals.getOrElseUpdate(d.fileName, need(lib.resolve("external").resolve(d.fileName), root))
         }
         manifest.flixDependencies.foreach { d =>
+          val version = d.version.toString
+          versions.get(d.id).filter(_ != version).foreach { kept =>
+            System.err.println(s"flixlint: ${d.id.owner}/${d.id.name} $version is left out; $kept was met first and is the one given to the compiler")
+          }
           if (!fpkgs.contains(d.id)) {
-            val version = d.version.toString
+            versions += (d.id -> version)
             val dir = lib.resolve("github").resolve(d.id.owner).resolve(d.id.name).resolve(version)
             val fpkg = need(dir.resolve(s"${d.id.name}-$version.fpkg"), root)
             val nested = dir.resolve(s"${d.id.name}-$version.toml")
