@@ -278,7 +278,7 @@ What the families cannot say is written against the facts, in the same rule set;
 [`examples/rules.flix`](examples/rules.flix) is one.
 
 `Flixlint.Facts` gives the relations as lists of records (`defs`, `calls`, `handles`, `constructs`, `callsInLambda`,
-`argLits`, `argCalls`, `pipedInto`, `strLits`, `argTypes`, `argTypesAll`, `argTypesDeep`, `caseTypes`, `caseTypesAll`, `caseTypesDeep`, `enums`, `effects`, `typeAliases`)
+`argLits`, `argCalls`, `pipedInto`, `strLits`, `branches`, `argTypes`, `argTypesAll`, `argTypesDeep`, `caseTypes`, `caseTypesAll`, `caseTypesDeep`, `enums`, `effects`, `typeAliases`)
 and the lookups (`defOf`, `callsFrom`, `callsTo`, `effectOf`, `argType`, `argTypesAllOf`, `argTypesDeepOf`, `retType`, `retTypesAllOf`, `retTypesDeepOf`,
 `aliasTypesAllOf`, `strLitsIn`, `expandEffects`, `fnName`, `isIn`); `Flixlint.Violation` builds violations (`atCall`, `atDef`, `inBody`,
 `atDeclaration`, `withPath`, `withNote`); `Flixlint.Glob.matches(pattern, path)` is the glob of `files` (`*` stays
@@ -311,6 +311,7 @@ facts directory holds fewer files than the table below has rows.
 | `ArgCall` | `caller, callee, index, argCallee, line` | A call to `argCallee` (or a partial application of it) as the `index`-th argument of a call to `callee`. |
 | `PipedInto` | `caller, source, target, line` | In a `\|>` chain, the result of `source` reaches `target` through any number of stages (`a() \|> f \|> g(x)` gives a→f, a→g, f→g); `line` is the line of `target`. A lambda inside a stage is not part of the chain. |
 | `StrLit` | `fn, text, line` | A string literal in the body of `fn` (the pieces of an interpolated string too). |
+| `Branch` | `fn, kind, line` | A branch in the body of `fn`: `kind` is `if`, `match` (a `match` lambda too), `typematch` or `extmatch`. |
 | `ArgType` | `fn, index, tycon` | Head type constructor of the `index`-th parameter (`Auth.Permit`, `List`, `Str`, `Arrow(2)`, `?` for a type variable). |
 | `ArgTypeAll` | `fn, index, tycon` | Every type constructor in the `index`-th parameter, nested ones included (`List[ColumnName]` gives `List` and `ColumnName`; an alias is listed by its own name and its arguments; type variables and record rows are left out). |
 | `RetType` / `RetTypeAll` | `fn, tycon` | The head type constructor of the return type / every one in it. |
@@ -652,7 +653,7 @@ family で言えない物は facts に対して書き、同じ rule set に入�
 の `findReadsOnly` がその 1 つ。
 
 `Flixlint.Facts` は関係を record の list で渡し（`defs`、`calls`、`handles`、`constructs`、`callsInLambda`、
-`argLits`、`argCalls`、`pipedInto`、`strLits`、`argTypes`、`argTypesAll`、`argTypesDeep`、`caseTypes`、`caseTypesAll`、`caseTypesDeep`、`enums`、`typeAliases`、
+`argLits`、`argCalls`、`pipedInto`、`strLits`、`branches`、`argTypes`、`argTypesAll`、`argTypesDeep`、`caseTypes`、`caseTypesAll`、`caseTypesDeep`、`enums`、`typeAliases`、
 `effects`）、引く関数（`defOf`、`callsFrom`、`callsTo`、`effectOf`、`argType`、`argTypesAllOf`、`argTypesDeepOf`、`retType`、
 `retTypesAllOf`、`retTypesDeepOf`、`aliasTypesAllOf`、`strLitsIn`、`expandEffects`、`fnName`、`isIn`）も持つ。`Flixlint.Violation` が違反を組み
 （`atCall`、`atDef`、`inBody`、`atDeclaration`、`withPath`、`withNote`）、`Flixlint.Glob.matches(pattern, path)`
@@ -685,6 +686,7 @@ qualify するのと同じ形になる。`Auth.permit`、`Auth.Permit.Permit`（
 | `ArgCall` | `caller, callee, index, argCallee, line` | `callee` の呼び出しの `index` 番目の引数が `argCallee` の呼び出し（か、その部分適用）である事 |
 | `PipedInto` | `caller, source, target, line` | `\|>` の連なりの中で、`source` の結果が何段か先の `target` に届く事（`a() \|> f \|> g(x)` は a→f、a→g、f→g）。`line` は `target` の行。段の中のラムダは連なりに入らない |
 | `StrLit` | `fn, text, line` | `fn` の本体の中の文字列リテラル（補間した文字列の断片も） |
+| `Branch` | `fn, kind, line` | `fn` の本体の中の分岐。`kind` は `if`・`match`（`match` のラムダも）・`typematch`・`extmatch` |
 | `ArgType` | `fn, index, tycon` | `index` 番目の引数の型の先頭の型コンストラクタ（`Auth.Permit`、`List`、`Str`、`Arrow(2)`、型変数は `?`） |
 | `ArgTypeAll` | `fn, index, tycon` | `index` 番目の引数の型に現れる型コンストラクタを入れ子まで全部（`List[ColumnName]` なら `List` と `ColumnName`。エイリアスは自分の名前とその引数を載せる。型変数と record の row は外す） |
 | `RetType` / `RetTypeAll` | `fn, tycon` | 戻り値の型の先頭の型コンストラクタ / その中の全部 |

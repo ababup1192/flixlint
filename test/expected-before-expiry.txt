@@ -90,6 +90,15 @@ src/domain/Orders.flix:66: log-text: Orders.loggedSecret: calls Log.str with "se
 src/domain/Orders.flix:72: domain-isolation: Wrapped.Of: takes Generated.Query
     the domain does not know the generated API; mappings live in Mapping
     fix it, or add |> allowInFile("src/domain/Orders.flix", "reason") to rule domain-isolation
-src/domain/rules/Pricing.flix:4: pure-rules: Pricing.priceFromDb: has Db
+src/domain/rules/Pricing.flix:4: flat-rules: Pricing.discountOf: branches with if
+    a rule is a table read by a lookup; the branching lives in the caller
+    fix it, or add |> allowIn(Fn.Pricing_discountOf, "reason") to rule flat-rules
+src/domain/rules/Pricing.flix:8: flat-rules: Pricing.bandOf: branches with match
+    a rule is a table read by a lookup; the branching lives in the caller
+    fix it, or add |> allowIn(Fn.Pricing_bandOf, "reason") to rule flat-rules
+src/domain/rules/Pricing.flix:9: flat-rules: Pricing.bandOf: branches with guard
+    a rule is a table read by a lookup; the branching lives in the caller
+    fix it, or add |> allowIn(Fn.Pricing_bandOf, "reason") to rule flat-rules
+src/domain/rules/Pricing.flix:13: pure-rules: Pricing.priceFromDb: has Db
     rules are pure and table-tested; the time comes in as nowMillis
     fix it, or add |> allowIn(Fn.Pricing_priceFromDb, "reason") to rule pure-rules

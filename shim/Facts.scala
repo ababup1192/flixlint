@@ -416,6 +416,26 @@ object Facts {
             val symUse = field[Any](p, "symUse")
             sink.handles(fn, symName(field[Any](symUse, "sym")), lineOf(p))
             p.productIterator.foreach(x => go(x, outers, env, inPipe = false))
+          case "IfThenElse" | "Match" | "TypeMatch" | "ExtMatch" if p.getClass.getName.contains("Expr") =>
+            // A branch in the body: `if`, `match` (a `match` lambda too: the compiler makes it a match on the argument,
+            // and Python-era counts read the keyword), `typematch`, `extmatch`, and each guard of a match rule.
+            // WhyNot: a `let (a, b) = e` is not counted. The compiler turns it into a match with one rule at the
+            // let's own location, which no source `match` has (its rules sit at their `case`).
+            val loc = field[SourceLocation](p, "loc")
+            val rules = if (p.productPrefix == "Match") field[List[Any]](p, "rules") else Nil
+            val destructuringLet = rules match {
+              case List(rule) => loc.isReal && field[SourceLocation](rule, "loc") == loc && field[Option[Any]](rule, "guard").isEmpty
+              case _ => false
+            }
+            val kind = p.productPrefix match {
+              case "IfThenElse" => "if"
+              case "Match" => "match"
+              case "TypeMatch" => "typematch"
+              case _ => "extmatch"
+            }
+            if (!destructuringLet) sink.branch(fn, kind, lineOf(p))
+            rules.foreach(rule => field[Option[Any]](rule, "guard").foreach(g => sink.branch(fn, "guard", lineOf(g.asInstanceOf[Product]))))
+            p.productIterator.foreach(x => go(x, outers, env, inPipe = false))
           case "Tag" if p.getClass.getName.contains("Expr") =>
             // an expression that builds the case; a `Tag` pattern (a match, a let with a pattern) is not a construction
             val symUse = field[Any](p, "symUse")
@@ -466,6 +486,7 @@ final class Sink(dir: Path) {
   def argCall(caller: String, callee: String, i: Int, argCallee: String, line: Int): Unit = { fnNames += caller; fnNames += callee; fnNames += argCallee; row("arg_call", caller, callee, i, argCallee, line) }
   def pipedInto(caller: String, from: String, into: String, line: Int): Unit = { fnNames += caller; fnNames += from; fnNames += into; row("piped_into", caller, from, into, line) }
   def strLit(fn: String, text: String, line: Int): Unit = { fnNames += fn; row("str_lit", fn, text, line) }
+  def branch(fn: String, kind: String, line: Int): Unit = { fnNames += fn; row("branch", fn, kind, line) }
   def argTypeAll(fn: String, i: Int, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("arg_type_all", fn, i, tycon) }
   def retTypeAll(fn: String, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("ret_type_all", fn, tycon) }
   def caseTypeAll(enum0: String, enumCase: String, i: Int, tycon: String): Unit = { enumNames += enum0; caseNames += enumCase; typeNames += tycon; row("case_type_all", enum0, enumCase, i, tycon) }

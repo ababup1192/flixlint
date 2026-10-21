@@ -70,7 +70,8 @@ mod FixtureRules {
             customRule({ id = "capability-site", check = capabilitySite })
                 |> allowIn(Fn.Orders_permitsInLambda, "an allow on a custom rule"),
             customRule({ id = "silent-parse", check = silentParse }),
-            customRule({ id = "raw-alias", check = rawAlias })
+            customRule({ id = "raw-alias", check = rawAlias }),
+            customRule({ id = "flat-rules", check = flatRules })
         })
     })
 
@@ -99,6 +100,13 @@ mod FixtureRules {
             |> List.filter(c -> Flixlint.Facts.defOf(facts, c#caller)
                 |> Option.exists(d -> Flixlint.Glob.matches("src/domain/**", d#file) and d#file != "src/domain/Auth.flix"))
             |> List.map(c -> Flixlint.Violation.atCall(facts, "capability-site", c, "use cases receive Permit as an argument; only the boundary asks Auth"))
+
+    /// The rules are tables, not decisions: no `if` or `match` in src/domain/rules (Branch).
+    def flatRules(facts: Facts): List[Violation] =
+        Flixlint.Facts.branches(facts)
+            |> List.filter(b -> Flixlint.Facts.defOf(facts, b#fn) |> Option.exists(d -> Flixlint.Glob.matches("src/domain/rules/**", d#file)))
+            |> List.map(b -> Flixlint.Violation.inBody(facts, "flat-rules", b#fn, b#line, "branches with ${b#kind}",
+                "a rule is a table read by a lookup; the branching lives in the caller"))
 
     /// A type alias that stands for a bare Int64 (directly or through a type inside it), except a record of two or more
     /// fields, which names what each number means: TypeAliasDef and AliasTypeAll.
