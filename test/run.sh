@@ -10,6 +10,7 @@
 #   fixture, rules/rules.flix --limits limits/*.json -> the ratchet: exit 0 at the count, 1 over or under it, 2 for a limit of no rule
 #   examples/rules.flix        -> exit 1, test/expected-examples.txt (the four rules of examples/README.md)
 #   test/spans, --spans alone  -> exit 0, test/expected-spans-<stage>.txt (the name index: every kind, a receiver known by each way)
+#   test/fixture, flixlint.Generic -> the kind number of every node names the same kind in the shim and in AstKinds.flix
 #
 #   FLIX_JAR=/path/to/flix.jar test/run.sh   （FLIX_JAR を渡さなければ bin/flix-jar が解決する）
 set -eu
@@ -82,6 +83,26 @@ set -e
 [ "$code" = 0 ] || { echo "test/spans: expected exit 0, got $code" >&2; cat "$root/build/spans.stderr" >&2; exit 1; }
 diff "$root/test/expected-spans-$stage.txt" "$spans_out" || { echo "test/spans: the index differs from test/expected-spans-$stage.txt (< expected / > actual)" >&2; exit 1; }
 
+# The generic AST on the fixture: every node's kind number names the same kind in the shim and in the checked-in
+# AstKinds.flix, and columns of another schema are refused. The shim jar is the one the runs above built.
+gen="$root/build/generic"
+rm -rf "$gen"; mkdir -p "$gen/engine/src/Flixlint"
+(cd "$root/test/fixture" && java -cp "$FLIX_JAR:$root/build/flixlint-shim.jar" flixlint.Generic --out "$gen/columns" --stage "$stage" src) 2> "$gen/shim.stderr" \
+    || { echo "test/fixture: flixlint.Generic failed" >&2; cat "$gen/shim.stderr" >&2; exit 1; }
+cp "$root/src/Flixlint/Ast.flix" "$root/src/Flixlint/AstKinds.flix" "$gen/engine/src/Flixlint/"
+cp "$root/test/generic/Main.flix" "$gen/engine/src/"
+echo 'mod Flixlint { }' > "$gen/engine/src/Flixlint.flix"
+printf '[package]\nversion = "0.0.0"\nflix = "0.0.0"\n' > "$gen/engine/flix.toml"
+(cd "$gen/engine" && java -jar "$FLIX_JAR" build-jar --no-install > build.log 2>&1) \
+    || { echo "test/generic: the check does not compile (src/Flixlint/Ast.flix, AstKinds.flix, test/generic/Main.flix)" >&2; tail -40 "$gen/engine/build.log" >&2; exit 1; }
+generic="$(FLIXLINT_GENERIC="$gen/columns" java -jar "$gen/engine/artifact/engine.jar")"
+case "$generic" in "generic: ok "*) ;; *) echo "test/generic: the kind numbers differ" >&2; echo "$generic" >&2; exit 1 ;; esac
+cp -R "$gen/columns" "$gen/other-schema"; echo 0000000000000000 > "$gen/other-schema/schema_hash.txt"
+case "$(FLIXLINT_GENERIC="$gen/other-schema" java -jar "$gen/engine/artifact/engine.jar")" in
+    *"ast_schema 0000000000000000"*) ;;
+    *) echo "test/generic: columns of another ast_schema were not refused" >&2; exit 1 ;;
+esac
+
 # WhyNot: 呼び方と環境の誤りを exit 2 のままにしない。flix.jar が無くても shim が組めなくても --rules の
 # パスが違っても broken.flix の行が緑になり、「規則が壊れている事」を確かめたつもりの検査が何も確かめない。
 expect4() {
@@ -109,4 +130,4 @@ if [ "${FLIXLINT_RESIDENT:-0}" = 1 ]; then
     done
 fi
 
-echo "flixlint test: ok ($(grep -c ': .*: .*: ' "$root/test/expected.txt") violations on the fixture, $(grep -c ': .*: .*: ' "$root/test/expected-examples.txt") on examples)"
+echo "flixlint test: ok ($(grep -c ': .*: .*: ' "$root/test/expected.txt") violations on the fixture, $(grep -c ': .*: .*: ' "$root/test/expected-examples.txt") on examples; ${generic#generic: ok })"

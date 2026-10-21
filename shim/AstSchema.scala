@@ -1,0 +1,280 @@
+package flixlint
+
+import ca.uwaterloo.flix.language.ast.{ResolvedAst, SourceLocation, Symbol, Type, TypeConstructor, TypedAst, UnkindedType}
+
+import java.lang.reflect.{Modifier, ParameterizedType, Type => JType, TypeVariable, WildcardType}
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Path, Paths}
+import java.security.MessageDigest
+import scala.jdk.CollectionConverters._
+
+/** The vocabulary of the generic AST, read off the compiler jar (docs/design-generic.md 1.5).
+  *
+  * Usage: AstSchema --schema FILE --kinds FILE
+  *
+  *  - `--schema` the `ast_schema`: `stage kind slot fieldClass`, one line per field of every node class the walker can
+  *    reach from a declaration (`Def`, `Enum`, `TypeAlias`, `Effect` of `TypedAst.Root` and `ResolvedAst.Root`), sorted
+  *  - `--kinds`  `Flixlint/AstKinds.flix`: the enums `Kind`, `Slot` and `Attr` of the union of the two stages, the
+  *    number of each case (its position among the names sorted), and the hash of the `ast_schema` text
+  *
+  * The schema depends on the compiler jar only, not on any source, so two runs on one Flix version write the same
+  * files. `Generic` numbers the kinds it writes with the same `kindNumbers`.
+  *
+  * A field is a slot when it can hold a node, and an attribute when it holds a leaf (a symbol, a constant, a name, a
+  * string, a number). A constant attribute also has `<name>.lit` (its text) and a type constructor `<name>.kind`.
+  *
+  * WhyNot: the fields are not read from instances. The schema must not depend on what a source happens to write, so
+  * the walk is over classes: the declared fields of each case class with their generic types, and for an abstract
+  * field type every concrete class of the compiler's `ast` packages that implements it.
+  */
+object AstSchema {
+
+  def main(argv: Array[String]): Unit = {
+    def opt(name: String): Path = {
+      val i = argv.indexOf(name)
+      if (i < 0 || i + 1 >= argv.length) { System.err.println(s"flixlint: AstSchema needs $name FILE"); sys.exit(4) }
+      Paths.get(argv(i + 1))
+    }
+    val schemaOut = opt("--schema")
+    val kindsOut = opt("--kinds")
+    val text = schemaText
+    write(schemaOut, text)
+    write(kindsOut, AstKindsFlix.render(hashOf(text)))
+    System.err.println(s"flixlint ast_schema: ${rows.size} fields, ${kindNames.size} kinds, ${slotNames.size} slots, ${attrNames.size} attrs, hash ${hashOf(text)}")
+  }
+
+  /** One field of a node class. `role` is what the walker makes of it. */
+  final case class Row(stage: String, kind: String, slot: String, fieldClass: String, role: Role)
+
+  sealed trait Role
+  object Role {
+    case object Slot extends Role
+    case object Attr extends Role
+    case object Constant extends Role
+    case object TyCon extends Role
+  }
+
+  /** The kind names of both stages, sorted: kind `i` of the `kind` column is `kindNames(i)`. */
+  lazy val kindNames: Vector[String] = rows.map(_.kind).distinct.sorted.toVector
+  lazy val kindNumbers: Map[String, Int] = kindNames.zipWithIndex.toMap
+  lazy val slotNames: Vector[String] = rows.filter(_.role == Role.Slot).map(_.slot).distinct.sorted.toVector
+  lazy val attrNames: Vector[String] = rows.flatMap(attrsOf).distinct.sorted.toVector
+
+  def attrsOf(r: Row): List[String] = r.role match {
+    case Role.Slot => Nil
+    case Role.Attr => List(r.slot)
+    case Role.Constant => List(r.slot, r.slot + ".lit")
+    case Role.TyCon => List(r.slot, r.slot + ".kind")
+  }
+
+  lazy val rows: List[Row] = (stageRows("typed", classOf[TypedAst.Root]) ++ stageRows("resolved", classOf[ResolvedAst.Root])).distinct
+    .sortBy(r => (r.stage, r.kind, r.slot, r.fieldClass))
+
+  lazy val schemaText: String = rows.map(r => s"${r.stage}\t${r.kind}\t${r.slot}\t${r.fieldClass}\n").mkString
+
+  def hashOf(text: String): String =
+    MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8)).map(b => f"${b & 0xff}%02x").mkString.take(16)
+
+  private def write(p: Path, s: String): Unit = {
+    Option(p.getParent).foreach(Files.createDirectories(_))
+    Files.write(p, s.getBytes(StandardCharsets.UTF_8))
+  }
+
+  // ---- what the walker makes of a class (Generic.Walker.value, read off the class instead of the value) ----
+
+  /** `ca.uwaterloo.flix.language.ast.TypedAst$Expr$ApplyDef` -> `Expr.ApplyDef`; outside the ast packages the simple name. */
+  def kindOfClass(c: Class[_]): String = {
+    val n = c.getName
+    val i = n.indexOf("language.ast.")
+    if (i < 0) c.getSimpleName
+    else n.substring(i + "language.ast.".length)
+      .stripPrefix("TypedAst$").stripPrefix("ResolvedAst$").stripPrefix("Declaration$").stripPrefix("shared.").stripSuffix("$").replace('$', '.')
+  }
+
+  /** A value the walker passes over: its location, its doc comment, its scheme, its kind, its security context, the
+    * scope of a typed hole (the names in scope, which would walk the whole NamedAst). */
+  def isSkippedClass(c: Class[_]): Boolean = {
+    val n = c.getName
+    classOf[SourceLocation].isAssignableFrom(c) ||
+      n.endsWith("shared.Doc") || n.endsWith("ast.Scheme") || n.contains("ast.Kind") || n.contains("shared.SecurityContext") || n.endsWith("shared.LocalScope")
+  }
+
+  /** A symbol use, a constant or a name: written as an attribute of its owner, not as a node. */
+  def isLeafClass(c: Class[_]): Boolean = {
+    val n = c.getName
+    n.contains("SymUse$") || n.contains("Constant$") || n.contains("ast.Name$") ||
+      n.endsWith("shared.SymUse") || n.endsWith("shared.Constant") || n.endsWith("ast.Name")
+  }
+
+  private def isConstant(c: Class[_]): Boolean = c.getName.contains("Constant")
+
+  private def isPlainLeaf(c: Class[_]): Boolean =
+    c.isPrimitive || c == classOf[String] || classOf[java.lang.Number].isAssignableFrom(c) || c == classOf[java.lang.Boolean] ||
+      c == classOf[java.lang.Character] || classOf[Symbol].isAssignableFrom(c)
+
+  private def isContainer(c: Class[_]): Boolean =
+    c == classOf[Option[_]] || classOf[Iterable[_]].isAssignableFrom(c) || c.getName.endsWith("collection.Nel")
+
+  /** A case class the walker makes a node of: a product with fields (a case object, or a product of none, is a leaf). */
+  private def isNodeClass(c: Class[_]): Boolean =
+    classOf[Product].isAssignableFrom(c) && !Modifier.isAbstract(c.getModifiers) && !c.isInterface && !c.getName.endsWith("$") && fieldsOf(c).nonEmpty
+
+  // ---- the walk over classes ----
+
+  private lazy val astClasses: List[Class[_]] = {
+    val jar = Paths.get(classOf[TypedAst.type].getProtectionDomain.getCodeSource.getLocation.toURI)
+    val zip = new java.util.zip.ZipFile(jar.toFile)
+    try zip.entries().asScala.map(_.getName)
+      .filter(n => n.startsWith("ca/uwaterloo/flix/language/ast/") && n.endsWith(".class"))
+      .map(n => n.stripSuffix(".class").replace('/', '.')).toList.sorted
+      .flatMap(n => scala.util.Try(Class.forName(n, false, getClass.getClassLoader)).toOption)
+    finally zip.close()
+  }
+
+  /** The concrete node classes a field of class `c` can hold. */
+  private def implementations(c: Class[_]): List[Class[_]] =
+    if (isNodeClass(c)) List(c) else astClasses.filter(k => c.isAssignableFrom(k) && isNodeClass(k))
+
+  /** The fields of a case class, in constructor order. */
+  def fieldsOf(c: Class[_]): List[java.lang.reflect.Field] = {
+    val arity = if (c.getConstructors.isEmpty) 0 else c.getConstructors.map(_.getParameterCount).max
+    c.getDeclaredFields.toList.filterNot(f => Modifier.isStatic(f.getModifiers)).take(arity)
+  }
+
+  /** A field type with the type arguments of its class put in (`Tuple2[SymUse, Expr]`, not `Tuple2[T1, T2]`). */
+  private final case class T(raw: Class[_], args: List[T])
+
+  private val objectT = T(classOf[Object], Nil)
+
+  private def toT(t: JType, env: Map[String, T]): T = t match {
+    case c: Class[_] => T(c, Nil)
+    case p: ParameterizedType => T(p.getRawType.asInstanceOf[Class[_]], p.getActualTypeArguments.toList.map(toT(_, env)))
+    case v: TypeVariable[_] => env.getOrElse(v.getName, objectT)
+    case w: WildcardType => w.getUpperBounds.headOption.map(toT(_, env)).getOrElse(objectT)
+    case _ => objectT
+  }
+
+  /** The element types of a container type (the values of a map). */
+  private def elements(t: T): List[T] =
+    if (t.args.isEmpty) List(objectT)
+    else if (classOf[scala.collection.Map[_, _]].isAssignableFrom(t.raw)) List(t.args.last)
+    else t.args
+
+  private def show(t: T): String = {
+    val n = t.raw.getName
+    val name = if (n.contains("language.ast.")) n.substring(n.indexOf("language.ast.") + 13).replace('$', '.').stripSuffix(".") else t.raw.getSimpleName
+    if (t.args.isEmpty) name else s"$name[${t.args.map(show).mkString(", ")}]"
+  }
+
+  /** The roots of a stage: the map values of `defs`, `enums`, `typeAliases` and `effects` of its Root. */
+  private def rootClasses(root: Class[_]): List[Class[_]] =
+    List("defs", "enums", "typeAliases", "effects").flatMap(n => elements(toT(root.getDeclaredField(n).getGenericType, Map.empty)).map(_.raw))
+
+  private def stageRows(stage: String, root: Class[_]): List[Row] = {
+    val seen = scala.collection.mutable.HashSet.empty[String]
+    val out = scala.collection.mutable.ListBuffer.empty[Row]
+    var todo: List[T] = rootClasses(root).flatMap(implementations).map(T(_, Nil))
+
+    /** The node classes a value of type `t` can be, with `t`'s type arguments when it is one itself. */
+    def nodes(t: T): List[T] = implementations(t.raw).map(k => if (k == t.raw) t else T(k, Nil))
+
+    /** What the walker does with a value of static type `t`: the role of the field, and the node types it reaches. */
+    def classify(t: T): (Option[Role], List[T]) = {
+      val c = t.raw
+      if (isSkippedClass(c)) (None, Nil)
+      else if (classOf[TypeConstructor].isAssignableFrom(c)) (Some(Role.TyCon), Nil)
+      else if (isPlainLeaf(c)) (Some(Role.Attr), Nil)
+      else if (isLeafClass(c)) (Some(if (isConstant(c)) Role.Constant else Role.Attr), Nil)
+      else if (isContainer(c)) {
+        val parts = elements(t).map(classify)
+        val roles = parts.flatMap(_._1)
+        (if (roles.contains(Role.Slot)) Some(Role.Slot) else roles.headOption, parts.flatMap(_._2))
+      }
+      else if (c == classOf[Object]) (Some(Role.Slot), Nil)
+      else nodes(t) match {
+        case Nil => (Some(Role.Attr), Nil)
+        case ks => (Some(Role.Slot), ks)
+      }
+    }
+
+    while (todo.nonEmpty) {
+      val t = todo.head
+      todo = todo.tail
+      if (seen.add(show(t))) {
+        val c = t.raw
+        val env = c.getTypeParameters.map(_.getName).zip(t.args).toMap
+        val kind = kindOfClass(c)
+        // WhyNot: an alias's expansion is not a field the walker visits (Generic.Walker.node), so it is not a slot.
+        val alias = kind.endsWith("Alias") && (classOf[Type].isAssignableFrom(c) || classOf[UnkindedType].isAssignableFrom(c))
+        fieldsOf(c).filterNot(f => f.getName == "loc" || (alias && f.getName == "tpe")).foreach { f =>
+          val ft = toT(f.getGenericType, env)
+          val (role, reached) = classify(ft)
+          role.foreach(r => out += Row(stage, kind, f.getName, show(ft), r))
+          todo = todo ++ reached
+        }
+      }
+    }
+    out.toList
+  }
+}
+
+/** Writes `Flixlint/AstKinds.flix` from the schema rows. */
+object AstKindsFlix {
+
+  /** `Expr.ApplyDef` -> `Expr_ApplyDef`, `cst.lit` -> `Cst_lit`, a tuple's `_1` -> `Elem_1`: a name made a Flix case name. */
+  def caseName(n: String): String = {
+    val m = if (n.startsWith("_")) "Elem" + n else n
+    m.head.toUpper.toString + m.tail.replace('.', '_')
+  }
+
+  private def enumOf(name: String, doc: String, names: Vector[String]): String = {
+    val cases = names.map(caseName)
+    val clash = cases.groupBy(identity).collect { case (c, xs) if xs.size > 1 => c }
+    if (clash.nonEmpty) throw new IllegalStateException(s"$name: two names make the case ${clash.mkString(", ")}")
+    val lower = name.head.toLower + name.tail
+    val sb = new StringBuilder
+    sb ++= s"    /// $doc\n"
+    sb ++= s"    pub enum $name with Eq, Order, ToString {\n"
+    cases.foreach(c => sb ++= s"        case $c\n")
+    sb ++= "    }\n\n"
+    sb ++= s"    /// The number of `${lower}`: its position among the names sorted (the column the shim writes).\n"
+    sb ++= s"    pub def ${lower}Index(x: $name): Int32 = match x {\n"
+    cases.zipWithIndex.foreach { case (c, i) => sb ++= s"        case $name.$c => $i\n" }
+    sb ++= "    }\n\n"
+    sb ++= s"    /// The compiler's name of `${lower}` (`${names.headOption.getOrElse("")}`).\n"
+    sb ++= s"    pub def ${lower}Name(x: $name): String = match x {\n"
+    cases.zip(names).foreach { case (c, n) => sb ++= s"        case $name.$c => \"$n\"\n" }
+    sb ++= "    }\n\n"
+    sb ++= s"    /// The `$name` of a number the shim wrote; none out of range.\n"
+    sb ++= s"    pub def ${lower}OfIndex(i: Int32): Option[$name] = match i {\n"
+    cases.zipWithIndex.foreach { case (c, i) => sb ++= s"        case $i => Some($name.$c)\n" }
+    sb ++= "        case _ => None\n"
+    sb ++= "    }\n\n"
+    sb ++= s"    /// Every `$name`, in number order.\n"
+    sb ++= s"    pub def ${lower}s(): Vector[$name] = Vector#{${cases.map(c => s"$name.$c").mkString(", ")}}\n"
+    sb.toString
+  }
+
+  def render(hash: String): String = {
+    val header =
+      """|// Generated by `make ast-kinds` (flixlint.AstSchema) from the compiler jar. Do not edit.
+         |
+         |///
+         |/// The vocabulary of the generic AST (docs/design-generic.md 1.5): the node kinds, the slots (fields that hold
+         |/// nodes) and the attributes (fields that hold leaves) of the typed and resolved stages together.
+         |///
+         |pub mod Flixlint.AstKinds {
+         |
+         |""".stripMargin
+    val hashDef =
+      s"""|    /// The hash of the `ast_schema` these names were made from; the shim writes the same hash with the columns.
+          |    pub def schemaHash(): String = "$hash"
+          |
+          |""".stripMargin
+    header + hashDef +
+      enumOf("Kind", "A kind of node: the compiler's class without the stage (`Expr.ApplyDef` is `Kind.Expr_ApplyDef`).", AstSchema.kindNames) + "\n" +
+      enumOf("Slot", "A field of a node that holds nodes (`exps` is `Slot.Exps`).", AstSchema.slotNames) + "\n" +
+      enumOf("Attr", "A field of a node that holds a leaf (`symUse` is `Attr.SymUse`, `cst.lit` is `Attr.Cst_lit`).", AstSchema.attrNames) +
+      "}\n"
+  }
+}
