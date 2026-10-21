@@ -30,7 +30,7 @@ lint() {
     # report that changed, and the reason is the only thing that says what happened.
     stderr="$(mktemp)"
     set +e
-    (cd "$root/$dir" && "$lint" --rules "$1" --today "$2" --stage "$stage" ${LIMITS:+--limits "$LIMITS"} \
+    (cd "$root/$dir" && "$lint" --rules "$1" --today "$2" --stage "$stage" ${LIMITS:+--limits "$LIMITS"} ${BASE:+--limits-base "$BASE"} \
         --build-dir "$root/build/$(basename "$dir")" src) > "$actual" 2> "$stderr"
     code=$?
     set -e
@@ -51,6 +51,11 @@ LIMITS=limits/at.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-r
 LIMITS=limits/over.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-over.txt
 LIMITS=limits/lower.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-lower.txt
 LIMITS=limits/stale.json lint test/fixture rules/rules.flix 2026-09-19 2 expected-ratchet-stale.txt
+# Against the base the work goes into (--limits-base): a limit that went up fails unless it gives a raiseReason, and a
+# raiseReason on a limit that did not go up fails too.
+LIMITS=limits/at.json BASE=limits/base-lower.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-raised.txt
+LIMITS=limits/raised-ok.json BASE=limits/base-lower.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-ratchet-at.txt
+LIMITS=limits/raised-ok.json BASE=limits/at.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-stale-reason.txt
 
 # WhyNot: 呼び方と環境の誤りを exit 2 のままにしない。flix.jar が無くても shim が組めなくても --rules の
 # パスが違っても broken.flix の行が緑になり、「規則が壊れている事」を確かめたつもりの検査が何も確かめない。
@@ -67,6 +72,7 @@ expect4 "$lint" --rules rules/clean.flix --stage bogus src
 expect4 "$lint" --rules rules/does-not-exist.flix src
 expect4 "$lint" --rules rules/clean.flix --nonsense src
 expect4 "$lint" --rules rules/clean.flix --limits limits/does-not-exist.json src
+expect4 "$lint" --rules rules/clean.flix --limits-base limits/at.json src
 # A --pkg path one segment too deep would read owner and name off by one: it is refused, not misread.
 expect4 "$lint" --rules rules/clean.flix --pkg lib/github/extra/owner/name/1.0.0/name-1.0.0.fpkg src
 

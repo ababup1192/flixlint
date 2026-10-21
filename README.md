@@ -118,7 +118,7 @@ the shim runs: the shim runs on the compiler jar's classpath inside `bin/flixlin
 
 ```
 bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
-             [--today YYYY-MM-DD] [--limits FILE.json] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
+             [--today YYYY-MM-DD] [--limits FILE.json [--limits-base FILE.json]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
              [--java-opts "..."] SRC...
 bin/flixlint --version
 ```
@@ -133,6 +133,7 @@ bin/flixlint --version
 | `--stage resolved` | Facts from the AST right after name resolution, before kinding and typing. Several times faster; the same facts except Java instance-method calls (the receiver's class is not known yet). |
 | `--today YYYY-MM-DD` | The date `allowUntil` is compared with (default: the real date). Tests fix it. |
 | `--limits FILE.json` | Ratchets: `{ "note": "...", "limits": { "<rule id>": <count> } }`. A rule with a limit is judged by its count: at the limit it passes silently; over it, its violations are listed with how many are new (exit 1); under it, the run fails until the limit is lowered to the count (exit 1); a limit for an id no rule has is exit 2. Without the option every violation is listed, which is also how to see the whole list of a ratchet. |
+| `--limits-base FILE.json` | The limits where the work branched off the branch it goes into (e.g. `git show "$(git merge-base HEAD origin/master)":lint/limits.json`; not `origin/master` itself, or a limit master lowered after the branch point would read as raised by the branch). A limit above its base fails the run (exit 1) unless it is written `{ "limit": <count>, "raiseReason": "why" }`; a `raiseReason` on a limit that is not above its base fails too. A rule that reached 0 has its line removed: a rule with no limit fails on its first violation, so it is forbidden from then on. |
 | `--facts-out DIR` | Where the TSV facts go (default `BUILD/facts`). Keep them: they are the easiest way to look up a qualified name. |
 | `--build-dir DIR` | Working directory for the facts and the rule engine (default `build/flixlint`), relative to the current directory. |
 | `--shim JAR` | A prebuilt shim jar, instead of building one with `scala-cli`. `FLIXLINT_SHIM` works too. |
@@ -494,7 +495,7 @@ shim は `bin/flixlint` の中で、コンパイラの jar の classpath の上�
 
 ```
 bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
-             [--today YYYY-MM-DD] [--limits FILE.json] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
+             [--today YYYY-MM-DD] [--limits FILE.json [--limits-base FILE.json]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
              [--java-opts "..."] SRC...
 bin/flixlint --version
 ```
@@ -509,6 +510,7 @@ bin/flixlint --version
 | `--stage resolved` | 名前解決の直後、kinding と typing の前の AST の facts。数倍速い。Java の instance method の呼び出し（受け手のクラスがまだ分からない）以外は同じ |
 | `--today YYYY-MM-DD` | `allowUntil` と比べる日付（既定は実日付）。テストは固定する |
 | `--limits FILE.json` | ラチェット: `{ "note": "...", "limits": { "<rule の id>": <数> } }`。上限を持つ rule は数で判じる。上限ちょうどなら黙って通り、超えたらその rule の違反と増えた数を出し（exit 1）、下回ったら上限をその数に下げるまで止まる（exit 1）。どの rule にも無い id の上限は exit 2。付けなければ全部の違反が出るので、ラチェットの一覧を見る時もそうする |
+| `--limits-base FILE.json` | 作業が入る先から分かれた所の上限（例 `git show "$(git merge-base HEAD origin/master)":lint/limits.json`。origin/master そのものと比べると、分かれた後に master が下げた上限を、このブランチが上げた事にしてしまう）。上限がそれより上がっていたら止まる（exit 1）。本当に上げる時は `{ "limit": <数>, "raiseReason": "理由" }` と書いた時だけ通す。上がっていないのに `raiseReason` が残っていても止まる。0 になった規則は上限の行を消す（上限の無い規則は 1 件でも止まるので、それで禁止になる） |
 | `--facts-out DIR` | TSV の facts の置き先（既定は `BUILD/facts`）。残しておくと、qualified な名前を引くのが一番速い |
 | `--build-dir DIR` | facts と rule engine の作業場所（既定は `build/flixlint`。カレントディレクトリからの相対） |
 | `--shim JAR` | `scala-cli` で組む代わりに、組んである shim の jar を渡す。`FLIXLINT_SHIM` でも良い |

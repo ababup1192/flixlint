@@ -4,16 +4,18 @@
 /// that says by how much; below it, the run fails until the limit is lowered to the count, so a violation that was
 /// fixed cannot come back unnoticed.
 ///
-/// The limits file is JSON: `{ "note": "...", "limits": { "<rule id>": <count>, ... } }`. Other top-level keys are
+/// The limits file is JSON: `{ "note": "...", "limits": { "<rule id>": <count>, ... } }`; a count that went up against
+/// `--limits-base` is written `{ "limit": <count>, "raiseReason": "why" }`. Other top-level keys are
 /// left to the project (a note on why, how to list the violations).
 ///
 pub mod Flixlint.Ratchet {
     use Flixlint.Violation.Violation
     use Util.Json.Json
-    use Util.Json.Json.{JNumber, JObject}
+    use Util.Json.Json.{JNumber, JObject, JString}
 
-    /// One limit: the rule `id` may have at most `limit` violations.
-    pub type alias Limit = { id = String, limit = Int32 }
+    /// One limit: the rule `id` may have at most `limit` violations. `raiseReason` says why the limit went up against the
+    /// base limits (`--limits-base`); a limit written as a bare count has none.
+    pub type alias Limit = { id = String, limit = Int32, raiseReason = Option[String] }
 
     /// What the ratchet leaves of the judged violations: the ones to report, the lines that fail the run (exit 1)
     /// and the errors in the limits file (exit 2, like any other mistake in the rules).
@@ -33,13 +35,35 @@ pub mod Flixlint.Ratchet {
 
     def limitOf(path: String, entry: (String, Json)): Result[String, Limit] =
         let (id, value) = entry;
+        let count = n -> match BigDecimal.tryToInt32(n) {
+            case Some(limit) if limit >= 0 => Ok(limit)
+            case _ => Err("${path}: the limit of ${id} is not a count")
+        };
         match value {
-            case JNumber(n) => match BigDecimal.tryToInt32(n) {
-                case Some(limit) if limit >= 0 => Ok({ id = id, limit = limit })
-                case _ => Err("${path}: the limit of ${id} is not a count")
+            case JNumber(n) => count(n) |> Result.map(limit -> { id = id, limit = limit, raiseReason = None })
+            case JObject(fields) => match (Map.get("limit", fields), Map.get("raiseReason", fields)) {
+                case (Some(JNumber(n)), Some(JString(why))) => count(n) |> Result.map(limit -> { id = id, limit = limit, raiseReason = Some(why) })
+                case (Some(JNumber(n)), None) => count(n) |> Result.map(limit -> { id = id, limit = limit, raiseReason = None })
+                case _ => Err("${path}: the limit of ${id} is a count, or { \"limit\": <count>, \"raiseReason\": \"why\" }")
             }
             case _ => Err("${path}: the limit of ${id} is not a number")
         }
+
+    /// The limits that went up against `base` (the limits of the branch the work goes into, e.g. origin/master's):
+    /// a limit above its base fails the run unless it gives a `raiseReason`, and a `raiseReason` on a limit that is not
+    /// above its base (or has no base) fails too, so the reason does not stay behind once the limit is back down.
+    /// A rule the base does not have is new and has nothing to be compared with.
+    pub def raised(path: String, basePath: String, limits: List[Limit], base: List[Limit]): List[String] =
+        let baseOf = base |> List.map(b -> (b#id, b#limit)) |> List.toMap;
+        limits |> List.filterMap(l -> match (Map.get(l#id, baseOf), l#raiseReason) {
+            case (Some(b), None) if l#limit > b =>
+                Some("flixlint: ratchet ${l#id}: the limit went up from ${b} to ${l#limit} against ${basePath}; lower it to ${b}, or write it as { \"limit\": ${l#limit}, \"raiseReason\": \"why\" } in ${path}")
+            case (Some(b), Some(_)) if l#limit <= b =>
+                Some("flixlint: ratchet ${l#id}: raiseReason is given, but the limit ${l#limit} is not above ${b} in ${basePath} (remove raiseReason from ${path})")
+            case (None, Some(_)) =>
+                Some("flixlint: ratchet ${l#id}: raiseReason is given, but ${basePath} has no limit for it (remove raiseReason from ${path})")
+            case _ => None
+        })
 
     /// Applies the limits to the judged violations. `ruleIds` are the ids the rule set has: a limit for an id that
     /// is not among them is an error, so that a renamed or removed rule does not leave a limit that checks nothing.
