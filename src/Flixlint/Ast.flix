@@ -72,6 +72,8 @@ pub mod Flixlint.Ast {
         kindStart = Lazy[Vector[Int32]], kindIds = Lazy[Vector[Int32]],
         attrStart = Lazy[Vector[Int32]],
         externals = Lazy[Map[String, External]],
+        // the nodes by a leaf: (attribute number, value) to their ids in id order
+        byLeaf = Lazy[Map[(Int32, String), List[Int32]]],
         ruleNames = List[RuleName]
     }
 
@@ -121,9 +123,10 @@ pub mod Flixlint.Ast {
                 kindIds = lazy snd(groups(Vector.length(Flixlint.AstKinds.kinds()), kind)),
                 attrStart = lazy fst(groups(Vector.length(kind), attrNode)),
                 externals = lazy Map.empty(),
+                byLeaf = lazy Map.empty(),
                 ruleNames = ruleNames
             };
-            Ast.Ast({ externals = lazy externalsOf(d) | d })
+            Ast.Ast({ externals = lazy externalsOf(d), byLeaf = lazy leafIndex(d) | d })
         }
 
     /// No relations: what a rule sees when the shim did not write the generic AST.
@@ -137,7 +140,7 @@ pub mod Flixlint.Ast {
             extSym = none, extKind = none, extType = none, extMemberStart = none, extMembers = none,
             strings = Vector.empty(), fileOfRoot = Map.empty(), files = Vector.empty(),
             childStart = lazy none, childIds = lazy none, kindStart = lazy none, kindIds = lazy none, attrStart = lazy none,
-            externals = lazy Map.empty(), ruleNames = Nil
+            externals = lazy Map.empty(), byLeaf = lazy Map.empty(), ruleNames = Nil
         })
 
     /// `rule_names.tsv`; none when the shim was not given the rule file.
@@ -184,6 +187,13 @@ pub mod Flixlint.Ast {
         } else (), keys);
         (Array.toVector(start), Array.toVector(ids))
     }
+
+    /// (attribute number, value) to the nodes with that leaf, in id order (the leaf rows are grouped by node in id order).
+    def leafIndex(d: AstData): Map[(Int32, String), List[Int32]] =
+        let str = i -> if (i < 0) "" else Vector.nth(i, d#strings) |> Option.getWithDefault("");
+        Vector.range(0, Vector.length(d#attrNode)) |> Vector.filter(r -> Vector.get(r, d#attrValue) >= 0)
+            |> Vector.foldRight((r, m) -> Map.insertWith((fromHere, fromAfter) -> fromHere ::: fromAfter, (Vector.get(r, d#attrName), str(Vector.get(r, d#attrValue))),
+                Vector.get(r, d#attrNode) :: Nil, m), Map.empty())
 
     def externalsOf(d: AstData): Map[String, External] =
         let str = i -> if (i < 0) "" else Vector.nth(i, d#strings) |> Option.getWithDefault("");
@@ -253,7 +263,15 @@ pub mod Flixlint.Ast {
         slice(force d#kindStart, force d#kindIds, i) |> List.map(Node.Node)
 
     /// The nodes of any of `ks`, in id order.
-    pub def ofKinds(ast: Ast, ks: List[Kind]): List[Node] = ks |> List.flatMap(ofKind(ast)) |> List.sort
+    pub def ofKinds(ast: Ast, ks: List[Kind]): List[Node] =
+        ks |> List.map(ofKind(ast)) |> List.foldLeft((acc, xs) -> mergeIds(acc, xs, Nil), Nil)
+
+    /// Two lists of nodes in id order as one (each kind's nodes come in id order, so they are merged, not sorted again).
+    def mergeIds(xs: List[Node], ys: List[Node], acc: List[Node]): List[Node] = match (xs, ys) {
+        case (Nil, _) => List.reverse(acc) ::: ys
+        case (_, Nil) => List.reverse(acc) ::: xs
+        case (x :: xt, y :: yt) => if (id(x) <= id(y)) mergeIds(xt, ys, x :: acc) else mergeIds(xs, yt, y :: acc)
+    }
 
     def slice(start: Vector[Int32], ids: Vector[Int32], i: Int32): List[Int32] =
         if (i < 0 or i + 1 >= Vector.length(start)) Nil
@@ -345,6 +363,11 @@ pub mod Flixlint.Ast {
             let t = Vector.get(r, d#attrType);
             { attr = a, value = if (v < 0) None else Some(string(ast, v)), tpe = if (t < 0) None else Some(TypeRef.TypeRef(t)) }
         }))
+
+    /// The nodes that have the leaf `a` with the value `value` (`Attr.SymUse`, `List.map`: the calls of List.map), in id order.
+    /// The index is made the first time it is read.
+    pub def withLeaf(ast: Ast, a: Attr, value: String): List[Node] =
+        Map.getWithDefault((Flixlint.AstKinds.attrIndex(a), value), Nil, force data(ast)#byLeaf) |> List.map(Node.Node)
 
     /// The (first) value of the leaf `a` of `n`: a symbol's qualified name (`List.map`), a variable (`x#3`), a constant's
     /// kind (`Str`) and text (`Attr.Cst_lit`), an operator, a label, a modifier.
