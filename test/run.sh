@@ -62,6 +62,10 @@ LIMITS=limits/raised-ok.json BASE=limits/at.json lint test/fixture rules/rules.f
 # A raiseReason the base has too came with a raise already merged: it passes, with a hint once the limit is under the base.
 LIMITS=limits/raised-ok.json BASE=limits/raised-ok.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-ratchet-at.txt
 LIMITS=limits/raised-ok.json BASE=limits/base-raised5.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-ratchet-inherited.txt
+# A directory of one file per rule (limits-dir/*/<rule id>.json) instead of one limits file: the messages name the rule's file.
+LIMITS=limits-dir/at lint test/fixture rules/rules.flix 2026-09-19 0 expected-ratchet-at.txt
+LIMITS=limits-dir/lower lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-dir-lower.txt
+LIMITS=limits-dir/at BASE=limits-dir/base-lower lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-dir-raised.txt
 # A limit the base does not have (a forbidden rule added back, or a new rule with violations) needs a raiseReason too.
 LIMITS=limits/at.json BASE=limits/base-forbidden.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-readded.txt
 LIMITS=limits/raised-ok.json BASE=limits/base-forbidden.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-ratchet-at.txt

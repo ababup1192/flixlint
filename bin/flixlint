@@ -2,7 +2,7 @@
 # flixlint: architecture rules for Flix, checked on the compiler's AST.
 #
 #   flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
-#            [--today YYYY-MM-DD] [--limits FILE.json [--limits-base FILE.json]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
+#            [--today YYYY-MM-DD] [--limits FILE.json|DIR [--limits-base FILE.json|DIR]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
 #            [--java-opts "..."] [--spans FILE] [--resident] SRC...
 #   flixlint --resident-stop [--build-dir DIR] [--flix-jar JAR] [--shim JAR]
 #   flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] SRC...
@@ -97,9 +97,9 @@ if [ -z "$flix_jar" ] && [ -x "$here/bin/flix-jar" ]; then flix_jar="$("$here/bi
 [ "$resident_stop" = 1 ] || [ ${#srcs[@]} -gt 0 ] || die "at least one source directory is required"
 case "$stage" in typed|resolved) ;; *) die "unknown --stage $stage (typed or resolved)" ;; esac
 [ -n "$today" ] || today="$(date +%Y-%m-%d)"
-if [ -n "$limits" ] && [ ! -f "$limits" ]; then die "limits file not found: $limits"; fi
+if [ -n "$limits" ] && [ ! -e "$limits" ]; then die "limits file or directory not found: $limits"; fi
 if [ -n "$limits_base" ] && [ -z "$limits" ]; then die "--limits-base needs --limits"; fi
-if [ -n "$limits_base" ] && [ ! -f "$limits_base" ]; then die "limits base file not found: $limits_base"; fi
+if [ -n "$limits_base" ] && [ ! -e "$limits_base" ]; then die "limits base file or directory not found: $limits_base"; fi
 [ -n "$facts_out" ] || facts_out="$build_dir/facts"
 mkdir -p "$build_dir"
 
