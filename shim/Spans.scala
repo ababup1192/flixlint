@@ -78,7 +78,7 @@ object Spans {
     private def clean(s: String): String = s.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')
   }
 
-  import Facts.{field, symName, synthetic}
+  import Facts.{field, hasField, symName, synthetic}
 
   private def isExpr(cls: String): Boolean = cls.contains("$Expr$")
 
@@ -132,7 +132,7 @@ object Spans {
   }
 
   private def varSym(pat: Any): Symbol.VarSym =
-    if (pat.getClass.getMethods.exists(_.getName == "bnd")) field[Symbol.VarSym](field[Any](pat, "bnd"), "sym") else field[Symbol.VarSym](pat, "sym")
+    if (hasField(pat, "bnd")) field[Symbol.VarSym](field[Any](pat, "bnd"), "sym") else field[Symbol.VarSym](pat, "sym")
 
   /** Whether the expression reads the variable. */
   private def reads(node: Any, v: Symbol.VarSym): Boolean = node match {

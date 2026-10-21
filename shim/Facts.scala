@@ -244,7 +244,26 @@ object Facts {
 
   // ---- generic helpers over the AST (both stages) ----
 
-  def field[A](node: Any, name: String): A = node.getClass.getMethod(name).invoke(node).asInstanceOf[A]
+  def field[A](node: Any, name: String): A = Accessors.of(node.getClass, name) match {
+    case Some(m) => m.invoke(node).asInstanceOf[A]
+    case None => throw new NoSuchMethodException(s"${node.getClass.getName}.$name()")
+  }
+
+  /** Whether the node's class has a public accessor (a method without parameters) of that name. */
+  def hasField(node: Any, name: String): Boolean = Accessors.of(node.getClass, name).nonEmpty
+
+  /** The public accessors of a class by name, looked up once per class.
+    *
+    * WhyNot: not `getClass.getMethod` / `getMethods` at every node. The walkers visit hundreds of thousands of nodes,
+    * and each of those calls searches the class and copies its methods; it was most of the time of the walk.
+    */
+  private object Accessors {
+    private val table = new ClassValue[java.util.concurrent.ConcurrentHashMap[String, Option[java.lang.reflect.Method]]] {
+      override def computeValue(c: Class[_]) = new java.util.concurrent.ConcurrentHashMap[String, Option[java.lang.reflect.Method]]()
+    }
+    def of(c: Class[_], name: String): Option[java.lang.reflect.Method] =
+      table.get(c).computeIfAbsent(name, n => c.getMethods.find(m => m.getName == n && m.getParameterCount == 0))
+  }
 
   /** The file a location is in, for the project's own sources only (the standard library is also a `PathName`,
     * under a virtual path, so the origin is what tells them apart).
@@ -300,7 +319,7 @@ object Facts {
     def isPipe(p: Product): Boolean = p.productPrefix == "ApplyDef" && calleeOf(p) == "|>" && field[List[Any]](p, "exps").length == 2
 
     def binderOf(let: Product): Symbol.VarSym =
-      if (let.getClass.getMethods.exists(_.getName == "bnd")) field[Symbol.VarSym](field[Any](let, "bnd"), "sym") else field[Symbol.VarSym](let, "sym")
+      if (hasField(let, "bnd")) field[Symbol.VarSym](field[Any](let, "bnd"), "sym") else field[Symbol.VarSym](let, "sym")
 
     /** The expression a variable stands for, when it is let-bound in `env`. */
     def resolve(e: Any, env: Env): Any = e match {
@@ -397,19 +416,18 @@ object Facts {
             // Java interop: the callee is `package.Class.method` (constructors: `package.Class.<init>`).
             // The typed AST carries the resolved method for all three; the resolved AST knows the class only for
             // static methods and constructors, so instance methods are skipped at that stage.
-            val methods = p.getClass.getMethods
             val loc = lineOf(p)
             def className(owner: java.lang.constant.ClassDesc): String = {
               val pkg = owner.packageName()
               if (pkg.isEmpty) owner.displayName() else pkg + "." + owner.displayName()
             }
-            methods.find(m => m.getName == "method" || m.getName == "constructor").map(_.invoke(p)) match {
+            List("method", "constructor").find(hasField(p, _)).map(field[Any](p, _)) match {
               case Some(jm) =>
                 val ref = field[Any](jm, "ref")
                 sink.calls(fn, className(field[java.lang.constant.ClassDesc](ref, "owner")) + "." + field[String](ref, "name"), loc)
-              case None if methods.exists(_.getName == "clazz") =>
+              case None if hasField(p, "clazz") =>
                 val clazz = field[java.lang.constant.ClassDesc](p, "clazz")
-                val name = if (methods.exists(_.getName == "methodName")) field[Any](field[Any](p, "methodName"), "name").toString else "<init>"
+                val name = if (hasField(p, "methodName")) field[Any](field[Any](p, "methodName"), "name").toString else "<init>"
                 sink.calls(fn, className(clazz) + "." + name, loc)
               case None => ()
             }
@@ -488,7 +506,7 @@ object Facts {
     }
     // The line a parent starts on (a node without a location, such as a match rule, takes its own parent's).
     def startOf(p: Product, ctx: List[(String, Int)]): Int =
-      if (p.getClass.getMethods.exists(m => m.getName == "loc" && m.getParameterCount == 0)) field[SourceLocation](p, "loc").startLine
+      if (hasField(p, "loc")) field[SourceLocation](p, "loc").startLine
       else ctx.headOption.map(_._2).getOrElse(0)
     def go(node: Any, ctx: List[(String, Int)]): Unit = node match {
       case null | _: Type | _: UnkindedType | _: SourceLocation | _: Symbol | _: String | _: java.lang.Number | _: java.lang.Boolean => ()
