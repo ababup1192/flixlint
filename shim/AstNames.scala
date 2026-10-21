@@ -47,4 +47,82 @@ object AstNames {
   lazy val kindNumbers: Map[String, Int] = kinds.zipWithIndex.toMap
   lazy val slotNumbers: Map[String, Int] = slots.zipWithIndex.toMap
   lazy val attrNumbers: Map[String, Int] = attrs.zipWithIndex.toMap
+  /** The names each stage has (a rule may name one the other stage has only). */
+  val typedKinds: Set[String] = Set(
+    "Annotation.CompileTest", "Annotation.DefaultHandler", "Annotation.Deprecated", "Annotation.DontInline", "Annotation.Error", "Annotation.Experimental", "Annotation.Inline", "Annotation.Lazy",
+    "Annotation.LazyWhenPure", "Annotation.LoweringTargetChannel", "Annotation.LoweringTargetDatalog", "Annotation.Parallel", "Annotation.ParallelWhenPure", "Annotation.Skip", "Annotation.TailRecursive", "Annotation.Terminates",
+    "Annotation.Test", "Annotations", "Binder", "Case", "CatchRule", "Constraint", "ConstraintParam", "Def",
+    "Derivation", "Derivations", "Effect", "Enum", "EqualityConstraint", "Expr.ApplyClo", "Expr.ApplyDef", "Expr.ApplyLocalDef",
+    "Expr.ApplyOp", "Expr.ApplySig", "Expr.ArrayLength", "Expr.ArrayLit", "Expr.ArrayLoad", "Expr.ArrayNew", "Expr.ArrayStore", "Expr.Ascribe",
+    "Expr.Binary", "Expr.CheckedCast", "Expr.Cst", "Expr.Discard", "Expr.Error", "Expr.ExtMatch", "Expr.ExtTag", "Expr.FixpointConstraintSet",
+    "Expr.FixpointInjectInto", "Expr.FixpointLambda", "Expr.FixpointMerge", "Expr.FixpointQueryWithProvenance", "Expr.FixpointQueryWithSelect", "Expr.FixpointSolveWithProject", "Expr.Force", "Expr.GetChannel",
+    "Expr.GetField", "Expr.GetStaticField", "Expr.Handler", "Expr.Hole", "Expr.HoleWithExp", "Expr.IfThenElse", "Expr.InstanceOf", "Expr.InvokeConstructor",
+    "Expr.InvokeMethod", "Expr.InvokeStaticMethod", "Expr.InvokeSuperConstructor", "Expr.InvokeSuperMethod", "Expr.Lambda", "Expr.Lazy", "Expr.Let", "Expr.LocalDef",
+    "Expr.Match", "Expr.NewChannel", "Expr.NewObject", "Expr.OpenAs", "Expr.ParYield", "Expr.PutChannel", "Expr.PutField", "Expr.PutStaticField",
+    "Expr.RecordExtend", "Expr.RecordRestrict", "Expr.RecordSelect", "Expr.Region", "Expr.RestrictableChoose", "Expr.RestrictableTag", "Expr.RunWith", "Expr.SelectChannel",
+    "Expr.Spawn", "Expr.Stm", "Expr.StructGet", "Expr.StructNew", "Expr.StructPut", "Expr.Tag", "Expr.Throw", "Expr.TryCatch",
+    "Expr.Tuple", "Expr.Unary", "Expr.UncheckedCast", "Expr.Unsafe", "Expr.Use", "Expr.Var", "Expr.VectorLength", "Expr.VectorLit",
+    "Expr.VectorLoad", "ExtMatchRule", "ExtPattern.Default", "ExtPattern.Error", "ExtPattern.Tag", "ExtTagPattern.Error", "ExtTagPattern.Unit", "ExtTagPattern.Var",
+    "ExtTagPattern.Wild", "FormalParam", "HandlerRule", "JClass", "JvmAnnotation", "JvmConstructor", "JvmMethod", "MatchRule",
+    "Modifiers", "Op", "ParYieldFragment", "Pattern.Cst", "Pattern.Error", "Pattern.Record", "Pattern.Record.RecordLabelPattern", "Pattern.Tag",
+    "Pattern.Tuple", "Pattern.Var", "Pattern.Wild", "Predicate.Body.Atom", "Predicate.Body.Functional", "Predicate.Body.Guard", "Predicate.Head.Atom", "PredicateAndArity",
+    "PredicateParam", "RestrictableChoosePattern.Error", "RestrictableChoosePattern.Tag", "RestrictableChoosePattern.Var", "RestrictableChoosePattern.Wild", "RestrictableChooseRule", "SelectChannelRule", "Spec",
+    "TraitConstraint", "Tuple2", "TypeAlias", "TypeParam", "jvm.JavaField", "jvm.JavaFieldRef", "jvm.JavaMethod", "jvm.JavaMethodRef",
+    "jvm.JavaType.GenericArray", "jvm.JavaType.NonGeneric", "jvm.JavaType.Parameterized", "jvm.JavaType.Variable", "jvm.JavaType.Wildcard", "jvm.JavaTypeParameter", "jvm.JavaTypeVariable", "jvm.JavaTypeVariableOwner.Class",
+    "jvm.JavaTypeVariableOwner.Method")
+  val resolvedKinds: Set[String] = Set(
+    "Annotation.CompileTest", "Annotation.DefaultHandler", "Annotation.Deprecated", "Annotation.DontInline", "Annotation.Error", "Annotation.Experimental", "Annotation.Inline", "Annotation.Lazy",
+    "Annotation.LazyWhenPure", "Annotation.LoweringTargetChannel", "Annotation.LoweringTargetDatalog", "Annotation.Parallel", "Annotation.ParallelWhenPure", "Annotation.Skip", "Annotation.TailRecursive", "Annotation.Terminates",
+    "Annotation.Test", "Annotations", "Case", "CatchRule", "Constraint", "ConstraintParam", "Def", "Derivation",
+    "Derivations", "Effect", "Enum", "EqualityConstraint", "Expr.ApplyClo", "Expr.ApplyDef", "Expr.ApplyLocalDef", "Expr.ApplyOp",
+    "Expr.ApplySig", "Expr.ArrayLength", "Expr.ArrayLit", "Expr.ArrayLoad", "Expr.ArrayNew", "Expr.ArrayStore", "Expr.Ascribe", "Expr.Binary",
+    "Expr.CheckedCast", "Expr.Cst", "Expr.Discard", "Expr.Error", "Expr.ExtMatch", "Expr.ExtTag", "Expr.FixpointConstraintSet", "Expr.FixpointInjectInto",
+    "Expr.FixpointLambda", "Expr.FixpointMerge", "Expr.FixpointQueryWithProvenance", "Expr.FixpointQueryWithSelect", "Expr.FixpointSolveWithProject", "Expr.Force", "Expr.GetChannel", "Expr.GetField",
+    "Expr.GetStaticField", "Expr.Handler", "Expr.Hole", "Expr.HoleWithExp", "Expr.IfThenElse", "Expr.InstanceOf", "Expr.InvokeConstructor", "Expr.InvokeMethod",
+    "Expr.InvokeStaticMethod", "Expr.InvokeSuperConstructor", "Expr.InvokeSuperMethod", "Expr.Lambda", "Expr.Lazy", "Expr.Let", "Expr.LocalDef", "Expr.Match",
+    "Expr.NewChannel", "Expr.NewObject", "Expr.OpenAs", "Expr.ParYield", "Expr.PutChannel", "Expr.PutField", "Expr.PutStaticField", "Expr.RecordExtend",
+    "Expr.RecordRestrict", "Expr.RecordSelect", "Expr.Region", "Expr.RestrictableChoose", "Expr.RestrictableTag", "Expr.RunWith", "Expr.SelectChannel", "Expr.Spawn",
+    "Expr.Stm", "Expr.StructGet", "Expr.StructNew", "Expr.StructPut", "Expr.Tag", "Expr.Throw", "Expr.TryCatch", "Expr.Tuple",
+    "Expr.Unary", "Expr.UncheckedCast", "Expr.Unsafe", "Expr.Use", "Expr.Var", "Expr.VectorLength", "Expr.VectorLit", "Expr.VectorLoad",
+    "ExtMatchRule", "ExtPattern.Default", "ExtPattern.Error", "ExtPattern.Tag", "ExtTagPattern.Error", "ExtTagPattern.Unit", "ExtTagPattern.Var", "ExtTagPattern.Wild",
+    "FormalParam", "HandlerRule", "JClass", "JvmAnnotation", "JvmConstructor", "JvmMethod", "MatchRule", "Modifiers",
+    "Op", "ParYieldFragment", "Pattern.Cst", "Pattern.Error", "Pattern.Record", "Pattern.Record.RecordLabelPattern", "Pattern.Tag", "Pattern.Tuple",
+    "Pattern.Var", "Pattern.Wild", "Predicate.Body.Atom", "Predicate.Body.Functional", "Predicate.Body.Guard", "Predicate.Head.Atom", "PredicateAndArity", "PredicateParam.PredicateParamUntyped",
+    "PredicateParam.PredicateParamWithType", "RestrictableChoosePattern.Error", "RestrictableChoosePattern.Tag", "RestrictableChoosePattern.Var", "RestrictableChoosePattern.Wild", "RestrictableChooseRule", "SelectChannelRule", "Spec",
+    "TraitConstraint", "Tuple2", "TypeAlias", "TypeParam.Implicit", "TypeParam.Kinded", "TypeParam.Unkinded", "jvm.JavaField", "jvm.JavaFieldRef",
+    "jvm.JavaMethodRef", "jvm.JavaType.GenericArray", "jvm.JavaType.NonGeneric", "jvm.JavaType.Parameterized", "jvm.JavaType.Variable", "jvm.JavaType.Wildcard", "jvm.JavaTypeVariable", "jvm.JavaTypeVariableOwner.Class",
+    "jvm.JavaTypeVariableOwner.Method")
+  val typedSlots: Set[String] = Set(
+    "_2", "ann", "annotations", "arguments", "bnd", "body", "cases", "chan",
+    "clazz", "component", "constructor", "constructors", "cparams", "cs", "default", "derives",
+    "econstrs", "exp", "exp1", "exp2", "exp3", "exps", "field", "fieldType",
+    "fields", "fparam", "fparams", "frags", "from", "guard", "head", "lowerBounds",
+    "method", "methods", "mod", "ops", "outBnds", "owner", "parameterTypes", "pat",
+    "pats", "pparams", "predsAndArities", "queryExp", "ref", "region", "returnType", "rules",
+    "select", "selects", "spec", "tconstrs", "terms", "tparams", "traits", "typeParameters",
+    "upperBounds", "variable", "where")
+  val resolvedSlots: Set[String] = Set(
+    "_2", "ann", "annotations", "arguments", "body", "cases", "chan", "clazz",
+    "component", "constructors", "cparams", "cs", "default", "derives", "econstrs", "exp",
+    "exp1", "exp2", "exp3", "exps", "field", "fieldType", "fparam", "fparams",
+    "frags", "from", "guard", "head", "lowerBounds", "methods", "mod", "ops",
+    "owner", "pat", "pats", "pparams", "predsAndArities", "queryExp", "ref", "region",
+    "rules", "select", "selects", "spec", "tconstrs", "terms", "tparams", "traits",
+    "upperBounds", "variable", "where")
+  val typedAttrs: Set[String] = Set(
+    "_1", "alias", "arg", "arity", "arrowTpe", "asEff", "bodyEff", "bodyType",
+    "cast", "clazz", "cst", "cst.lit", "declaredEff", "declaredType", "decreasing", "den",
+    "desc", "descriptor", "eff", "erasure", "expectedEff", "expectedType", "fixity", "handledEff",
+    "ident", "isConstructor", "isInterface", "isRuntimeVisible", "isVarArgs", "itpe", "label", "m",
+    "mod", "mode", "modifiers", "name", "op", "optPreds", "owner", "parameterNames",
+    "polarity", "pos", "pred", "regSym", "retTpe", "runEff", "sop", "src",
+    "star", "sym", "symUse", "targ", "targs", "tpe", "tpe1", "tpe2",
+    "tpes", "withh")
+  val resolvedAttrs: Set[String] = Set(
+    "_1", "alias", "allowSubeffecting", "arity", "asEff", "cast", "clazz", "cst",
+    "cst.lit", "declaredEff", "declaredType", "den", "desc", "descriptor", "eff", "erasure",
+    "expectedEff", "expectedType", "fieldName", "fixity", "ident", "isInterface", "isOpen", "isRuntimeVisible",
+    "label", "m", "methodName", "mod", "mode", "modifiers", "name", "optPreds",
+    "owner", "polarity", "pred", "regSym", "sop", "star", "sym", "symUse",
+    "syms", "targs", "tpe", "tpe1", "tpe2", "tpes", "withh")
 }

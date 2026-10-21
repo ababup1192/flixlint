@@ -48,6 +48,10 @@ pub mod Flixlint.Ast {
         case Opened
     }
 
+    /// A `Kind.X` / `Slot.Y` / `Attr.Z` (`table`) or an `Unnamed(` a rule file writes, at `file:line`: whether this stage has
+    /// it and how many rows of these relations carry it (-1 for `Unnamed(`). Written by the shim from the rule file's text.
+    pub type alias RuleName = { file = String, line = Int32, table = String, name = String, inStage = Bool, count = Int32 }
+
     /// A declaration outside the sources that the sources use (or an effect alias outside the sources).
     pub type alias External = { name = String, kind = String, tpe = Option[TypeRef], members = List[String] }
 
@@ -67,7 +71,8 @@ pub mod Flixlint.Ast {
         childStart = Lazy[Vector[Int32]], childIds = Lazy[Vector[Int32]],
         kindStart = Lazy[Vector[Int32]], kindIds = Lazy[Vector[Int32]],
         attrStart = Lazy[Vector[Int32]],
-        externals = Lazy[Map[String, External]]
+        externals = Lazy[Map[String, External]],
+        ruleNames = List[RuleName]
     }
 
     def data(ast: Ast): AstData = match ast { case Ast.Ast(d) => d }
@@ -90,7 +95,8 @@ pub mod Flixlint.Ast {
             attr <- columns(dir, "attr", List#{"node", "name", "value", "type", "line"});
             tpe <- columns(dir, "type", List#{"form", "name", "argStart", "args", "expands"});
             decl <- columns(dir, "decl", List#{"node", "file"});
-            ext <- columns(dir, "ext", List#{"sym", "kind", "type", "memberStart", "members"})
+            ext <- columns(dir, "ext", List#{"sym", "kind", "type", "memberStart", "members"});
+            ruleNames <- readRuleNames("${dir}/rule_names.tsv")
         ) yield {
             let c = (m, k) -> Map.getWithDefault(k, Vector.empty(), m);
             let kind = c(node, "kind");
@@ -114,10 +120,35 @@ pub mod Flixlint.Ast {
                 kindStart = lazy fst(groups(Vector.length(Flixlint.AstKinds.kinds()), kind)),
                 kindIds = lazy snd(groups(Vector.length(Flixlint.AstKinds.kinds()), kind)),
                 attrStart = lazy fst(groups(Vector.length(kind), attrNode)),
-                externals = lazy Map.empty()
+                externals = lazy Map.empty(),
+                ruleNames = ruleNames
             };
             Ast.Ast({ externals = lazy externalsOf(d) | d })
         }
+
+    /// No relations: what a rule sees when the shim did not write the generic AST.
+    pub def empty(): Ast =
+        let none = Vector.empty();
+        Ast.Ast({
+            stage = Stage.Typed, kind = none, parent = none, slot = none, index = none, root = none, line = none, col = none,
+            endLine = none, endCol = none, synthetic = none, tpe = none, effects = none,
+            attrNode = none, attrName = none, attrValue = none, attrType = none, attrLine = none,
+            typeForm = none, typeName = none, typeArgStart = none, typeArgs = none, typeExpands = none,
+            extSym = none, extKind = none, extType = none, extMemberStart = none, extMembers = none,
+            strings = Vector.empty(), fileOfRoot = Map.empty(), files = Vector.empty(),
+            childStart = lazy none, childIds = lazy none, kindStart = lazy none, kindIds = lazy none, attrStart = lazy none,
+            externals = lazy Map.empty(), ruleNames = Nil
+        })
+
+    /// `rule_names.tsv`; none when the shim was not given the rule file.
+    def readRuleNames(path: String): Result[String, List[RuleName]] \ IO =
+        if (not (new File(path)).exists()) Ok(Nil)
+        else readLines(path) |> Result.map(List.filterMap(l -> match String.splitOn(substr = "\t", l) {
+            case file :: line :: table :: name :: inStage :: count :: Nil =>
+                Some({ file = file, line = Int32.parse(10, line) |> Result.getWithDefault(0), table = table, name = unescape(name),
+                       inStage = inStage == "1", count = Int32.parse(10, count) |> Result.getWithDefault(0) })
+            case _ => None
+        }))
 
     /// `key=value` lines.
     def metaOf(lines: List[String]): Map[String, String] =
@@ -444,4 +475,8 @@ pub mod Flixlint.Ast {
 
     /// Every declaration outside the sources that the sources use, and every effect alias outside the sources.
     pub def externals(ast: Ast): List[External] = Map.valuesOf(force data(ast)#externals)
+
+    /// The `Kind.X` / `Slot.Y` / `Attr.Z` and `Unnamed(` the rule file writes, with whether this stage has them and how many
+    /// rows carry them (empty when the shim was not given the rule file).
+    pub def ruleNames(ast: Ast): List[RuleName] = data(ast)#ruleNames
 }

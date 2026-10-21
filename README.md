@@ -298,6 +298,14 @@ A custom rule takes allows like any entry when it is written as `customRule({ id
 `allowIn` / `allowInFile` / `allowUntil` and lifted with `Flixlint.customs(List#{...})`; `Flixlint.custom(id, check)` is the
 short form without allows.
 
+(v0.7, in progress) A custom rule can also read the generic AST, `Flixlint.Facts.ast(facts)`: the tree, its leaves and the
+types as `Flixlint.Ast` (layer 1, with the generated `Flixlint.AstKinds.Kind` / `Slot` / `Attr`), and the Flix words on it
+as `Flixlint.Flix` (layer 2: `defs`, `calls`, `callsTo(ast, Fn.X)`, `tagsOf`, `placement`, `branches`, `violation`).
+`test/fixture/rules/generic.flix` writes the fixture's custom rules this way. A `Kind.X` / `Slot.Y` / `Attr.Z` the rule
+file writes that the stage does not have or the sources never have, and an `Unnamed(`, is said on stderr as
+`flixlint: note: FILE:LINE: ...`; it is not a violation and does not change the exit code. `FLIXLINT_TIMING=1` prints
+how long reading the facts and judging took, and each custom rule on its own.
+
 ## Facts
 
 The shim (`shim/Facts.scala`) writes one TSV per relation into the facts directory and `Flixlint/Names.flix` next to the
@@ -772,6 +780,13 @@ family で言えない物は facts に対して書き、同じ rule set に入�
 custom rule も `customRule({ id = ..., check = ... })` の形で書き、`allowIn` / `allowInFile` / `allowUntil` を
 繋いで `Flixlint.customs(List#{...})` に渡せば、他の entry と同じに allow を取れる。allow の要らない短い形が
 `Flixlint.custom(id, check)`。
+
+（v0.7・作りかけ）custom rule は汎用の AST も読める（`Flixlint.Facts.ast(facts)`）。木・葉・型は `Flixlint.Ast`（層 1。生成した
+`Flixlint.AstKinds.Kind` / `Slot` / `Attr` で引く）、その上の Flix の語は `Flixlint.Flix`（層 2: `defs`・`calls`・`callsTo(ast, Fn.X)`・
+`tagsOf`・`placement`・`branches`・`violation`）。`test/fixture/rules/generic.flix` が fixture の custom 規則をこの形で書いている。
+規則のファイルが書いた `Kind.X` / `Slot.Y` / `Attr.Z` のうち、その段に無い物・ソースに 1 つも無い物と、`Unnamed(` は
+`flixlint: note: ファイル:行: …` として stderr に出る。違反ではなく、exit code も変わらない。`FLIXLINT_TIMING=1` で、事実の読み込みと
+判定の時間と、custom 規則 1 本ずつの時間を出す。
 
 ## facts の一覧
 

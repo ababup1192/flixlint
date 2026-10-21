@@ -112,7 +112,8 @@ pub mod Flixlint.Facts {
         strLitsOf = Map[Fn, List[String]],
         effAliases = Map[Eff, Set[Eff]],
         files = Set[String],
-        fnCases = Map[String, String]
+        fnCases = Map[String, String],
+        ast = Flixlint.Ast.Ast
     }
 
     pub def defs(facts: Facts): List[Def] = data(facts)#defs
@@ -138,6 +139,12 @@ pub mod Flixlint.Facts {
     pub def effects(facts: Facts): List[EffDef] = data(facts)#effects
     /// Every file the walk was given, whether or not it holds a definition an `allowInFile` could name.
     pub def files(facts: Facts): Set[String] = data(facts)#files
+
+    /// The generic AST of the sources (Flixlint.Ast and Flixlint.Flix read it); empty when the shim did not write it.
+    pub def ast(facts: Facts): Flixlint.Ast.Ast = data(facts)#ast
+
+    /// `facts` with the generic AST, which the engine reads on its IO side (the facts are read with `FileRead` only).
+    pub def withAst(ast: Flixlint.Ast.Ast, facts: Facts): Facts = Facts.Facts({ ast = ast | data(facts) })
 
     /// The definition of `fn`, if it is one of the linted sources (package, stdlib and Java callees have none).
     pub def defOf(facts: Facts, fn: Fn): Option[Def] = Map.get(fn, data(facts)#defOf)
@@ -303,7 +310,8 @@ pub mod Flixlint.Facts {
                 |> (acc -> List.foldLeft((s, d) -> Set.insert(d#file, s), acc, defs))
                 |> (acc -> List.foldLeft((s, e) -> Set.insert(e#file, s), acc, enums))
                 |> (acc -> List.foldLeft((s, e) -> Set.insert(e#file, s), acc, effects)),
-            fnCases = names |> List.filter(c -> col(0, c) == "Fn") |> List.map(c -> (col(1, c), col(2, c))) |> List.toMap
+            fnCases = names |> List.filter(c -> col(0, c) == "Fn") |> List.map(c -> (col(1, c), col(2, c))) |> List.toMap,
+            ast = Flixlint.Ast.empty()
         })
 
     /// A lookup from the qualified name to its value, for the names of one kind in `names.tsv` (kind, name, case).

@@ -1,0 +1,3 @@
+flixlint: note: rules/notice.flix:12: Kind.Binder is not in the resolved stage's AST, so what is written with it finds nothing at this stage
+flixlint: note: rules/notice.flix:13: Kind.Expr_Spawn is in no node of these sources (0 at the resolved stage)
+flixlint: note: rules/notice.flix:15: writes a name as a string (Flixlint.Names.Fn.Unnamed("Orders.find")): it does not stop compiling when the name goes; write the Names case

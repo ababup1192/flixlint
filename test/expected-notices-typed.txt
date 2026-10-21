@@ -1,0 +1,2 @@
+flixlint: note: rules/notice.flix:13: Kind.Expr_Spawn is in no node of these sources (0 at the typed stage)
+flixlint: note: rules/notice.flix:15: writes a name as a string (Flixlint.Names.Fn.Unnamed("Orders.find")): it does not stop compiling when the name goes; write the Names case

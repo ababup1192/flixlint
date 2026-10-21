@@ -10,7 +10,7 @@ import scala.collection.mutable
 
 /** The AST itself as generic relations, with no knowledge of what a rule wants (docs/design-generic.md, chapter 1).
   *
-  * Usage: Generic --out DIR [--facts-tsv DIR] [--node-ratio N] [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]...
+  * Usage: Generic --out DIR [--facts-tsv DIR] [--node-ratio N] [--rules FILE] [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]...
   *                [--project-root DIR] SRC...
   * (the arguments of `Facts`, `--names-out` unused).
   *
@@ -36,6 +36,8 @@ import scala.collection.mutable
   *  - `strings.txt` the strings, one per line, with `\` `\n` `\r` written `\\` `\n` `\r`
   *  - `files.txt` every file the walk was given; `kinds.txt` every kind name of the `ast_schema`
   *  - `meta.txt` `key=value`: `format`, `stage`, `flixVersion`, `schemaHash`, and `rows.<table>` / `bytes`
+  *  - `rule_names.tsv` with `--rules FILE`: each `Kind.X` / `Slot.Y` / `Attr.Z` and `Unnamed(` the rule file writes, `file line
+  *    table name inStage count` (design 1.5: the engine says which of them this stage lacks or these sources never have)
   *
   * `--facts-tsv DIR` also writes the same rows as TSV with the numbers turned back into names, for reading.
   *
@@ -92,7 +94,8 @@ object Generic {
   /** Writes the relations; 0, or 3 when the sources do not compile (the errors are on stderr). */
   def run(argv0: Array[String]): Int = {
     val (tsv, argv1) = option(argv0, "--facts-tsv")
-    val (ratio, argv) = option(argv1, "--node-ratio")
+    val (ratio, argv2) = option(argv1, "--node-ratio")
+    val (rules, argv) = option(argv2, "--rules")
     val args = Facts.parseArgs(argv)
     val nodeRatio = ratio.map(r => scala.util.Try(r.toInt).getOrElse(throw new Facts.UsageError(s"--node-ratio $r is not a number"))).getOrElse(20)
     val t0 = System.nanoTime()
@@ -117,6 +120,7 @@ object Generic {
         val out = emit(r.asInstanceOf[Product], args.stage, files.map(_.toString), limits)
         val tw = System.nanoTime()
         out.write(args.out)
+        writeRuleNames(args.out, rules.map(r => ruleNames(Paths.get(r), out)).getOrElse(Nil))
         tsv.foreach(d => out.writeTsv(Paths.get(d)))
         val t3 = System.nanoTime()
         System.err.println(f"flixlint generic: stage=${args.stage} ${out.counts.map { case (k, v) => s"$k=$v" }.mkString(" ")} compile=${(t2 - t1) / 1e9}%.1fs walk+write=${(t3 - t2) / 1e9}%.2fs (walk=${out.walkNs / 1e9}%.2fs cpu=${out.walkCpuNs / 1e9}%.2fs external=${out.extNs / 1e9}%.2fs write=${(t3 - tw) / 1e9}%.2fs) total=${(t3 - t0) / 1e9}%.1fs")
@@ -416,6 +420,60 @@ object Generic {
   def escape(s: String): String =
     if (s.indexOf('\\') < 0 && s.indexOf('\n') < 0 && s.indexOf('\r') < 0) s
     else s.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r")
+
+  // ---- the names a rule file writes (design 1.5) ----
+
+  private val namePattern = """\b(Kind|Slot|Attr)\.([A-Z][A-Za-z0-9_]*)""".r
+
+  private val unnamedPattern = """[A-Za-z0-9_.]*Unnamed\([^)]*\)""".r
+
+  /** One name a rule file writes: where, which table, the name as the compiler spells it, whether this stage has it and
+    * how many rows of these relations carry it (-1 for `Unnamed(`, which is not a table's name).
+    */
+  final case class RuleName(file: String, line: Int, table: String, written: String, inStage: Boolean, count: Int)
+
+  /** `Kind.X` / `Slot.Y` / `Attr.Z` and `Unnamed(` in the text of a rule file, against what these relations have.
+    * WhyNot: not read off the compiled rules. The engine is built from the rule file before the facts are read, and a
+    * rule is a function, so the names it uses are only in its text; the same regex reading `Names` uses for `Fn.X`.
+    */
+  def ruleNames(rulesFile: Path, out: Out): List[RuleName] = {
+    val shown = rulesFile.toString
+    def byCase(names: Vector[String]): Map[String, String] = names.map(n => AstKindsFlix.caseName(n) -> n).toMap
+    val tables = Map(
+      "Kind" -> (byCase(AstNames.kinds), if (out.stage == "typed") AstNames.typedKinds else AstNames.resolvedKinds, counts(out.kind, AstNames.kinds.size)),
+      "Slot" -> (byCase(AstNames.slots), if (out.stage == "typed") AstNames.typedSlots else AstNames.resolvedSlots, counts(out.slot, AstNames.slots.size)),
+      "Attr" -> (byCase(AstNames.attrs), if (out.stage == "typed") AstNames.typedAttrs else AstNames.resolvedAttrs, counts(out.aName, AstNames.attrs.size)))
+    val lines = Files.readAllLines(rulesFile, StandardCharsets.UTF_8).toArray(Array.empty[String]).toList.zipWithIndex
+    lines.flatMap { case (text, i) =>
+      val code = text.split("//", 2).head
+      val written = namePattern.findAllMatchIn(code).toList.flatMap { m =>
+        val (byName, inStage, count) = tables(m.group(1))
+        // a case AstKinds does not have does not compile, so only the names it has are counted
+        byName.get(m.group(2)).map(n => RuleName(shown, i + 1, m.group(1), m.group(2), inStage.contains(n), count(numberOf(m.group(1), n))))
+      }
+      val unnamed = unnamedPattern.findFirstIn(code).map(u => RuleName(shown, i + 1, "Unnamed", u, inStage = true, -1)).toList
+      written ++ unnamed
+    }.distinct
+  }
+
+  private def numberOf(table: String, name: String): Int = table match {
+    case "Kind" => AstNames.kindNumbers(name)
+    case "Slot" => AstNames.slotNumbers(name)
+    case _ => AstNames.attrNumbers(name)
+  }
+
+  /** How many rows carry each number of a column. */
+  private def counts(column: IntBuf, n: Int): Int => Int = {
+    val c = new Array[Int](n)
+    (0 until column.size).foreach { i => val v = column(i); if (v >= 0 && v < n) c(v) += 1 }
+    i => c(i)
+  }
+
+  def writeRuleNames(dir: Path, names: List[RuleName]): Unit = {
+    val w = new PrintWriter(Files.newBufferedWriter(dir.resolve("rule_names.tsv"), StandardCharsets.UTF_8))
+    try names.foreach(r => w.println(List(r.file, r.line, r.table, escape(r.written).replace('\t', ' '), if (r.inStage) 1 else 0, r.count).mkString("\t")))
+    finally w.close()
+  }
 
   // ---- the walk ----
 

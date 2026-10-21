@@ -13,6 +13,7 @@
 #   test/fixture, flixlint.Generic -> the kind number of every node names the same kind in the shim and in AstKinds.flix;
 #                                     rules/generic.flix reports what rules.flix reports (test/generic/compare.sh)
 #   test/generic/limit, flixlint.Generic -> inside the size limit; exit 4 with --node-ratio 2
+#   fixture, rules/notice.flix with the generic AST -> exit 0, the notes of test/expected-notices-<stage>.txt on stderr
 #
 #   FLIX_JAR=/path/to/flix.jar test/run.sh   （FLIX_JAR を渡さなければ bin/flix-jar が解決する）
 set -eu
@@ -118,6 +119,26 @@ code=$?
 set -e
 [ "$code" = 4 ] && grep -q 'grew past its limit.*The declaration with the most nodes is' "$gen/limit-low.stderr" \
     || { echo "test/generic/limit: --node-ratio 2 should stop with exit 4 and name the declaration, got exit $code" >&2; cat "$gen/limit-low.stderr" >&2; exit 1; }
+
+# What a rule file names that the stage lacks (design 1.5): the shim writes the generic AST beside the facts with the rule
+# file's names, and the engine says each name this stage does not have, these sources never have, and each `Unnamed(`,
+# on stderr, with the exit code of the rules alone (0). FLIXLINT_TIMING=1 also times each custom rule.
+# WhyNot: the shim is run on its own here. Facts.scala does not call flixlint.Generic yet, so a plain run has no
+# generic AST; the notice is checked on the engine's side with the relations put where the shim will put them.
+notice="$gen/notice"
+mkdir -p "$notice/facts"
+(cd "$root/test/fixture" && java -cp "$FLIX_JAR:$shim_jar" flixlint.Generic --out "$notice/facts/generic" --rules rules/notice.flix --stage "$stage" src) 2> "$notice/shim.stderr" \
+    || { echo "test/fixture: flixlint.Generic --rules failed" >&2; cat "$notice/shim.stderr" >&2; exit 1; }
+set +e
+(cd "$root/test/fixture" && FLIXLINT_RESIDENT= FLIXLINT_TIMING=1 "$lint" --rules rules/notice.flix --stage "$stage" --build-dir "$notice" src) > "$notice/out.txt" 2> "$notice/err.txt"
+code=$?
+set -e
+[ "$code" = 0 ] || { echo "test/fixture: rules/notice.flix: expected exit 0, got $code" >&2; cat "$notice/out.txt" "$notice/err.txt" >&2; exit 1; }
+grep '^flixlint: note:' "$notice/err.txt" | diff "$root/test/expected-notices-$stage.txt" - \
+    || { echo "test/fixture: the notes differ from test/expected-notices-$stage.txt (< expected / > actual)" >&2; exit 1; }
+for id in binders spawns by-string; do
+    grep -q "^flixlint timing: judge ${id}=" "$notice/err.txt" || { echo "test/fixture: FLIXLINT_TIMING=1 did not time the rule ${id}" >&2; cat "$notice/err.txt" >&2; exit 1; }
+done
 
 # WhyNot: 呼び方と環境の誤りを exit 2 のままにしない。flix.jar が無くても shim が組めなくても --rules の
 # パスが違っても broken.flix の行が緑になり、「規則が壊れている事」を確かめたつもりの検査が何も確かめない。

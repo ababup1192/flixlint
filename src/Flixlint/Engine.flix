@@ -14,10 +14,11 @@ pub mod Flixlint.Engine {
     use Fs.FileRead.FileRead
     use Fs.DirList.DirList
 
+    import java.io.File
     import java.lang.System
 
     /// What a run is told: the facts directory, today's date and the limits (`--limits`, `--limits-base`, each a file or a directory).
-    type alias Settings = { factsDir = String, today = String, limits = Option[String], limitsBase = Option[String] }
+    type alias Settings = { factsDir = String, today = String, limits = Option[String], limitsBase = Option[String], timing = Bool }
 
     /// The entry point of the generated engine `main`: the settings come from the environment (`FLIXLINT_FACTS`,
     /// `FLIXLINT_TODAY`, `FLIXLINT_LIMITS`, `FLIXLINT_LIMITS_BASE`) and the exit code ends the JVM.
@@ -45,15 +46,53 @@ pub mod Flixlint.Engine {
         { factsDir = get("FLIXLINT_FACTS") |> Option.getWithDefault("build/flixlint/facts"),
           today = get("FLIXLINT_TODAY") |> Option.getWithDefault("0000-00-00"),
           limits = nonEmpty("FLIXLINT_LIMITS"),
-          limitsBase = nonEmpty("FLIXLINT_LIMITS_BASE") }
+          limitsBase = nonEmpty("FLIXLINT_LIMITS_BASE"),
+          timing = Option.nonEmpty(nonEmpty("FLIXLINT_TIMING")) }
 
     /// The value of `NAME=VALUE` among the arguments.
     def argOf(name: String, vars: List[String]): Option[String] =
         vars |> List.find(String.startsWith(prefix = "${name}=")) |> Option.map(String.dropLeft(String.length(name) + 1))
 
-    /// Judges the facts, prints the report and returns the exit code (0 no violation, 1 violations, 2 the rules are wrong).
+    /// Judges the facts, prints the report and returns the exit code (0 no violation, 1 violations, 2 the rules are wrong,
+    /// 4 the generic AST beside the facts is of another format or schema than this flixlint's).
     def judgeAndReport(rules: RuleSet, settings: Settings): Int32 \ IO + FileRead + DirList =
-        let facts = Flixlint.Facts.load(settings#factsDir);
+        let t0 = System.nanoTime();
+        let facts0 = Flixlint.Facts.load(settings#factsDir);
+        match loadAst(settings#factsDir) {
+            case Err(e) =>
+                System.err.println("flixlint: ${e}");
+                4
+            case Ok(ast) =>
+                let facts = Flixlint.Facts.withAst(ast, facts0);
+                let t1 = System.nanoTime();
+                let code = report(rules, settings, facts);
+                let t2 = nanoTimeAfter(code);
+                List.forEach(n -> System.err.println(notice(Flixlint.Ast.stage(ast), n)), Flixlint.Ast.ruleNames(ast) |> List.filter(isNoticed));
+                if (settings#timing) timings(rules, facts, t1 - t0, t2 - t1) else ();
+                code
+        }
+
+    /// The generic AST the shim wrote beside the facts (`<facts>/generic`), or an empty one when it wrote none.
+    def loadAst(factsDir: String): Result[String, Flixlint.Ast.Ast] \ IO =
+        let dir = "${factsDir}/generic";
+        if ((new File("${dir}/meta.txt")).exists()) Flixlint.Ast.load(dir) else Ok(Flixlint.Ast.empty())
+
+    /// Whether a name the rule file writes is worth a line: this stage does not have it, these sources never have it, or it
+    /// is an `Unnamed(`.
+    /// WhyNot: not a violation, and not exit 2. A rule file run at both stages may name a kind only one stage has, and a
+    /// kind the sources happen not to use is no mistake; the line only makes a rule that quietly finds nothing visible.
+    def isNoticed(n: Flixlint.Ast.RuleName): Bool = n#table == "Unnamed" or not n#inStage or n#count == 0
+
+    def notice(stage: Flixlint.Ast.Stage, n: Flixlint.Ast.RuleName): String =
+        let stageName = if (stage == Flixlint.Ast.Stage.Typed) "typed" else "resolved";
+        let what =
+            if (n#table == "Unnamed") "writes a name as a string (${n#name}): it does not stop compiling when the name goes; write the Names case"
+            else if (not n#inStage) "${n#table}.${n#name} is not in the ${stageName} stage's AST, so what is written with it finds nothing at this stage"
+            else "${n#table}.${n#name} is in no node of these sources (0 at the ${stageName} stage)";
+        "flixlint: note: ${n#file}:${n#line}: ${what}"
+
+    /// The report of the judged facts; the exit code.
+    def report(rules: RuleSet, settings: Settings, facts: Facts): Int32 \ IO + FileRead + DirList =
         let (judged, ruleErrors) = judgeAll(facts, settings#today, rules);
         let outcome = match settings#limits {
             case None => { violations = judged, failures = Nil, hints = Nil, errors = Nil }
@@ -72,6 +111,22 @@ pub mod Flixlint.Engine {
         if (not List.isEmpty(errors)) 2
         else if (not List.isEmpty(violations) or not List.isEmpty(outcome#failures)) 1
         else 0
+
+    /// `FLIXLINT_TIMING=1`: how long reading the facts and judging took, and each custom rule on its own (to find a slow one).
+    /// WhyNot: the custom rules are not timed inside `judgeAll`. It is pure, so it cannot read the clock; they are run once more
+    /// here, one by one, only when the timing is asked for.
+    def timings(rules: RuleSet, facts: Facts, loadNs: Int64, judgeNs: Int64): Unit \ IO =
+        System.err.println("flixlint timing: load=${loadNs / 1_000_000i64}ms judge=${judgeNs / 1_000_000i64}ms");
+        rules#customs |> List.forEach(r -> {
+            let t0 = System.nanoTime();
+            // the rule runs after the first reading of the clock and before the second, which needs its result
+            let found = if (t0 >= 0i64) List.length(r#check(facts)) else 0;
+            let t1 = nanoTimeAfter(found);
+            System.err.println("flixlint timing: judge ${r#id}=${(t1 - t0) / 1_000_000i64}ms (${found} before the allows)")
+        })
+
+    /// The clock, read once `x` is known (so that a pure computation of `x` is not moved past it).
+    def nanoTimeAfter(x: Int32): Int64 \ IO = if (x < Int32.minValue()) 0i64 else System.nanoTime()
 
     /// The ratchet's outcome with the limits checked against the base limits (`--limits-base`, a file or a
     /// directory): a limit may not go up without a reason. Without a base the outcome is as it was.
