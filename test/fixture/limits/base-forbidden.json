@@ -1,0 +1,20 @@
+{
+  "note": "the base where clock reached 0 and its line was removed (forbidden): at.json adds it back at 4",
+  "limits": {
+    "capability-leak": 1,
+    "capability-site": 1,
+    "capability-target": 1,
+    "clock-alone": 1,
+    "domain-isolation": 6,
+    "find-many": 2,
+    "guarded-write": 1,
+    "handler-site": 2,
+    "io-in-tx": 2,
+    "log-text": 2,
+    "pure-rules": 1,
+    "silent-parse": 3,
+    "raw-alias": 1,
+    "flat-rules": 6,
+    "wrapped-key": 4
+  }
+}

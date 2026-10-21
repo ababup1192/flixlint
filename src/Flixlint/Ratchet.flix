@@ -49,10 +49,12 @@ pub mod Flixlint.Ratchet {
             case _ => Err("${path}: the limit of ${id} is not a number")
         }
 
-    /// The limits that went up against `base` (the limits of the branch the work goes into, e.g. origin/master's):
-    /// a limit above its base fails the run unless it gives a `raiseReason`, and a `raiseReason` on a limit that is not
-    /// above its base (or has no base) fails too, so the reason does not stay behind once the limit is back down.
-    /// A rule the base does not have is new and has nothing to be compared with.
+    /// The limits that went up against `base` (the limits where the work branched off, e.g. at the merge-base with
+    /// origin/master): a limit above its base fails the run unless it gives a `raiseReason`, and a `raiseReason` on a
+    /// limit that is not above its base fails too, so the reason does not stay behind once the limit is back down.
+    /// A limit the base does not have is a raise from nothing: a rule that reached 0 had its line removed to forbid it,
+    /// and a new rule that starts with violations lets them in, so a limit of 1 or more there needs a `raiseReason`
+    /// (a limit of 0 there forbids, and needs none).
     pub def raised(path: String, basePath: String, limits: List[Limit], base: List[Limit]): List[String] =
         let baseOf = base |> List.map(b -> (b#id, b#limit)) |> List.toMap;
         limits |> List.filterMap(l -> match (Map.get(l#id, baseOf), l#raiseReason) {
@@ -60,8 +62,8 @@ pub mod Flixlint.Ratchet {
                 Some("flixlint: ratchet ${l#id}: the limit went up from ${b} to ${l#limit} against ${basePath}; lower it to ${b}, or write it as { \"limit\": ${l#limit}, \"raiseReason\": \"why\" } in ${path}")
             case (Some(b), Some(_)) if l#limit <= b =>
                 Some("flixlint: ratchet ${l#id}: raiseReason is given, but the limit ${l#limit} is not above ${b} in ${basePath} (remove raiseReason from ${path})")
-            case (None, Some(_)) =>
-                Some("flixlint: ratchet ${l#id}: raiseReason is given, but ${basePath} has no limit for it (remove raiseReason from ${path})")
+            case (None, None) if l#limit > 0 =>
+                Some("flixlint: ratchet ${l#id}: ${basePath} has no limit for it (forbidden, or a new rule), and ${path} allows ${l#limit}; remove the line to forbid it, or write it as { \"limit\": ${l#limit}, \"raiseReason\": \"why\" }")
             case _ => None
         })
 

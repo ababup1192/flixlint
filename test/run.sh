@@ -57,6 +57,9 @@ LIMITS=limits/stale.json lint test/fixture rules/rules.flix 2026-09-19 2 expecte
 LIMITS=limits/at.json BASE=limits/base-lower.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-raised.txt
 LIMITS=limits/raised-ok.json BASE=limits/base-lower.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-ratchet-at.txt
 LIMITS=limits/raised-ok.json BASE=limits/at.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-stale-reason.txt
+# A limit the base does not have (a forbidden rule added back, or a new rule with violations) needs a raiseReason too.
+LIMITS=limits/at.json BASE=limits/base-forbidden.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-readded.txt
+LIMITS=limits/raised-ok.json BASE=limits/base-forbidden.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-ratchet-at.txt
 
 # The name index (--spans) alone, without rules: exit 0 and every occurrence where test/expected-spans-<stage>.txt says.
 # WhyNot: the two stages are not compared with each other here. Each run is one stage; the expected files differ only by
