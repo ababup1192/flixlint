@@ -51,6 +51,10 @@ pub mod Flixlint.Facts {
     /// or any one with type aliases opened as well (`caseTypesDeep`).
     pub type alias CaseType = { ofEnum = Enum, constructor = Case, index = Int32, tycon = Type }
 
+    /// A type alias of the linted sources: where it is declared, and the number of its record fields (`fields`; -1 when
+    /// it does not stand for a record). `aliasTypesAllOf` gives the type constructors it stands for (as `argTypesAll`).
+    pub type alias AliasDef = { typeAlias = Type, module = Mod, file = String, line = Int32, fields = Int32 }
+
     /// Where an enum is declared.
     pub type alias EnumDef = { ofEnum = Enum, module = Mod, file = String, line = Int32 }
 
@@ -75,6 +79,7 @@ pub mod Flixlint.Facts {
         caseTypesAll = List[CaseType],
         caseTypesDeep = List[CaseType],
         enums = List[EnumDef],
+        typeAliases = List[AliasDef],
         effects = List[EffDef],
         defOf = Map[Fn, Def],
         callsFrom = Map[Fn, List[Call]],
@@ -85,6 +90,7 @@ pub mod Flixlint.Facts {
         retTypeOf = Map[Fn, Type],
         retTypesAllOf = Map[Fn, Set[Type]],
         retTypesDeepOf = Map[Fn, Set[Type]],
+        aliasTypesAllOf = Map[Type, Set[Type]],
         strLitsOf = Map[Fn, List[String]],
         effAliases = Map[Eff, Set[Eff]],
         files = Set[String],
@@ -113,6 +119,7 @@ pub mod Flixlint.Facts {
     pub def caseTypesAll(facts: Facts): List[CaseType] = data(facts)#caseTypesAll
     pub def caseTypesDeep(facts: Facts): List[CaseType] = data(facts)#caseTypesDeep
     pub def enums(facts: Facts): List[EnumDef] = data(facts)#enums
+    pub def typeAliases(facts: Facts): List[AliasDef] = data(facts)#typeAliases
     pub def effects(facts: Facts): List[EffDef] = data(facts)#effects
     /// Every file the walk was given, whether or not it holds a definition an `allowInFile` could name.
     pub def files(facts: Facts): Set[String] = data(facts)#files
@@ -151,6 +158,9 @@ pub mod Flixlint.Facts {
 
     /// Every type constructor in the return type of `fn`, with type aliases opened at any depth.
     pub def retTypesDeepOf(facts: Facts, fn: Fn): Set[Type] = Map.getWithDefault(fn, Set.empty(), data(facts)#retTypesDeepOf)
+
+    /// Every type constructor a type alias stands for, nested ones included (aliases inside it by their own name).
+    pub def aliasTypesAllOf(facts: Facts, aliasType: Type): Set[Type] = Map.getWithDefault(aliasType, Set.empty(), data(facts)#aliasTypesAllOf)
 
     /// The string literals in the body of `fn`, in source order.
     pub def strLitsIn(facts: Facts, fn: Fn): List[String] = Map.getWithDefault(fn, Nil, data(facts)#strLitsOf)
@@ -243,6 +253,7 @@ pub mod Flixlint.Facts {
         let caseTypesDeep = caseTypeRows("case_type_deep");
         let aliasRows = rows(dir, "eff_alias") |> List.filterMap(c -> forM (a <- effOf(col(0, c)); e <- effOf(col(1, c))) yield (a, e));
         let enums = rows(dir, "enum") |> List.filterMap(c -> forM (e <- enumOf(col(0, c)); m <- modOf(col(1, c))) yield { ofEnum = e, module = m, file = col(2, c), line = int(3, c) });
+        let (typeAliases, aliasTypesAll) = loadAliases(dir, typeOf, modOf);
         let effects = rows(dir, "eff") |> List.filterMap(c -> forM (e <- effOf(col(0, c)); m <- modOf(col(1, c))) yield { effect = e, module = m, file = col(2, c), line = int(3, c) });
         let sourceFiles = rows(dir, "source_file") |> List.map(c -> col(0, c));
         let sortedCalls = calls |> List.sortBy(c -> (c#caller, c#line, c#callee));
@@ -263,6 +274,7 @@ pub mod Flixlint.Facts {
             caseTypesAll = caseTypesAll,
             caseTypesDeep = caseTypesDeep,
             enums = enums,
+            typeAliases = typeAliases,
             effects = effects,
             defOf = defs |> List.map(d -> (d#fn, d)) |> List.toMap,
             callsFrom = grouped(c -> c#caller, sortedCalls),
@@ -273,6 +285,7 @@ pub mod Flixlint.Facts {
             retTypeOf = List.toMap(retTypes),
             retTypesAllOf = setsBy(retTypesAll),
             retTypesDeepOf = setsBy(retTypesDeep),
+            aliasTypesAllOf = aliasTypesAll,
             strLitsOf = grouped(s -> s#fn, strLits |> List.sortBy(s -> (s#fn, s#line))) |> Map.map(List.map(s -> s#text)),
             effAliases = setsBy(aliasRows),
             files = List.foldLeft((acc, f) -> Set.insert(f, acc), Set.empty(), sourceFiles)
@@ -297,6 +310,14 @@ pub mod Flixlint.Facts {
         t |> List.map(match (n, _, k) -> (k, n)) |> List.toMap
 
     /// Groups a list that is already sorted by the key, keeping the order inside each group.
+    /// The type aliases and what each stands for.
+    /// WhyNot: not inline in `load`. The JVM caps a method at 64 KB and `load` reaches it with one relation more.
+    def loadAliases(dir: String, typeOf: String -> Option[Type], modOf: String -> Option[Mod]): (List[AliasDef], Map[Type, Set[Type]]) \ FileRead =
+        let defs = rows(dir, "type_alias") |> List.filterMap(c -> forM (a <- typeOf(col(0, c)); m <- modOf(col(1, c)))
+            yield { typeAlias = a, module = m, file = col(2, c), line = int(3, c), fields = int(5, c) });
+        let stands = rows(dir, "alias_type_all") |> List.filterMap(c -> forM (a <- typeOf(col(0, c)); t <- typeOf(col(1, c))) yield (a, t));
+        (defs, setsBy(stands))
+
     def grouped(key: a -> k, xs: List[a]): Map[k, List[a]] with Order[k] =
         List.foldRight((x, m) -> Map.insertWith((newer, older) -> newer ::: older, key(x), x :: Nil, m), Map.empty(), xs)
 

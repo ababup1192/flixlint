@@ -478,6 +478,8 @@ final class Sink(dir: Path) {
   def effAlias(alias: String, eff: String): Unit = { effNames += alias; effNames += eff; row("eff_alias", alias, eff) }
   def enumDef(enum0: String, mod: String, file: String, line: Int, isPub: Boolean): Unit = { enumNames += enum0; modNames += mod; row("enum", enum0, mod, file, line, isPub) }
   def effDef(eff: String, mod: String, file: String, line: Int, isPub: Boolean): Unit = { effNames += eff; modNames += mod; row("eff", eff, mod, file, line, isPub) }
+  def typeAliasDef(alias: String, mod: String, file: String, line: Int, isPub: Boolean, fields: Int): Unit = { typeNames += alias; modNames += mod; row("type_alias", alias, mod, file, line, isPub, fields) }
+  def aliasTypeAll(alias: String, tycon: String): Unit = { typeNames += alias; typeNames += tycon; modOf(tycon); row("alias_type_all", alias, tycon) }
   def close(): Unit = writers.values.foreach(_.close())
 }
 
@@ -594,6 +596,17 @@ object Typed {
     }
   }
 
+  /** The number of fields when `t` is a record type (`{ a = Int32, b = Bool }` gives 2), or -1 when it is not a record. */
+  def recordFields(t: Type): Int = t match {
+    case Type.Apply(Type.Cst(TypeConstructor.Record, _), row, _) => rowLabels(row)
+    case _ => -1
+  }
+
+  private def rowLabels(row: Type): Int = row match {
+    case Type.Apply(Type.Apply(Type.Cst(TypeConstructor.RecordRowExtend(_), _), _, _), rest, _) => 1 + rowLabels(rest)
+    case _ => 0
+  }
+
   /** Every named type constructor in a type, outermost first (`List[ColumnName]` gives `List`, `ColumnName`). An alias is
     * listed by its own name and its arguments (its target is not); type variables and record / schema rows are left out.
     */
@@ -643,6 +656,10 @@ object Typed {
     for ((sym, e) <- root.effects; file <- sourceFile(e.loc))
       sink.effDef(symName(sym), sym.namespace.mkString("."), file, sym.loc.startLine, e.mod.isPublic)
     // aliases of packages and the standard library are listed too: a rule that names `Db` means its members
+    for ((sym, a) <- root.typeAliases; file <- sourceFile(a.loc)) {
+      sink.typeAliasDef(symName(sym), sym.namespace.mkString("."), file, sym.loc.startLine, a.mod.isPublic, recordFields(a.tpe))
+      allNames(a.tpe).distinct.foreach(n => sink.aliasTypeAll(symName(sym), n))
+    }
     for ((sym, a) <- root.typeAliases; e <- effNames(a.tpe).distinct)
       sink.effAlias(symName(sym), e)
   }
@@ -708,6 +725,17 @@ object Resolved {
     case other => other.getClass.getSimpleName
   }
 
+  /** The number of fields when `t` is a record type (`{ a = Int32, b = Bool }` gives 2), or -1 when it is not a record. */
+  def recordFields(t: UnkindedType): Int = t match {
+    case UnkindedType.Apply(UnkindedType.Cst(TypeConstructor.Record, _), row, _) => rowLabels(row)
+    case _ => -1
+  }
+
+  private def rowLabels(row: UnkindedType): Int = row match {
+    case UnkindedType.Apply(UnkindedType.Apply(UnkindedType.Cst(TypeConstructor.RecordRowExtend(_), _), _, _), rest, _) => 1 + rowLabels(rest)
+    case _ => 0
+  }
+
   /** Every named type constructor in a type, outermost first (see `Typed.allNames`). */
   def allNames(t: UnkindedType): List[String] = namesIn(t, throughAliases = false)
 
@@ -754,6 +782,10 @@ object Resolved {
     }
     for ((sym, e) <- root.effects; file <- sourceFile(e.loc))
       sink.effDef(symName(sym), sym.namespace.mkString("."), file, sym.loc.startLine, e.mod.isPublic)
+    for ((sym, a) <- root.typeAliases; file <- sourceFile(a.loc)) {
+      sink.typeAliasDef(symName(sym), sym.namespace.mkString("."), file, sym.loc.startLine, a.mod.isPublic, recordFields(a.tpe))
+      allNames(a.tpe).distinct.foreach(n => sink.aliasTypeAll(symName(sym), n))
+    }
     for ((sym, a) <- root.typeAliases; e <- effNames(a.tpe).distinct)
       sink.effAlias(symName(sym), e)
   }

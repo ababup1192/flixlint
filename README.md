@@ -278,9 +278,9 @@ What the families cannot say is written against the facts, in the same rule set;
 [`examples/rules.flix`](examples/rules.flix) is one.
 
 `Flixlint.Facts` gives the relations as lists of records (`defs`, `calls`, `handles`, `constructs`, `callsInLambda`,
-`argLits`, `argCalls`, `pipedInto`, `strLits`, `argTypes`, `argTypesAll`, `argTypesDeep`, `caseTypes`, `caseTypesAll`, `caseTypesDeep`, `enums`, `effects`)
+`argLits`, `argCalls`, `pipedInto`, `strLits`, `argTypes`, `argTypesAll`, `argTypesDeep`, `caseTypes`, `caseTypesAll`, `caseTypesDeep`, `enums`, `effects`, `typeAliases`)
 and the lookups (`defOf`, `callsFrom`, `callsTo`, `effectOf`, `argType`, `argTypesAllOf`, `argTypesDeepOf`, `retType`, `retTypesAllOf`, `retTypesDeepOf`,
-`strLitsIn`, `expandEffects`, `fnName`, `isIn`); `Flixlint.Violation` builds violations (`atCall`, `atDef`, `inBody`,
+`aliasTypesAllOf`, `strLitsIn`, `expandEffects`, `fnName`, `isIn`); `Flixlint.Violation` builds violations (`atCall`, `atDef`, `inBody`,
 `atDeclaration`, `withPath`, `withNote`); `Flixlint.Glob.matches(pattern, path)` is the glob of `files` (`*` stays
 inside one path segment, `**` crosses segments, `{a,b}` is either alternative, and groups nest: `src/{a,{b,c}}/**`).
 
@@ -317,6 +317,8 @@ facts directory holds fewer files than the table below has rows.
 | `CaseType` / `CaseTypeAll` | `enum, case, index, tycon` | The head type constructor of the `index`-th field of an enum case / every one in it. |
 | `ArgTypeDeep` / `RetTypeDeep` / `CaseTypeDeep` | as the `All` ones | The same, with every alias also opened to what it stands for, at any depth (`type alias Ctx = { w = World }` gives `Ctx` and `World`). `disallowCaseArgType` reads `CaseTypeDeep`; `disallowDependency` keeps the `All` ones, so a type reached only through an alias declared outside the module is not a dependency. |
 | `Enum` / `Eff` | `name, mod, file, line, pub` | Where an enum / an effect is declared (`line` is the line of its name). |
+| `TypeAliasDef` | `alias, mod, file, line, pub, fields` | A type alias of the linted sources; `fields` is the number of its record fields, or -1 when it does not stand for a record (`Price = { cents = Cents, currency = String }` has 2). |
+| `AliasTypeAll` | `alias, tycon` | Every type constructor an alias stands for, nested ones included (aliases inside it by their own name, as `ArgTypeAll`). |
 
 Definitions coming from packages and the standard library are not listed in `Def` (only project sources are), but they
 appear as callees, effects and types, and they are in `Flixlint.Names`: `Fn` holds every function the sources could call
@@ -650,9 +652,9 @@ family で言えない物は facts に対して書き、同じ rule set に入�
 の `findReadsOnly` がその 1 つ。
 
 `Flixlint.Facts` は関係を record の list で渡し（`defs`、`calls`、`handles`、`constructs`、`callsInLambda`、
-`argLits`、`argCalls`、`pipedInto`、`strLits`、`argTypes`、`argTypesAll`、`argTypesDeep`、`caseTypes`、`caseTypesAll`、`caseTypesDeep`、`enums`、
+`argLits`、`argCalls`、`pipedInto`、`strLits`、`argTypes`、`argTypesAll`、`argTypesDeep`、`caseTypes`、`caseTypesAll`、`caseTypesDeep`、`enums`、`typeAliases`、
 `effects`）、引く関数（`defOf`、`callsFrom`、`callsTo`、`effectOf`、`argType`、`argTypesAllOf`、`argTypesDeepOf`、`retType`、
-`retTypesAllOf`、`retTypesDeepOf`、`strLitsIn`、`expandEffects`、`fnName`、`isIn`）も持つ。`Flixlint.Violation` が違反を組み
+`retTypesAllOf`、`retTypesDeepOf`、`aliasTypesAllOf`、`strLitsIn`、`expandEffects`、`fnName`、`isIn`）も持つ。`Flixlint.Violation` が違反を組み
 （`atCall`、`atDef`、`inBody`、`atDeclaration`、`withPath`、`withNote`）、`Flixlint.Glob.matches(pattern, path)`
 が `files` の glob（`*` はパスの 1 区切りの中、`**` は区切りを跨ぐ、`{a,b}` はどちらか。入れ子にできる: `src/{a,{b,c}}/**`）。
 
@@ -689,6 +691,8 @@ qualify するのと同じ形になる。`Auth.permit`、`Auth.Permit.Permit`（
 | `CaseType` / `CaseTypeAll` | `enum, case, index, tycon` | enum の case の `index` 番目の項目の先頭の型コンストラクタ / その中の全部 |
 | `ArgTypeDeep` / `RetTypeDeep` / `CaseTypeDeep` | `All` と同じ | 上と同じで、エイリアスを指す先まで何段でも開く（`type alias Ctx = { w = World }` なら `Ctx` と `World`）。`disallowCaseArgType` は `CaseTypeDeep` を読み、`disallowDependency` は `All` のままなので、モジュールの外で宣言したエイリアス越しにだけ届く型は依存に数えない |
 | `Enum` / `Eff` | `name, mod, file, line, pub` | enum / effect を宣言した場所（`line` は名前の行） |
+| `TypeAliasDef` | `alias, mod, file, line, pub, fields` | ソースの型エイリアス。`fields` は record の欄の数で、record でなければ -1（`Price = { cents = Cents, currency = String }` なら 2） |
+| `AliasTypeAll` | `alias, tycon` | エイリアスが指す型に現れる型コンストラクタを入れ子まで全部（中のエイリアスは自分の名前で。`ArgTypeAll` と同じ） |
 
 package と標準ライブラリから来る定義は `Def` に載らない（載るのはプロジェクトのソースだけ）が、callee・
 effect・型としては現れ、`Flixlint.Names` には入る。`Fn` はソースが呼び得る関数を全部（プロジェクト・

@@ -69,7 +69,8 @@ mod FixtureRules {
         Flixlint.customs(List#{
             customRule({ id = "capability-site", check = capabilitySite })
                 |> allowIn(Fn.Orders_permitsInLambda, "an allow on a custom rule"),
-            customRule({ id = "silent-parse", check = silentParse })
+            customRule({ id = "silent-parse", check = silentParse }),
+            customRule({ id = "raw-alias", check = rawAlias })
         })
     })
 
@@ -98,6 +99,14 @@ mod FixtureRules {
             |> List.filter(c -> Flixlint.Facts.defOf(facts, c#caller)
                 |> Option.exists(d -> Flixlint.Glob.matches("src/domain/**", d#file) and d#file != "src/domain/Auth.flix"))
             |> List.map(c -> Flixlint.Violation.atCall(facts, "capability-site", c, "use cases receive Permit as an argument; only the boundary asks Auth"))
+
+    /// A type alias that stands for a bare Int64 (directly or through a type inside it), except a record of two or more
+    /// fields, which names what each number means: TypeAliasDef and AliasTypeAll.
+    def rawAlias(facts: Facts): List[Violation] =
+        Flixlint.Facts.typeAliases(facts)
+            |> List.filter(a -> a#fields < 2 and Set.memberOf(Type.Int64, Flixlint.Facts.aliasTypesAllOf(facts, a#typeAlias)))
+            |> List.map(a -> Flixlint.Violation.atDeclaration("raw-alias", a#file, a#line, Flixlint.Facts.typeName(facts, a#typeAlias),
+                "stands for a bare Int64", "a number is named by a record field or an enum, not by an alias of Int64"))
 
     /// A value Ids.parse rejects that is dropped (List.filterMap) or replaced by a default (Option.getWithDefault, directly
     /// or through a pipe); a default that is Result.Err is a rejection and not reported.

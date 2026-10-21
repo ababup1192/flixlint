@@ -42,6 +42,9 @@ src/api/Endpoints.flix:61: silent-parse: Endpoints.parsedOrOne: defaults the val
 src/app/Runner.flix:12: handler-site: Runner.bypass: installs a handler for Auth
     the Auth handler is installed by the runner only; use cases receive Permit
     fix it, or add |> allowIn(Fn.Runner_bypass, "reason") to rule handler-site
+src/domain/Money.flix:3: raw-alias: Money.Cents: stands for a bare Int64
+    a number is named by a record field or an enum, not by an alias of Int64
+    fix it, or add |> allowInFile("src/domain/Money.flix", "reason") to rule raw-alias
 src/domain/Orders.flix:11: io-in-tx: Orders.viaAlias: has Db and Http in its signature
     DB and outbound I/O in one signature: split into read Tx -> I/O -> write Tx
     fix it, or add |> allowIn(Fn.Orders_viaAlias, "reason") to rule io-in-tx
