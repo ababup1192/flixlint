@@ -7,6 +7,7 @@ import java.io.{BufferedOutputStream, DataOutputStream, PrintWriter}
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, Paths}
 import scala.collection.mutable
+import scala.jdk.CollectionConverters._
 
 /** The AST itself as generic relations, with no knowledge of what a rule wants (docs/design-generic.md, chapter 1).
   *
@@ -102,7 +103,6 @@ object Generic {
     val flix = Facts.compiler(Facts.depsOf(args))
     val files = args.srcs.flatMap(Facts.listFlix)
     files.foreach(f => flix.addFile(f, SecurityContext.Unrestricted))
-    val limits = Limits(nodeRatio, files.map(f => Files.lines(f).count()).sum, 200L * 1000 * 1000)
     val t1 = System.nanoTime()
     val (nErrors, root) = args.stage match {
       case "typed" =>
@@ -117,19 +117,37 @@ object Generic {
     val t2 = System.nanoTime()
     root match {
       case Some(r) =>
-        val out = emit(r.asInstanceOf[Product], args.stage, files.map(_.toString), limits)
-        val tw = System.nanoTime()
-        out.write(args.out)
-        writeRuleNames(args.out, rules.map(r => ruleNames(Paths.get(r), out)).getOrElse(Nil))
+        val out = emitTo(r.asInstanceOf[Product], args.stage, files, args.out, rules.map(Paths.get(_)), nodeRatio)
         tsv.foreach(d => out.writeTsv(Paths.get(d)))
         val t3 = System.nanoTime()
-        System.err.println(f"flixlint generic: stage=${args.stage} ${out.counts.map { case (k, v) => s"$k=$v" }.mkString(" ")} compile=${(t2 - t1) / 1e9}%.1fs walk+write=${(t3 - t2) / 1e9}%.2fs (walk=${out.walkNs / 1e9}%.2fs cpu=${out.walkCpuNs / 1e9}%.2fs external=${out.extNs / 1e9}%.2fs write=${(t3 - tw) / 1e9}%.2fs) total=${(t3 - t0) / 1e9}%.1fs")
+        System.err.println(f"flixlint generic: stage=${args.stage} ${out.counts.map { case (k, v) => s"$k=$v" }.mkString(" ")} compile=${(t2 - t1) / 1e9}%.1fs walk+write=${(t3 - t2) / 1e9}%.2fs (walk=${out.walkNs / 1e9}%.2fs cpu=${out.walkCpuNs / 1e9}%.2fs external=${out.extNs / 1e9}%.2fs write=${out.writeNs / 1e9}%.2fs) total=${(t3 - t0) / 1e9}%.1fs")
       case None => System.err.println("flixlint: no typed AST (compilation errors above)")
     }
     if (nErrors > 0) 3 else 0
   }
 
   final case class Limits(nodeRatio: Int, sourceLines: Long, maxBytes: Long)
+
+  /** Walks `root` and writes its generic relations into `dir` (what was there goes first, so that a run that stops
+    * leaves none behind), with the names `rules` writes; the tables written. `Facts.write` calls it with `<facts>/generic`.
+    */
+  def emitTo(root: Product, stage: String, files: List[Path], dir: Path, rules: Option[Path], nodeRatio: Int = 20): Out = {
+    clear(dir)
+    val limits = Limits(nodeRatio, files.map(f => Files.lines(f).count()).sum, 200L * 1000 * 1000)
+    val out = emit(root, stage, files.map(_.toString), limits)
+    val tw = System.nanoTime()
+    out.write(dir)
+    writeRuleNames(dir, rules.map(ruleNames(_, out)).getOrElse(Nil))
+    out.writeNs = System.nanoTime() - tw
+    out
+  }
+
+  /** Removes the files of `dir` (the relations are files only; a directory in it is left alone). */
+  def clear(dir: Path): Unit =
+    if (Files.isDirectory(dir)) {
+      val listing = Files.list(dir)
+      try listing.iterator().asScala.filter(Files.isRegularFile(_)).foreach(Files.delete) finally listing.close()
+    }
 
   // ---- the tables, held in memory until the walk ends ----
 
@@ -310,7 +328,7 @@ object Generic {
   final class Out(val stage: String, val files: Vector[String], limits: Limits) {
     val strings = new Strings
     val types = new Types(strings)
-    var walkNs, walkCpuNs, extNs = 0L
+    var walkNs, walkCpuNs, extNs, writeNs = 0L
     val kind, parent, slot, index, root, line, col, endLine, endCol, synthetic, tpe, eff = new IntBuf
     val aNode, aName, aValue, aType, aLine = new IntBuf
     val declNode, declFile = new IntBuf

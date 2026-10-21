@@ -120,15 +120,11 @@ set -e
 [ "$code" = 4 ] && grep -q 'grew past its limit.*The declaration with the most nodes is' "$gen/limit-low.stderr" \
     || { echo "test/generic/limit: --node-ratio 2 should stop with exit 4 and name the declaration, got exit $code" >&2; cat "$gen/limit-low.stderr" >&2; exit 1; }
 
-# What a rule file names that the stage lacks (design 1.5): the shim writes the generic AST beside the facts with the rule
-# file's names, and the engine says each name this stage does not have, these sources never have, and each `Unnamed(`,
-# on stderr, with the exit code of the rules alone (0). FLIXLINT_TIMING=1 also times each custom rule.
-# WhyNot: the shim is run on its own here. Facts.scala does not call flixlint.Generic yet, so a plain run has no
-# generic AST; the notice is checked on the engine's side with the relations put where the shim will put them.
+# What a rule file names that the stage lacks (design 1.5): a plain run writes the generic AST beside the facts with the
+# rule file's names, and the engine says each name this stage does not have, these sources never have, and each
+# `Unnamed(`, on stderr, with the exit code of the rules alone (0). FLIXLINT_TIMING=1 also times each custom rule.
 notice="$gen/notice"
-mkdir -p "$notice/facts"
-(cd "$root/test/fixture" && java -cp "$FLIX_JAR:$shim_jar" flixlint.Generic --out "$notice/facts/generic" --rules rules/notice.flix --stage "$stage" src) 2> "$notice/shim.stderr" \
-    || { echo "test/fixture: flixlint.Generic --rules failed" >&2; cat "$notice/shim.stderr" >&2; exit 1; }
+mkdir -p "$notice"
 set +e
 (cd "$root/test/fixture" && FLIXLINT_RESIDENT= FLIXLINT_TIMING=1 "$lint" --rules rules/notice.flix --stage "$stage" --build-dir "$notice" src) > "$notice/out.txt" 2> "$notice/err.txt"
 code=$?
