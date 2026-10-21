@@ -612,7 +612,7 @@ object Typed {
     root.effects.keys.foreach(e => sink.effNames += symName(e))
     for (d <- allDefs if !synthetic(d); file <- sourceFile(d.loc)) {
       val fn = symName(d.sym)
-      sink.defn(fn, d.sym.name, d.sym.namespace.mkString("."), file, d.loc.startLine, d.spec.mod.isPublic)
+      sink.defn(fn, d.sym.name, d.sym.namespace.mkString("."), file, d.sym.loc.startLine, d.spec.mod.isPublic)
       effNames(d.spec.eff).distinct.foreach(e => sink.effectOf(fn, e))
       d.spec.fparams.toList.zipWithIndex.foreach { case (fp, i) =>
         sink.argType(fn, i, headName(fp.tpe))
@@ -625,7 +625,7 @@ object Typed {
       walkBody(fn, d.exp, sink)
     }
     for ((sym, e) <- root.enums; file <- sourceFile(e.loc)) {
-      sink.enumDef(symName(sym), sym.namespace.mkString("."), file, e.loc.startLine, e.mod.isPublic)
+      sink.enumDef(symName(sym), sym.namespace.mkString("."), file, sym.loc.startLine, e.mod.isPublic)
       for ((cs, c) <- e.cases; (t, i) <- c.tpes.zipWithIndex) {
         sink.caseType(symName(sym), symName(cs), i, headName(t))
         allNames(t).distinct.foreach(n => sink.caseTypeAll(symName(sym), symName(cs), i, n))
@@ -633,7 +633,7 @@ object Typed {
       }
     }
     for ((sym, e) <- root.effects; file <- sourceFile(e.loc))
-      sink.effDef(symName(sym), sym.namespace.mkString("."), file, e.loc.startLine, e.mod.isPublic)
+      sink.effDef(symName(sym), sym.namespace.mkString("."), file, sym.loc.startLine, e.mod.isPublic)
     // aliases of packages and the standard library are listed too: a rule that names `Db` means its members
     for ((sym, a) <- root.typeAliases; e <- effNames(a.tpe).distinct)
       sink.effAlias(symName(sym), e)
@@ -724,7 +724,7 @@ object Resolved {
     root.effects.keys.foreach(e => sink.effNames += symName(e))
     for (d <- allDefs if !synthetic(d); file <- sourceFile(d.loc)) {
       val fn = symName(d.sym)
-      sink.defn(fn, d.sym.name, d.sym.namespace.mkString("."), file, d.loc.startLine, d.spec.mod.isPublic)
+      sink.defn(fn, d.sym.name, d.sym.namespace.mkString("."), file, d.sym.loc.startLine, d.spec.mod.isPublic)
       d.spec.eff.toList.flatMap(effNames).distinct.foreach(e => sink.effectOf(fn, e))
       d.spec.fparams.toList.zipWithIndex.foreach { case (fp, i) =>
         sink.argType(fn, i, fp.tpe.map(headName).getOrElse("?"))
@@ -737,7 +737,7 @@ object Resolved {
       walkBody(fn, d.exp, sink)
     }
     for ((sym, e) <- root.enums; file <- sourceFile(e.loc)) {
-      sink.enumDef(symName(sym), sym.namespace.mkString("."), file, e.loc.startLine, e.mod.isPublic)
+      sink.enumDef(symName(sym), sym.namespace.mkString("."), file, sym.loc.startLine, e.mod.isPublic)
       for (c <- e.cases; (t, i) <- c.tpes.zipWithIndex) {
         sink.caseType(symName(sym), symName(c.sym), i, headName(t))
         allNames(t).distinct.foreach(n => sink.caseTypeAll(symName(sym), symName(c.sym), i, n))
@@ -745,7 +745,7 @@ object Resolved {
       }
     }
     for ((sym, e) <- root.effects; file <- sourceFile(e.loc))
-      sink.effDef(symName(sym), sym.namespace.mkString("."), file, e.loc.startLine, e.mod.isPublic)
+      sink.effDef(symName(sym), sym.namespace.mkString("."), file, sym.loc.startLine, e.mod.isPublic)
     for ((sym, a) <- root.typeAliases; e <- effNames(a.tpe).distinct)
       sink.effAlias(symName(sym), e)
   }

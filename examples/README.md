@@ -10,8 +10,8 @@ cd examples
 
 ```
 src/Orders.flix:5: clock: Orders.receipt: calls Clock.today
-src/Orders.flix:7: find-reads-only: Orders.findAndNotify: has Http in its signature
-src/Orders.flix:7: io-in-tx: Orders.findAndNotify: has Db and Http in its signature
+src/Orders.flix:8: find-reads-only: Orders.findAndNotify: has Http in its signature
+src/Orders.flix:8: io-in-tx: Orders.findAndNotify: has Db and Http in its signature
 src/Reports.flix:6: db-handler: Reports.preview: installs a handler for Db
 ```
 

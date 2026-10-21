@@ -300,7 +300,7 @@ facts directory holds fewer files than the table below has rows.
 | Relation | Columns | Meaning |
 |---|---|---|
 | `SourceFile` | `file` | A `.flix` file the walk was given, whether or not it holds a definition. `allowInFile` is checked against these, so a file of nothing but type aliases or a trait counts. |
-| `Def` | `fn, name, mod, file, line, pub` | A top-level or instance definition; `name` is the unqualified name, `pub` is `true`/`false`. Definitions the compiler makes up (derived instances, `Eq.eq$123`) are left out. |
+| `Def` | `fn, name, mod, file, line, pub` | A top-level or instance definition; `line` is the line of its name (not of its doc comment), `name` is the unqualified name, `pub` is `true`/`false`. Definitions the compiler makes up (derived instances, `Eq.eq$123`) are left out. |
 | `Calls` | `caller, callee, line` | A call inside the body of `caller` (lambdas and local defs count as the enclosing def). Def, trait signature, effect operation and Java calls alike; a function passed by name counts as a call. |
 | `EffectOf` | `fn, eff` | One effect of the signature, type aliases expanded (`\ Db` with `Db = DbRead + DbWrite` gives two rows). |
 | `EffAlias` | `alias, eff` | The members of an effect type alias (project, packages and stdlib), for expanding the effects named in a rule. |
@@ -316,7 +316,7 @@ facts directory holds fewer files than the table below has rows.
 | `RetType` / `RetTypeAll` | `fn, tycon` | The head type constructor of the return type / every one in it. |
 | `CaseType` / `CaseTypeAll` | `enum, case, index, tycon` | The head type constructor of the `index`-th field of an enum case / every one in it. |
 | `ArgTypeDeep` / `RetTypeDeep` / `CaseTypeDeep` | as the `All` ones | The same, with every alias also opened to what it stands for, at any depth (`type alias Ctx = { w = World }` gives `Ctx` and `World`). `disallowCaseArgType` reads `CaseTypeDeep`; `disallowDependency` keeps the `All` ones, so a type reached only through an alias declared outside the module is not a dependency. |
-| `Enum` / `Eff` | `name, mod, file, line, pub` | Where an enum / an effect is declared. |
+| `Enum` / `Eff` | `name, mod, file, line, pub` | Where an enum / an effect is declared (`line` is the line of its name). |
 
 Definitions coming from packages and the standard library are not listed in `Def` (only project sources are), but they
 appear as callees, effects and types, and they are in `Flixlint.Names`: `Fn` holds every function the sources could call
@@ -672,7 +672,7 @@ qualify するのと同じ形になる。`Auth.permit`、`Auth.Permit.Permit`（
 | 関係 | 列 | 意味 |
 |---|---|---|
 | `SourceFile` | `file` | 走査に渡した `.flix` のファイル。定義を持たないファイルも載る。`allowInFile` はこれと突き合わせるので、型エイリアスや trait だけのファイルも数える |
-| `Def` | `fn, name, mod, file, line, pub` | トップレベルか instance の定義。`name` は unqualified な名前、`pub` は `true`/`false`。コンパイラが作る定義（derive した instance、`Eq.eq$123`）は外す |
+| `Def` | `fn, name, mod, file, line, pub` | トップレベルか instance の定義。`line` は名前の行（doc コメントの行ではない）、`name` は unqualified な名前、`pub` は `true`/`false`。コンパイラが作る定義（derive した instance、`Eq.eq$123`）は外す |
 | `Calls` | `caller, callee, line` | `caller` の本体の中の呼び出し（ラムダとローカルの def は囲む def に数える）。def・trait の signature・effect の操作・Java の呼び出しを区別しない。名前で渡した関数も呼び出しに数える |
 | `EffectOf` | `fn, eff` | シグネチャの effect 1 つ。型エイリアスは展開する（`Db = DbRead + DbWrite` の `\ Db` は 2 row） |
 | `EffAlias` | `alias, eff` | effect の型エイリアスの中身（プロジェクト・package・stdlib）。rule に書いた effect を展開するために使う |
@@ -688,7 +688,7 @@ qualify するのと同じ形になる。`Auth.permit`、`Auth.Permit.Permit`（
 | `RetType` / `RetTypeAll` | `fn, tycon` | 戻り値の型の先頭の型コンストラクタ / その中の全部 |
 | `CaseType` / `CaseTypeAll` | `enum, case, index, tycon` | enum の case の `index` 番目の項目の先頭の型コンストラクタ / その中の全部 |
 | `ArgTypeDeep` / `RetTypeDeep` / `CaseTypeDeep` | `All` と同じ | 上と同じで、エイリアスを指す先まで何段でも開く（`type alias Ctx = { w = World }` なら `Ctx` と `World`）。`disallowCaseArgType` は `CaseTypeDeep` を読み、`disallowDependency` は `All` のままなので、モジュールの外で宣言したエイリアス越しにだけ届く型は依存に数えない |
-| `Enum` / `Eff` | `name, mod, file, line, pub` | enum / effect を宣言した場所 |
+| `Enum` / `Eff` | `name, mod, file, line, pub` | enum / effect を宣言した場所（`line` は名前の行） |
 
 package と標準ライブラリから来る定義は `Def` に載らない（載るのはプロジェクトのソースだけ）が、callee・
 effect・型としては現れ、`Flixlint.Names` には入る。`Fn` はソースが呼び得る関数を全部（プロジェクト・
