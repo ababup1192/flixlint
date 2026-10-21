@@ -118,7 +118,9 @@ pub mod Flixlint.Facts {
         modNames = Map[Mod, String],
         caseNames = Map[Case, String],
         enumNames = Map[Enum, String],
-        typeNames = Map[Type, String]
+        typeNames = Map[Type, String],
+        ast = Flixlint.Ast.Ast,
+        fnByName = Map[String, Fn]
     }
 
     pub def defs(facts: Facts): List[Def] = data(facts)#defs
@@ -144,6 +146,12 @@ pub mod Flixlint.Facts {
     pub def effects(facts: Facts): List[EffDef] = data(facts)#effects
     /// Every file the walk was given, whether or not it holds a definition an `allowInFile` could name.
     pub def files(facts: Facts): Set[String] = data(facts)#files
+
+    /// (spike) The AST as generic relations (empty unless the shim ran with --generic).
+    pub def ast(facts: Facts): Flixlint.Ast.Ast = data(facts)#ast
+
+    /// (spike) The function of a qualified name, when the sources have it.
+    pub def fnOfName(facts: Facts, name: String): Option[Fn] = Map.get(name, data(facts)#fnByName)
 
     /// The definition of `fn`, if it is one of the linted sources (package, stdlib and Java callees have none).
     pub def defOf(facts: Facts, fn: Fn): Option[Def] = Map.get(fn, data(facts)#defOf)
@@ -315,7 +323,9 @@ pub mod Flixlint.Facts {
             modNames = inverse(Flixlint.Names.modTable()),
             caseNames = inverse(Flixlint.Names.caseTable()),
             enumNames = inverse(Flixlint.Names.enumTable()),
-            typeNames = inverse(Flixlint.Names.typeTable())
+            typeNames = inverse(Flixlint.Names.typeTable()),
+            ast = Flixlint.Ast.load(dir),
+            fnByName = fnTable |> List.map(match (n, _, k) -> (n, k)) |> List.toMap
         })
 
     /// A lookup from the qualified name to the enum case. The root module is the empty name.

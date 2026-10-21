@@ -62,7 +62,7 @@ object Facts {
   // WhyNot: a crash must not leave exit 1. bin/flixlint reserves 1 for "there are violations", so an
   // uncaught exception here would read to CI as a report of new violations.
   def main(argv: Array[String]): Unit =
-    try { val (spans, rest) = Spans.split(argv); run(rest, spans) }
+    try { val (spans, rest0) = Spans.split(argv); val (generic, rest) = Generic.split(rest0); run(rest, spans, generic) }
     catch {
       case e: UsageError =>
         System.err.println(s"flixlint: ${e.getMessage}")
@@ -73,7 +73,7 @@ object Facts {
         sys.exit(4)
     }
 
-  def run(argv: Array[String], spans: Option[Path] = None): Unit = {
+  def run(argv: Array[String], spans: Option[Path] = None, generic: Option[Path] = None): Unit = {
     val args = parseArgs(argv)
     val t0 = System.nanoTime()
     val deps =
@@ -90,6 +90,14 @@ object Facts {
     val t1 = System.nanoTime()
 
     val sink = new Sink(args.out)
+    // (spike) the generic walk is timed on its own, so the two walks can be compared on the same compile
+    var genericNs = 0L
+    def timedGeneric(f: Path => (Int, Int, Int)): Unit = generic.foreach { dir =>
+      val g0 = System.nanoTime()
+      val (n, a, t) = f(dir)
+      genericNs = System.nanoTime() - g0
+      System.err.println(f"flixlint generic: nodes=$n attrs=$a types=$t walk+write=${genericNs / 1e9}%.2fs")
+    }
     // WhyNot: the set of files is not left to be read off the definitions. A file that holds only type aliases, or
     // only a trait, has no `def`, `enum` or `eff` row, so an `allowInFile` naming it would be refused as a file the
     // sources do not have.
@@ -100,7 +108,7 @@ object Facts {
         val t2 = System.nanoTime()
         errors.foreach(e => System.err.println(e.messageWithLoc(flix.getFormatter)(optRoot)))
         optRoot match {
-          case Some(root) => Typed.emit(root, sink); spans.foreach(Spans.typed(root, _))
+          case Some(root) => Typed.emit(root, sink); spans.foreach(Spans.typed(root, _)); timedGeneric(Generic.typed(root, _))
           case None => System.err.println("flixlint: no typed AST (compilation errors above)")
         }
         (errors.length, t2 - t1)
@@ -110,13 +118,14 @@ object Facts {
         errors.foreach(e => System.err.println(e.messageWithLoc(flix.getFormatter)(None)))
         Resolved.emit(root, sink)
         spans.foreach(Spans.resolved(root, _))
+        timedGeneric(Generic.resolved(root, _))
         (errors.length, t2 - t1)
       case other => throw new UsageError(s"unknown --stage $other (typed or resolved)")
     }
     sink.close()
     Names.write(args.namesOut.getOrElse(args.out.resolve("Names.flix")), sink)
     val t3 = System.nanoTime()
-    System.err.println(f"flixlint facts: stage=${args.stage} files=${files.length} compile=${phaseNs / 1e9}%.1fs walk=${(t3 - t1 - phaseNs) / 1e9}%.2fs total=${(t3 - t0) / 1e9}%.1fs")
+    System.err.println(f"flixlint facts: stage=${args.stage} files=${files.length} compile=${phaseNs / 1e9}%.1fs walk=${(t3 - t1 - phaseNs - genericNs) / 1e9}%.2fs total=${(t3 - t0) / 1e9}%.1fs")
     if (nErrors > 0) sys.exit(3)
   }
 

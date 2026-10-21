@@ -136,6 +136,8 @@ rm -rf "$engine/src"; mkdir -p "$engine/src/Flixlint"
 set +e
 spans_opt=()
 [ -n "$spans" ] && spans_opt=(--spans "$spans")
+# (spike) FLIXLINT_GENERIC=1 also writes the AST as generic relations (node / node_attr / node_type) next to the facts.
+[ -n "${FLIXLINT_GENERIC:-}" ] && spans_opt+=(--generic "$facts_out")
 java $java_opts -cp "$flix_jar:$shim" flixlint.Facts --out "$facts_out" --names-out "$engine/src/Flixlint/Names.flix" --stage "$stage" "${spans_opt[@]}" "${root_opt[@]}" "${pkgs[@]}" "${jars[@]}" "${srcs[@]}"
 status=$?
 set -e

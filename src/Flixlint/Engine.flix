@@ -14,6 +14,7 @@ pub mod Flixlint.Engine {
     use Fs.FileRead.FileRead
     use Sys.Env.Env
     use Sys.Exit.Exit
+    import java.lang.System
 
     /// The entry point of the generated engine `main`: the facts directory and today's date come from the environment.
     pub def lint(rules: RuleSet): Unit \ IO =
@@ -22,8 +23,15 @@ pub mod Flixlint.Engine {
     def lint0(rules: RuleSet): Unit \ IO + Env + FileRead + Exit =
         let factsDir = Sys.Env.getVar("FLIXLINT_FACTS") |> Option.getWithDefault("build/flixlint/facts");
         let today = Sys.Env.getVar("FLIXLINT_TODAY") |> Option.getWithDefault("0000-00-00");
+        let t0 = nanoTime();
         let facts = Flixlint.Facts.load(factsDir);
+        let t1 = nanoTime();
         let (judged, ruleErrors) = judgeAll(facts, today, rules);
+        let t2 = nanoTime();
+        // (spike) FLIXLINT_TIMING=1 prints how long loading the facts and judging the rules took.
+        if (Sys.Env.getVar("FLIXLINT_TIMING") |> Option.nonEmpty)
+            println("flixlint timing: load=${(t1 - t0) / 1_000_000i64}ms judge=${(t2 - t1) / 1_000_000i64}ms violations=${List.length(judged)}")
+        else ();
         let outcome = match Sys.Env.getVar("FLIXLINT_LIMITS") |> Option.filter(p -> not String.isEmpty(p)) {
             case None => { violations = judged, failures = Nil, hints = Nil, errors = Nil }
             case Some(path) =>
@@ -57,6 +65,8 @@ pub mod Flixlint.Engine {
                     case Err(e) => { errors = outcome#errors ::: List#{"flixlint: ${e}"} | outcome }
                 }
         }
+
+    def nanoTime(): Int64 \ IO = System.nanoTime()
 
     /// The id of every entry of the rule set.
     def ruleIds(rules: RuleSet): Set[String] =
