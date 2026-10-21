@@ -119,7 +119,9 @@ the shim runs: the shim runs on the compiler jar's classpath inside `bin/flixlin
 ```
 bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
              [--today YYYY-MM-DD] [--limits FILE.json|DIR [--limits-base FILE.json|DIR]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
-             [--java-opts "..."] [--spans FILE] SRC...
+             [--java-opts "..."] [--spans FILE] [--resident [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS]] [--timeout SECONDS] SRC...
+bin/flixlint --resident-stop [--flix-jar JAR] [--shim JAR]
+bin/flixlint --socket-name ROOT IDENTITY
 bin/flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] SRC...
 bin/flixlint --version
 ```
@@ -140,8 +142,11 @@ bin/flixlint --version
 | `--shim JAR` | A prebuilt shim jar, instead of building one with `scala-cli`. `FLIXLINT_SHIM` works too. |
 | `--java-opts "..."` | The JVM options both java steps get (default `-Xss32m -XX:MaxRAMPercentage=35`). `FLIXLINT_JAVA_OPTS` works too. |
 | `--spans FILE` | Also write the position of every name the sources write (see [Spans](#spans)). Without `--rules`, only that index is written. |
-| `--resident` | Keep a server (one JVM per working directory and build directory) with the compiler and the rule engine loaded, and lint through it: from the second run on, only the files that changed are compiled again (the compiler's own incremental check). `FLIXLINT_RESIDENT=1` works too. A run without it uses the server when one is up and runs on its own when none is. |
-| `--resident-stop` | Stop that server (it also stops after `FLIXLINT_RESIDENT_IDLE` minutes without a run, 30 by default, and when called with another compiler or shim jar). |
+| `--resident` | Keep a server (one JVM per project root and compiler and shim jar, see [Resident server](#resident-server)) with the compiler and the rule engines loaded, and run through it: from the second run on, only the files that changed are compiled again (the compiler's own incremental check), for a lint at either stage and for `--spans` alike. `FLIXLINT_RESIDENT=1` works too. A run without it uses the server when one is up and runs on its own when none is. |
+| `--heap-mb N` / `--idle-minutes N` / `--run-limit SECONDS` | The server's budget, when this call starts it: its heap (`-Xmx`), the minutes without a run before it stops (30, or `FLIXLINT_RESIDENT_IDLE`), and the longest run (900). |
+| `--timeout SECONDS` | Stop waiting for a run on the server after that long, counted from when the run starts (exit 4). |
+| `--resident-stop` | Stop that server (it also stops after `--idle-minutes` without a run). |
+| `--socket-name ROOT IDENTITY` | Print the name of the socket of that root and identity (for clients in other languages). |
 | `--version` | The version in `flix.toml`. |
 | `SRC...` | Source directories or files, relative to the current directory. File paths in violations and in `allowInFile` are relative to that directory too. |
 
@@ -151,7 +156,7 @@ bin/flixlint --version
 | `FLIXLINT_SHIM` | A prebuilt shim jar, when `--shim` does not say. |
 | `FLIXLINT_JAVA_OPTS` | The default for `--java-opts`. |
 | `FLIXLINT_RESIDENT` | `1`: as `--resident`. |
-| `FLIXLINT_RESIDENT_IDLE` | Minutes before an idle resident server stops (default 30). |
+| `FLIXLINT_RESIDENT_IDLE` | The default for `--idle-minutes` (30). |
 | `FLIXLINT_ENGINE_ROOT` | The last place `bin/flix-jar` looks for a compiler jar (default `~/Desktop/flix_game_engine`, the author's devbox). |
 
 Exit codes: `0` no violation, `1` violations, `2` the rules are wrong (the rule file does not compile, an allow that
@@ -376,6 +381,7 @@ and an emoji 2); `owner` is the top-level def the occurrence is in (lambdas and 
 | `use` | resolved | a `use` declaration (`owner` is the module it is in) | what it brings in | `alias=x` the name it brings in, `what=def\|enum\|case\|alias\|module\|effect\|op\|trait\|sig\|struct\|other` |
 | `type-use` | resolved | an enum, a type alias or a struct named in a type: a signature, an ascription, a case's fields, an alias's body, an instance's type (`owner` is the def, enum, alias, effect or trait it is in) | the type | `what=enum\|alias\|struct` |
 | `alias-decl` | resolved | the name of a `type alias` | the alias | |
+| `arg` | both | one argument of a call to a def, of a case built, or one field pattern of a case matched | the def or the case | `of=def-use\|case-construct\|case-pattern at=L:C i=N n=M`, `sugar`, `synth` (below) |
 
 - `match-site`: `wild` and `var` count the arms whose top-level pattern is `_` / a variable, `guard` the arms with an
   `if`; `enum` is the enum of the first top-level case pattern (`-` when there is none, e.g. a match on a tuple);
@@ -396,6 +402,66 @@ and an emoji 2); `owner` is the top-level def the occurrence is in (lambdas and 
   `adds=use,type-use,alias-decl` after the columns (a reader that finds no `adds=` knows the index predates them, not
   that the sources have none). The typed stage has no `type-use`: its types are inferred, and their places are the
   expressions', not names the sources wrote. A `type-use` of an applied alias does not look inside the alias's body.
+- `arg` is in both stages, and the header says so with `arg` in `adds=`. `of` and `at` name the row the argument
+  belongs to (its kind and where its span starts), `i` is its place from 0 and `n` how many the compiler has at the
+  site: a call of a def with no parameters has one, the `()`. `sugar` when that row is sugar. `synth` when the argument
+  is not written at that site: its span is the whole call or lies outside it, as for the made-up arguments of a
+  partial application (`List.map(f)`) or of a def passed as a value. (Not the compiler's `isSynthetic`: it marks
+  written arguments too.) A tool that adds, moves or drops arguments rewrites the sites with no `synth` and leaves the
+  others to a person.
+
+## Resident server
+
+`--resident` keeps one JVM per project root and identity, and every run on that project goes through it: a lint at
+either stage, with any build directory, and the index (`--spans`). The root is the current directory (the paths in
+the facts, the violations and the index are relative to it, and the server runs there); the identity is
+`flix=<SHA-256 of the compiler jar> shim=<SHA-256 of the shim jar>`. A caller with other jars gets a server of its
+own; it never stops another one.
+
+The server listens on a Unix domain socket in the user's cache: `~/Library/Caches/flixlint` on macOS,
+`%LOCALAPPDATA%\flixlint` on Windows, `$XDG_CACHE_HOME/flixlint` (or `~/.cache/flixlint`) elsewhere. Its name is the
+first 16 hex digits of the SHA-256 of the root, a newline (`0a`) and the identity, with `.sock` after it
+(`bin/flixlint --socket-name ROOT IDENTITY` prints the 16 digits; `test/resident/socket-name.txt` holds examples every
+client must reproduce). Next to it are `<name>.log` (one line per run: kind, exit code, seconds, seconds waited) and
+`<name>.lock` (held while a server runs, so two callers that start one at once get one). Where the socket's path would
+be over 100 bytes, or Unix domain sockets are not there, flixlint runs on its own.
+
+The wire is protocol 2, in the encoding of Java's `DataOutputStream`: `int` is 4 bytes big endian, `UTF` a 2-byte
+length and modified UTF-8 (a character outside the BMP is its two surrogates, 3 bytes each).
+
+| Request (client to server) | |
+|---|---|
+| `int` | the protocol, `2` |
+| `UTF` | the kind: `check`, `lint`, `spans`, `test-jar`, `stop` (this version serves `lint`, `spans` and `stop`) |
+| `UTF` `UTF` | the root, the identity (a server answers `X 11` to another) |
+| `int` then `UTF`s | the settings, `NAME=value` (`FLIXLINT_FACTS`, `FLIXLINT_TODAY`, `FLIXLINT_LIMITS`, `FLIXLINT_LIMITS_BASE`) |
+| `int` then `UTF`s | the arguments of the run |
+
+| Reply frame (server to client) | |
+|---|---|
+| `'O'` `int` bytes / `'E'` `int` bytes | what the run writes to stdout / stderr |
+| `'Q'` `int` `UTF` `int` | queued: how many runs are ahead of this one, the kind running and for how many seconds; sent when that changes and every 10 s. `0` ahead: this run starts now |
+| `'V'` `UTF` | the version of the sources a `check` checked |
+| `'X'` `int` | the exit code; always the last frame |
+
+`test/resident/request.hex` and `reply.hex` are both, byte by byte; `Resident fixture DIR` checks the server's encoder
+and decoder against them (and the order below), and a client in another language reads and writes the same bytes in
+its tests.
+
+- **Order.** The server reads each request as it arrives and runs one at a time. A `check` goes first; a request it
+  overtook runs next, whatever comes after it (a request is overtaken at most once). The others run in the order they
+  came. A live server is always queued for: a caller does not start a second JVM because the first is busy.
+- **Time.** A caller's `--timeout` counts from its own `Q 0` (when its run starts), not from when it was queued. A run
+  longer than `--run-limit` (900 s by default) is answered with exit code 4 and the server stops: it cannot stop the
+  run's thread, and a loop must not keep the project's one server.
+- **Failure.** When the server goes away during a run, `bin/flixlint` starts it once more and sends the run again;
+  when that one goes away too, a lint runs in a JVM of its own and the index stops with exit code 4.
+- **Budget.** `--heap-mb N` (the server's `-Xmx`; without it `--java-opts`, `-XX:MaxRAMPercentage=35` by default),
+  `--idle-minutes N` (30) and `--run-limit SECONDS` (900) are the caller's, read when the server starts: flixlint keeps
+  no number of its own for them, so a project sets them in the one place it calls flixlint from.
+- **Sources.** Each run reads its source files once and gives the compiler exactly the bytes it compared with the last
+  run's (`addSource`), so a file written between the two cannot be checked in another version.
+- **Two runs on one build directory** at once overwrite each other's engine sources; give each caller its own.
 
 ## Layout
 
@@ -409,6 +475,7 @@ bin/flix-jar                 where the compiler jar is, when neither --flix-jar 
 shim/Facts.scala             AST -> TSV facts and Flixlint/Names.flix (typed stage, and the resolved stage that stops before the typer)
 shim/Spans.scala             --spans: AST -> the position of every name (README "Spans"), kept out of the facts
 shim/Lint.scala              the facts, then the built engine jar in the same JVM
+shim/Resident.scala          --resident: the server, its client and the wire (Resident server)
 src/Flixlint.flix            what a rule file uses: the family records and builders, transitivelyIn / allowIn / allowInFile / allowUntil, ruleSet
 src/Flixlint/Facts.flix      the facts loaded from the TSV, and the lookups custom rules use
 src/Flixlint/Engine.flix     the judgments, the allows, the report and the exit code
@@ -417,7 +484,8 @@ src/Flixlint/Glob.flix       the glob of `files`
 src/Flixlint/Ratchet.flix    `--limits`: rules judged by their count against a limits file
 examples/                    a six-file project and four rules, small enough to read in a minute
 test/fixture/                a 7-file project that violates every family and three custom rules; test/run.sh checks the report
-test/spans/                  a 2-file project for --spans; test/run.sh compares its index with test/expected-spans-<stage>.txt
+test/spans/                  a 3-file project for --spans; test/run.sh compares its index with test/expected-spans-<stage>.txt
+test/resident/               the resident server's wire (request.hex, reply.hex) and socket names, for every client
 test/expected*.txt           the reports both of them must produce
 ```
 
@@ -566,7 +634,9 @@ shim は `bin/flixlint` の中で、コンパイラの jar の classpath の上�
 ```
 bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
              [--today YYYY-MM-DD] [--limits FILE.json|DIR [--limits-base FILE.json|DIR]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
-             [--java-opts "..."] [--spans FILE] SRC...
+             [--java-opts "..."] [--spans FILE] [--resident [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS]] [--timeout SECONDS] SRC...
+bin/flixlint --resident-stop [--flix-jar JAR] [--shim JAR]
+bin/flixlint --socket-name ROOT IDENTITY
 bin/flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] SRC...
 bin/flixlint --version
 ```
@@ -587,8 +657,11 @@ bin/flixlint --version
 | `--shim JAR` | `scala-cli` で組む代わりに、組んである shim の jar を渡す。`FLIXLINT_SHIM` でも良い |
 | `--java-opts "..."` | 2 つの java の段に渡す JVM のオプション（既定は `-Xss32m -XX:MaxRAMPercentage=35`）。`FLIXLINT_JAVA_OPTS` でも良い |
 | `--spans FILE` | ソースに書かれた名前の位置も書く（[spans（名前の位置）](#spans名前の位置)）。`--rules` が無ければその索引だけを書く |
-| `--resident` | コンパイラと rule engine を読み込んだままの server（作業ディレクトリと build ディレクトリごとに 1 つの JVM）を立てて、そこを通して流す。2 回目からは変わったファイルだけをコンパイルし直す（コンパイラ自身の増分の check）。`FLIXLINT_RESIDENT=1` でも良い。付けない時も server が立っていれば使い、無ければ 1 回きりで流す |
-| `--resident-stop` | その server を止める（`FLIXLINT_RESIDENT_IDLE` 分（既定 30）流れなければ止まり、別のコンパイラか shim の jar で呼ばれても止まる） |
+| `--resident` | コンパイラと rule engine を読み込んだままの server（プロジェクトの根とコンパイラ・shim の jar ごとに 1 つの JVM。[常駐の server](#常駐の-server)）を立てて、そこを通して流す。2 回目からは変わったファイルだけをコンパイルし直す（コンパイラ自身の増分の check）。どちらの段の lint も `--spans` も同じ server。`FLIXLINT_RESIDENT=1` でも良い。付けない時も server が立っていれば使い、無ければ 1 回きりで流す |
+| `--heap-mb N` / `--idle-minutes N` / `--run-limit 秒` | この呼び出しが server を立てる時の予算: heap（`-Xmx`）、流れないまま止まるまでの分（30。`FLIXLINT_RESIDENT_IDLE` でも良い）、1 回の走行の上限（900） |
+| `--timeout 秒` | server での走行を待つ上限。自分の走行が始まってから数える（超えたら exit 4） |
+| `--resident-stop` | その server を止める（`--idle-minutes` 流れなければ自分で止まる） |
+| `--socket-name ROOT IDENTITY` | その根と identity の socket の名前を出す（他の言語のクライアントの突き合わせ用） |
 | `--version` | `flix.toml` の版 |
 | `SRC...` | ソースのディレクトリかファイル（カレントディレクトリからの相対）。違反と `allowInFile` のパスも同じ起点 |
 
@@ -598,7 +671,7 @@ bin/flixlint --version
 | `FLIXLINT_SHIM` | `--shim` が無い時の、組んである shim の jar |
 | `FLIXLINT_JAVA_OPTS` | `--java-opts` の既定値 |
 | `FLIXLINT_RESIDENT` | `1` で `--resident` と同じ |
-| `FLIXLINT_RESIDENT_IDLE` | 流れない server が止まるまでの分（既定 30） |
+| `FLIXLINT_RESIDENT_IDLE` | `--idle-minutes` の既定値（30） |
 | `FLIXLINT_ENGINE_ROOT` | `bin/flix-jar` が最後に見る場所（既定は `~/Desktop/flix_game_engine`。作者の devbox） |
 
 exit code は、`0` 違反なし、`1` 違反あり、`2` rule が間違っている（rule のファイルがコンパイルできない、
@@ -820,6 +893,7 @@ UTF-16 の単位なので日本語の字は 1、絵文字は 2）。`owner` は�
 | `use` | resolved | `use` の宣言（`owner` はそれを書いた mod） | 入れる物 | `alias=x` 入れる名前、`what=def\|enum\|case\|alias\|module\|effect\|op\|trait\|sig\|struct\|other` |
 | `type-use` | resolved | 型に書いた enum・型 alias・struct の名前（シグネチャ・型の注記・case の欄・alias の本体・instance の型。`owner` は囲む def・enum・alias・effect・trait） | その型 | `what=enum\|alias\|struct` |
 | `alias-decl` | resolved | `type alias` の名前 | その alias | |
+| `arg` | 両方 | def の呼び出し・作る case の引数 1 つ、または当てる case の欄の型 1 つ | その def か case | `of=def-use\|case-construct\|case-pattern at=L:C i=N n=M`、`sugar`、`synth`（下） |
 
 - `match-site`: `wild`・`var` は一番上の型が `_`・変数の腕の数、`guard` は `if` つきの腕の数。`enum` は一番上の
   型の最初の case の enum（無ければ `-`。tuple への match など）。`scrut` は match する値の型の頭。
@@ -837,6 +911,60 @@ UTF-16 の単位なので日本語の字は 1、絵文字は 2）。`owner` は�
 - `use`・`type-use`・`alias-decl` は resolved の段だけが書き、頭の行の列の後に `adds=use,type-use,alias-decl` と書く
   （`adds=` の無い索引は、ソースに無いのでなく、それより古い shim の物と分かる）。typed の段に `type-use` は無い
   （型は推論の物で、位置は式の位置になり、書かれた名前を指さない）。alias を当てた型の `type-use` は alias の本体の中を見ない。
+- `arg` は両方の段が書き、頭の行の `adds=` に `arg` が入る。`of`・`at` はその引数が属する行（種類と範囲の始まり）、
+  `i` は 0 からの順番、`n` はその所でコンパイラが持つ数（引数の無い def の呼び出しは `()` の 1 つ）。`sugar` は
+  属する行が sugar の時。`synth` はその所に書かれていない引数（範囲が呼び出し全体か、その外）で、部分適用
+  （`List.map(f)`）や def を値で渡した所でコンパイラが作った物（コンパイラの `isSynthetic` ではない。書いた引数にも
+  付くため）。引数を足す・並べ替える・消す道具は `synth` の無い所だけを書き換え、ほかは人へ回す。
+
+## 常駐の server
+
+`--resident` はプロジェクトの根と identity ごとに 1 つの JVM を持ち、そのプロジェクトのどの走行もそこを通る: どちらの
+段の lint も、どの build ディレクトリでも、索引（`--spans`）も。根はカレントディレクトリ（facts・違反・索引のパスは
+そこからの相対で、server もそこで動く）。identity は `flix=<コンパイラの jar の SHA-256> shim=<shim の jar の SHA-256>`。
+jar の違う呼び手は別の server を持ち、ほかの server を止めない。
+
+server はユーザーの cache の Unix ドメインソケットで待つ: macOS は `~/Library/Caches/flixlint`、Windows は
+`%LOCALAPPDATA%\flixlint`、ほかは `$XDG_CACHE_HOME/flixlint`（無ければ `~/.cache/flixlint`）。名前は「根・改行（`0a`）・
+identity」（後ろに改行は付けない）の SHA-256 の頭 16 字に `.sock`（`bin/flixlint --socket-name ROOT IDENTITY` が 16 字を出す。
+`test/resident/socket-name.txt` がどのクライアントも同じに出すべき例）。隣に `<名前>.log`（走行ごとに種類・終了コード・秒・
+並んで待った秒の 1 行）と `<名前>.lock`（server が動く間持つ。2 つの呼び手が同時に立てても 1 つになる）。socket のパスが
+100 バイトを超える所と Unix ドメインソケットの無い所では、常駐を使わず 1 回きりで流す。
+
+口は protocol 2 で、形は Java の `DataOutputStream`: `int` は 4 バイトの big endian、`UTF` は 2 バイトの長さと modified UTF-8
+（BMP の外の字はサロゲートの 2 つを 3 バイトずつ）。
+
+| 頼み（クライアント → server） | |
+|---|---|
+| `int` | protocol（`2`） |
+| `UTF` | 種類: `check`・`lint`・`spans`・`test-jar`・`stop`（この版が流すのは `lint`・`spans`・`stop`） |
+| `UTF` `UTF` | 根・identity（違えば server は `X 11` を返す） |
+| `int` と `UTF` の列 | 設定 `NAME=値`（`FLIXLINT_FACTS`・`FLIXLINT_TODAY`・`FLIXLINT_LIMITS`・`FLIXLINT_LIMITS_BASE`） |
+| `int` と `UTF` の列 | 走行の引数 |
+
+| 答えの枠（server → クライアント） | |
+|---|---|
+| `'O'` `int` バイト列 / `'E'` `int` バイト列 | 走行が stdout / stderr へ書いた物 |
+| `'Q'` `int` `UTF` `int` | 並んでいる: 前の本数・走っている種類・その経過秒。変わった時と 10 秒ごと。前が `0` はこの走行が今始まった印 |
+| `'V'` `UTF` | `check` が検査したソースの版 |
+| `'X'` `int` | 終了コード。必ず最後の枠 |
+
+`test/resident/request.hex`・`reply.hex` がその両方のバイト列で、`Resident fixture DIR` が server の書き手と読み手（と下の順）を
+それに突き合わせる。他の言語のクライアントもテストで同じバイト列を読み書きする。
+
+- **順**: server は届いた頼みをすぐ読み、1 本ずつ流す。`check` を先に流し、それに追い越された頼みは後に何が来ても次に流す
+  （追い越されるのは 1 回まで）。ほかは来た順。生きている server には必ず並ぶ（混んでいるからと 2 つ目の JVM を立てない）。
+- **時間**: 呼び手の `--timeout` は自分の `Q 0`（走行の始まり）から数え、並んだ時間は数えない。`--run-limit`（既定 900 秒）を
+  超えた走行には終了コード 4 を返し、server は止まる（走行の thread は止められず、ループにプロジェクトの 1 つの server を
+  取らせない）。
+- **落ちた時**: 走行の途中で server が居なくなったら、`bin/flixlint` は 1 回だけ立て直して流し直す。それも落ちたら、lint は
+  1 回きりの JVM で流し、索引は終了コード 4 で止まる。
+- **予算**: `--heap-mb N`（server の `-Xmx`。無ければ `--java-opts`、既定は `-XX:MaxRAMPercentage=35`）・`--idle-minutes N`（30）・
+  `--run-limit 秒`（900）は呼び手が渡し、server を立てる時に読む。flixlint はこれらの数を持たないので、プロジェクトは flixlint を
+  呼ぶ 1 か所で決める。
+- **ソース**: 走行ごとにソースを 1 回だけ読み、前回と比べたそのバイト列をコンパイラへ渡す（`addSource`）。比べた後に
+  書き換わったファイルが、比べた物と違う中身で検査される事は無い。
+- **同じ build ディレクトリで 2 本を同時に**流すと、互いのエンジンのソースを上書きする。呼び手ごとに分ける。
 
 ## ファイル構成
 
@@ -850,6 +978,7 @@ bin/flix-jar                 --flix-jar も FLIX_JAR も無い時の、コンパ
 shim/Facts.scala             AST -> TSV の facts と Flixlint/Names.flix（typed の段と、typer の手前で止まる resolved の段）
 shim/Spans.scala             --spans: AST -> 名前の位置の索引（「spans（名前の位置）」）。facts には入れない
 shim/Lint.scala              facts を書き、組んであるエンジンの jar を同じ JVM で流す
+shim/Resident.scala          --resident: server・クライアント・口（「常駐の server」）
 src/Flixlint.flix            rule のファイルが使う物: family の record と builder、transitivelyIn / allowIn / allowInFile / allowUntil、ruleSet
 src/Flixlint/Facts.flix      TSV から読んだ facts と、custom rule が使う引く関数
 src/Flixlint/Engine.flix     判定・allow・報告・exit code
@@ -858,7 +987,8 @@ src/Flixlint/Glob.flix       `files` の glob
 src/Flixlint/Ratchet.flix    `--limits`: 上限のファイルと数で判じる rule
 examples/                    6 ファイルのプロジェクトと 4 つの rule。1 分で読める大きさ
 test/fixture/                全 family と 3 つの custom rule に違反する 7 ファイルのプロジェクト。報告を test/run.sh が確かめる
-test/spans/                  --spans の 2 ファイルのプロジェクト。索引を test/run.sh が test/expected-spans-<段>.txt と突き合わせる
+test/spans/                  --spans の 3 ファイルのプロジェクト。索引を test/run.sh が test/expected-spans-<段>.txt と突き合わせる
+test/resident/               常駐の server の口（request.hex・reply.hex）と socket の名前。どのクライアントも突き合わせる
 test/expected*.txt           その 2 つが出さなければならない報告
 ```
 
