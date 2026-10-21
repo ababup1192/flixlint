@@ -9,7 +9,8 @@
 #   fixture, rules/deep.flix   -> exit 1, test/expected-deep.txt (a custom rule on the Deep type relations, parsed only when read)
 #   fixture, rules/uses.flix   -> exit 1, test/expected-uses.txt (a `use` its module never uses, on the generic AST; the same at both stages)
 #   fixture, rules/nextcms.flix -> exit 1, test/expected-nextcms.txt (the shapes nextcms writes the families in; the same at both stages)
-#   fixture, rules/rules.flix --limits limits/*.json -> the ratchet: exit 0 at the count, 1 over or under it, 2 for a limit of no rule
+#   fixture, rules/rules.flix --limits limits/*.json -> the ratchet: exit 0 at the count (the violations held: a line on
+#                                 stderr and build/fixture/held.txt; --held lists them), 1 over or under it, 2 for a limit of no rule
 #   examples/rules.flix        -> exit 1, test/expected-examples.txt (the four rules of examples/README.md)
 #   test/spans, --spans alone  -> exit 0, test/expected-spans-<stage>.txt (the name index: every kind, a receiver known by each way)
 #   test/fixture, flixlint.Generic -> the kind number of every node names the same kind in the shim and in AstKinds.flix;
@@ -59,6 +60,20 @@ lint examples rules.flix 2026-09-19 1 expected-examples.txt
 # The ratchet: the same rules judged by count against limits/*.json (at the count: silent; over: listed; under:
 # lower the limit; a limit for no rule: the rules are wrong).
 LIMITS=limits/at.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-ratchet-at.txt
+# At the limit the violations are held: not on stdout, counted by rule in one line on stderr, all of them in held.txt
+# beside the facts; --held lists them on stdout too.
+held_out="$root/build/held"; mkdir -p "$held_out"
+want_held="$(grep -c ': .*: .*: ' "$root/test/expected.txt")"
+[ "$(grep -c ': .*: .*: ' "$root/build/fixture/held.txt")" = "$want_held" ] \
+    || { echo "test/fixture: build/fixture/held.txt does not hold the $want_held violations at their limits" >&2; exit 1; }
+set +e
+(cd "$root/test/fixture" && "$lint" --rules rules/rules.flix --today 2026-09-19 --stage "$stage" --limits limits/at.json --held \
+    --build-dir "$root/build/fixture" src) > "$held_out/out.txt" 2> "$held_out/err.txt"
+code=$?
+set -e
+[ "$code" = 0 ] && grep -q "^flixlint: ratchet: $want_held violations within their limits (domain-isolation 6, flat-rules 6, clock 4, wrapped-key 4, silent-parse 3, ...); all of them in .*/build/fixture/held.txt, or --held to list them\$" "$held_out/err.txt" \
+    && [ "$(grep -c ': .*: .*: ' "$held_out/out.txt")" = "$want_held" ] \
+    || { echo "test/fixture: --held: expected exit 0, the held line on stderr and $want_held violations on stdout, got $code" >&2; cat "$held_out/err.txt" >&2; exit 1; }
 LIMITS=limits/over.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-over.txt
 LIMITS=limits/lower.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-lower.txt
 LIMITS=limits/stale.json lint test/fixture rules/rules.flix 2026-09-19 2 expected-ratchet-stale.txt

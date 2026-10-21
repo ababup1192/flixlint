@@ -278,7 +278,8 @@ pub mod Flixlint.Flix {
 
     /// The names the declarations of each module write, by (file, module): the functions they call, the cases they build
     /// and match, the Java classes they name, and the names in the types they write (parameters, results, effects, cases,
-    /// aliases, ascriptions and casts, constraints). A `use` of a name is used when one of these is the name or a name inside
+    /// aliases, ascriptions and casts, constraints; a Java class by the name its `import` gives it, so a class written only
+    /// as a result or a parameter type is used). A `use` of a name is used when one of these is the name or a name inside
     /// it (`Auth.Permit` for `Auth.Permit.Permit`).
     /// WhyNot: the types the typed stage infers for expressions are not read. A name that only an inferred type mentions is
     /// not written, so a `use` of it is still unused; reading them made the typed stage count fewer unused uses than the

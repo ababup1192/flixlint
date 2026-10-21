@@ -1,6 +1,7 @@
 ///
 /// The ratchet: a rule whose id has a limit in the limits file (`--limits FILE`) is judged by how many violations it
-/// has, not one by one. At the limit it passes and prints nothing; above it, the violations are reported with a line
+/// has, not one by one. At the limit it passes, and its violations are held: not listed, but counted in one line on
+/// stderr and written to a file (the engine's report); above it, the violations are reported with a line
 /// that says by how much; below it, the run fails until the limit is lowered to the count, so a violation that was
 /// fixed cannot come back unnoticed.
 ///
@@ -21,9 +22,10 @@ pub mod Flixlint.Ratchet {
     pub type alias Limit = { id = String, limit = Int32, raiseReason = Option[String], source = String }
 
     /// What the ratchet leaves of the judged violations: the ones to report, the lines that fail the run (exit 1),
-    /// the hints that do not (a limit lowered under an inherited raiseReason)
-    /// and the errors in the limits file (exit 2, like any other mistake in the rules).
-    pub type alias Outcome = { violations = List[Violation], failures = List[String], hints = List[String], errors = List[String] }
+    /// the hints that do not (a limit lowered under an inherited raiseReason),
+    /// the errors in the limits file (exit 2, like any other mistake in the rules) and the violations held within their
+    /// limits (not reported one by one).
+    pub type alias Outcome = { violations = List[Violation], failures = List[String], hints = List[String], errors = List[String], held = List[Violation] }
 
     /// The limits at `path`: a limits file (`{ "limits": { "<rule id>": … } }`), or a directory with one file per rule
     /// (`<rule id>.json` holding `<count>` or `{ "limit": <count>, "raiseReason": "why" }`; other keys such as `note`
@@ -118,6 +120,7 @@ pub mod Flixlint.Ratchet {
         let ratcheted = limits |> List.map(l -> l#id) |> List.toSet;
         let overIds = limits |> List.filter(l -> Map.getWithDefault(l#id, 0, counts) > l#limit) |> List.map(l -> l#id) |> List.toSet;
         let kept = violations |> List.filter(v -> not Set.memberOf(v#id, ratcheted) or Set.memberOf(v#id, overIds));
+        let held = violations |> List.filter(v -> Set.memberOf(v#id, ratcheted) and not Set.memberOf(v#id, overIds));
         let failures = limits |> List.filterMap(l ->
             let n = Map.getWithDefault(l#id, 0, counts);
             if (n > l#limit)
@@ -127,5 +130,5 @@ pub mod Flixlint.Ratchet {
             else None);
         let errors = limits |> List.filter(l -> not Set.memberOf(l#id, ruleIds))
             |> List.map(l -> "flixlint: ratchet ${l#id}: no rule has this id (remove it from ${l#source})");
-        { violations = kept, failures = failures, hints = Nil, errors = errors }
+        { violations = kept, failures = failures, hints = Nil, errors = errors, held = held }
 }

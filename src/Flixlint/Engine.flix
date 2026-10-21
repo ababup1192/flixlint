@@ -15,10 +15,12 @@ pub mod Flixlint.Engine {
     use Fs.DirList.DirList
 
     import java.io.File
+    import java.io.FileWriter
+    import java.io.IOException
     import java.lang.System
 
     /// What a run is told: the facts directory, today's date and the limits (`--limits`, `--limits-base`, each a file or a directory).
-    type alias Settings = { factsDir = String, today = String, limits = Option[String], limitsBase = Option[String], timing = Bool, dumpRel = Option[String] }
+    type alias Settings = { factsDir = String, today = String, limits = Option[String], limitsBase = Option[String], timing = Bool, dumpRel = Option[String], held = Bool }
 
     /// The entry point of the generated engine `main`: the settings come from the environment (`FLIXLINT_FACTS`,
     /// `FLIXLINT_TODAY`, `FLIXLINT_LIMITS`, `FLIXLINT_LIMITS_BASE`, `FLIXLINT_TIMING`) and the exit code ends the JVM.
@@ -50,7 +52,8 @@ pub mod Flixlint.Engine {
           limits = nonEmpty("FLIXLINT_LIMITS"),
           limitsBase = nonEmpty("FLIXLINT_LIMITS_BASE"),
           timing = Option.nonEmpty(nonEmpty("FLIXLINT_TIMING")),
-          dumpRel = nonEmpty("FLIXLINT_DUMP_REL") }
+          dumpRel = nonEmpty("FLIXLINT_DUMP_REL"),
+          held = Option.nonEmpty(nonEmpty("FLIXLINT_HELD")) }
 
     /// The value of `NAME=VALUE` among the arguments.
     def argOf(name: String, vars: List[String]): Option[String] =
@@ -98,22 +101,57 @@ pub mod Flixlint.Engine {
     def report(rules: RuleSet, settings: Settings, facts: Facts): Int32 \ IO + FileRead + DirList =
         let (judged, ruleErrors) = judgeAll(facts, settings#today, rules);
         let outcome = match settings#limits {
-            case None => { violations = judged, failures = Nil, hints = Nil, errors = Nil }
+            case None => { violations = judged, failures = Nil, hints = Nil, errors = Nil, held = Nil }
             case Some(path) =>
                 match Flixlint.Ratchet.read(path) {
                     case Ok(limits) => Flixlint.Ratchet.apply(limits, ruleIds(rules), judged) |> againstBase(limits, settings#limitsBase)
-                    case Err(e) => { violations = judged, failures = Nil, hints = Nil, errors = List#{"flixlint: ${e}"} }
+                    case Err(e) => { violations = judged, failures = Nil, hints = Nil, errors = List#{"flixlint: ${e}"}, held = Nil }
                 }
         };
         let violations = outcome#violations;
         let errors = ruleErrors ::: outcome#errors;
         violations |> List.sortBy(Flixlint.Violation.key) |> List.forEach(v -> println(Flixlint.Violation.render(facts, v)));
+        reportHeld(settings, facts, outcome#held);
         List.forEach(println, outcome#failures);
         List.forEach(println, outcome#hints);
         List.forEach(println, errors);
         if (not List.isEmpty(errors)) 2
         else if (not List.isEmpty(violations) or not List.isEmpty(outcome#failures)) 1
         else 0
+
+    /// The violations held within their limits: one line on stderr with how many there are of each rule, and every one of
+    /// them in `held.txt` beside the facts directory; `FLIXLINT_HELD=1` (`--held`) also lists them on stdout like the others.
+    /// WhyNot: not listed by default. A ratchet at its limit is a pass, and a lint that lists the same old violations on
+    /// every run buries the new ones; but a run that says nothing of them sends the reader to a second, full run to see
+    /// what is left to fix.
+    def reportHeld(settings: Settings, facts: Facts, held: List[Violation]): Unit \ IO =
+        if (List.isEmpty(held)) () else {
+            let sorted = held |> List.sortBy(Flixlint.Violation.key);
+            let dir = match String.indexOfRight(substr = "/", settings#factsDir) {
+                case Some(i) => String.takeLeft(i, settings#factsDir)
+                case None    => "."
+            };
+            let file = "${dir}/held.txt";
+            let written = writeText(file, (sorted |> List.map(v -> Flixlint.Violation.render(facts, v)) |> String.intercalate("\n")) + "\n");
+            if (settings#held) List.forEach(v -> println(Flixlint.Violation.render(facts, v)), sorted) else ();
+            let counts = List.foldLeft((acc, v) -> Map.insertWith(Add.add, v#id, 1, acc), Map.empty(), held) |> Map.toList
+                |> List.sortBy(match (id, n) -> (0 - n, id));
+            let shown = counts |> List.take(5) |> List.map(match (id, n) -> "${id} ${n}") |> String.intercalate(", ");
+            let more = if (List.length(counts) > 5) ", ..." else "";
+            let place = if (written) "all of them in ${file}" else "${file} could not be written";
+            System.err.println("flixlint: ratchet: ${List.length(held)} violations within their limits (${shown}${more}); ${place}, or --held to list them")
+        }
+
+    /// Writes `text` to `path`; whether it could.
+    def writeText(path: String, text: String): Bool \ IO =
+        try {
+            let w: FileWriter = new FileWriter(path);
+            w.write(text);
+            w.close();
+            true
+        } catch {
+            case _: IOException => false
+        }
 
     /// `FLIXLINT_TIMING=1`: how long reading the facts and judging took, and each custom rule on its own (to find a slow one).
     /// WhyNot: the custom rules are not timed inside `judgeAll`. It is pure, so it cannot read the clock; they are run once more

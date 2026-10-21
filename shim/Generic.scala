@@ -277,6 +277,9 @@ object Generic {
           case TypeConstructor.Struct(s, _) => row("Cst", Some(sym(s)), Nil, -1)
           // the region's symbol has the compiler's id, which changes from compile to compile
           case TypeConstructor.Region(_) => row("Cst", Some("Region"), Nil, -1)
+          // a Java class by the name its `import` gives it (`java.io.File`), so a class written only in a type (a result, a
+          // parameter) is a name the module writes; `toString` would spell it with the class descriptor
+          case TypeConstructor.Native(desc, _) => row("Cst", Some(className(desc)), Nil, -1)
           case other => row("Cst", Some(other.toString), Nil, -1)
         }
         tcRows.put(c, id)
