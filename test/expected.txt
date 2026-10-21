@@ -39,6 +39,21 @@ src/api/Endpoints.flix:57: silent-parse: Endpoints.parsedOrZero: defaults the va
 src/api/Endpoints.flix:61: silent-parse: Endpoints.parsedOrOne: defaults the values Ids.parse rejects
     a value that does not parse is rejected, not dropped or replaced by a default
     fix it, or add |> allowIn(Fn.Endpoints_parsedOrOne, "reason") to rule silent-parse
+src/app/Builders.flix:7: builder-shapes: Builders.fresh: returns a record
+    a builder shape
+    fix it, or add |> allowIn(Fn.Builders_fresh, "reason") to rule builder-shapes
+src/app/Builders.flix:9: builder-shapes: Builders.bumped: returns a record
+    a builder shape
+    fix it, or add |> allowIn(Fn.Builders_bumped, "reason") to rule builder-shapes
+src/app/Builders.flix:9: builder-shapes: Builders.bumped: updates a record from a variable
+    a builder shape
+    fix it, or add |> allowIn(Fn.Builders_bumped, "reason") to rule builder-shapes
+src/app/Builders.flix:12: builder-shapes: Builders.twice: local def go has no return type
+    a builder shape
+    fix it, or add |> allowIn(Fn.Builders_twice, "reason") to rule builder-shapes
+src/app/Builders.flix:19: builder-shapes: Builders.plusOne: lambda parameter y has a written type
+    a builder shape
+    fix it, or add |> allowIn(Fn.Builders_plusOne, "reason") to rule builder-shapes
 src/app/Flags.flix:5: bool-arg: Flags.page: passes arg:Flags.send:0
     a Bool argument is named by an enum case or a record field
     fix it, or add |> allowIn(Fn.Flags_page, "reason") to rule bool-arg

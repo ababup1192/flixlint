@@ -39,6 +39,18 @@ pub mod Flixlint.Facts {
     /// In a `|>` chain, the result of `source` reaches `target` (through any number of stages); `line` is the line of `target`.
     pub type alias PipedInto = { caller = Fn, source = Fn, target = Fn, line = Int32 }
 
+    /// A local def in the body of `fn`: whether its return type is written (`retDeclared`), and every type constructor of
+    /// that written type (`localDefRets`, keyed by the def's name and line).
+    pub type alias LocalDef = { fn = Fn, name = String, retDeclared = Bool, line = Int32 }
+    pub type alias LocalDefRet = { fn = Fn, name = String, line = Int32, tycon = Type }
+
+    /// A type constructor written in the type of a lambda parameter in the body of `fn` (`(w: World) -> …`).
+    pub type alias LambdaParam = { fn = Fn, name = String, tycon = Type, line = Int32 }
+
+    /// A record operation `{ x = v | r }` in the body of `fn` (the operations of one expression are one row), with the
+    /// shape of the base record `r`: `var`, `call:<callee>`, `RecordSelect` (`w#ui`), or the node's name.
+    pub type alias RecordUpdate = { fn = Fn, base = String, line = Int32 }
+
     /// An argument of a case built in the body of `fn` (`Some(x)`): its `shape` (`bool` for a literal, `unary:Not`,
     /// `op:And`, `call:Eq.eq` for `a == b`, `var`, or the node's name) and the head of its type `tycon` (`Bool`; `?` at the
     /// resolved stage, which has no types yet).
@@ -90,6 +102,11 @@ pub mod Flixlint.Facts {
         branches = List[Branch],
         boolLits = List[BoolLit],
         tagArgs = List[TagArg],
+        testDefs = Set[Fn],
+        localDefs = List[LocalDef],
+        localDefRets = List[LocalDefRet],
+        lambdaParams = List[LambdaParam],
+        recordUpdates = List[RecordUpdate],
         argTypes = List[ArgType],
         argTypesAll = List[ArgType],
         argTypesDeep = List[ArgType],
@@ -133,6 +150,12 @@ pub mod Flixlint.Facts {
     pub def branches(facts: Facts): List[Branch] = data(facts)#branches
     pub def boolLits(facts: Facts): List[BoolLit] = data(facts)#boolLits
     pub def tagArgs(facts: Facts): List[TagArg] = data(facts)#tagArgs
+    /// Whether `fn` is a `@Test` def.
+    pub def isTest(facts: Facts, fn: Fn): Bool = Set.memberOf(fn, data(facts)#testDefs)
+    pub def localDefs(facts: Facts): List[LocalDef] = data(facts)#localDefs
+    pub def localDefRets(facts: Facts): List[LocalDefRet] = data(facts)#localDefRets
+    pub def lambdaParams(facts: Facts): List[LambdaParam] = data(facts)#lambdaParams
+    pub def recordUpdates(facts: Facts): List[RecordUpdate] = data(facts)#recordUpdates
     pub def argTypes(facts: Facts): List[ArgType] = data(facts)#argTypes
     pub def argTypesAll(facts: Facts): List[ArgType] = data(facts)#argTypesAll
     pub def argTypesDeep(facts: Facts): List[ArgType] = data(facts)#argTypesDeep
@@ -268,6 +291,7 @@ pub mod Flixlint.Facts {
         let branches = loadBranches(dir, fnOf);
         let boolLits = loadBoolLits(dir, fnOf);
         let tagArgs = loadTagArgs(dir, fnOf, caseOf);
+        let shapes = loadShapes(dir, fnOf, typeOf);
         let effects = rows(dir, "eff") |> List.filterMap(c -> forM (e <- effOf(col(0, c)); m <- modOf(col(1, c))) yield { effect = e, module = m, file = col(2, c), line = int(3, c) });
         let sourceFiles = rows(dir, "source_file") |> List.map(c -> col(0, c));
         let sortedCalls = calls |> List.sortBy(c -> (c#caller, c#line, c#callee));
@@ -284,6 +308,11 @@ pub mod Flixlint.Facts {
             branches = branches,
             boolLits = boolLits,
             tagArgs = tagArgs,
+            testDefs = shapes#testDefs,
+            localDefs = shapes#localDefs,
+            localDefRets = shapes#localDefRets,
+            lambdaParams = shapes#lambdaParams,
+            recordUpdates = shapes#recordUpdates,
             argTypes = types#argTypes,
             argTypesAll = types#argTypesAll,
             argTypesDeep = types#argTypesDeep,
@@ -353,6 +382,27 @@ pub mod Flixlint.Facts {
         { argTypes = argTypes, argTypesAll = argTypesAll, argTypesDeep = argTypesDeep,
           retTypes = retTypes, retTypesAll = retTypesAll, retTypesDeep = retTypesDeep,
           caseTypes = caseTypes, caseTypesAll = caseTypesAll, caseTypesDeep = caseTypesDeep }
+
+    /// The relations read by `loadShapes`.
+    type alias ShapeRows = {
+        testDefs = Set[Fn], localDefs = List[LocalDef], localDefRets = List[LocalDefRet],
+        lambdaParams = List[LambdaParam], recordUpdates = List[RecordUpdate]
+    }
+
+    /// The `@Test` defs, local defs, lambda parameter types and record operations.
+    /// WhyNot: not inline in `load`, for the same reason as `loadTypes`.
+    @DontInline
+    def loadShapes(dir: String, fnOf: String -> Option[Fn], typeOf: String -> Option[Type]): ShapeRows \ FileRead =
+        let testDefs = rows(dir, "test_def") |> List.filterMap(c -> fnOf(col(0, c))) |> List.toSet;
+        let localDefs = rows(dir, "local_def") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)))
+            yield { fn = fn, name = col(1, c), retDeclared = col(2, c) == "true", line = int(3, c) });
+        let localDefRets = rows(dir, "local_def_ret") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); t <- typeOf(col(3, c)))
+            yield { fn = fn, name = col(1, c), line = int(2, c), tycon = t });
+        let lambdaParams = rows(dir, "lambda_param") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); t <- typeOf(col(2, c)))
+            yield { fn = fn, name = col(1, c), tycon = t, line = int(3, c) });
+        let recordUpdates = rows(dir, "record_update") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)))
+            yield { fn = fn, base = col(1, c), line = int(2, c) });
+        { testDefs = testDefs, localDefs = localDefs, localDefRets = localDefRets, lambdaParams = lambdaParams, recordUpdates = recordUpdates }
 
     /// The case arguments. WhyNot: not inline in `load`, for the same reason as `loadTypes`.
     @DontInline

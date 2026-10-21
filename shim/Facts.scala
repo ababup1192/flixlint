@@ -544,6 +544,86 @@ object Facts {
     }
     go(body)
   }
+
+  /** The local defs, the lambdas with a written parameter type, and the record operations in the body of `fn`:
+    * - `LocalDef(fn, name, retDeclared, line)` and `LocalDefRet(fn, name, line, tycon)` (every type constructor of the
+    *   written return type). The compiler keeps a written return type as an ascription of the body at the body's own
+    *   location (a source ascription `(e : T)` has the location of its parentheses), which is how it is told apart.
+    * - `LambdaParam(fn, name, tycon, line)`: every type constructor of a lambda parameter's written type (none when the
+    *   type is left to inference).
+    * - `RecordUpdate(fn, base, line)`: one row per record operation `{ x = v | r }` / `{ +x = v | r }` / `{ -x | r }`
+    *   (the operations of one expression are one row), with the shape of the base record `r` (`var`, `call:<callee>`,
+    *   or the node's name) and the line it is written on.
+    * WhyNot: not a branch of `walkBody`, for the reason given at `walkBools`.
+    */
+  def walkShapes(fn: String, body: Any, sink: Sink): Unit = {
+    def names(t: Any): List[String] = t match {
+      case t: Type => Typed.allNames(t)
+      case t: UnkindedType => Resolved.allNames(t)
+      case Some(t) => names(t)
+      case _ => Nil
+    }
+    def varName(p: Any): String = {
+      val sym = if (p.getClass.getMethods.exists(_.getName == "bnd")) field[Any](field[Any](p, "bnd"), "sym") else field[Any](p, "sym")
+      field[Any](sym, "text").toString
+    }
+    def loc(p: Any): SourceLocation = field[SourceLocation](p, "loc")
+    def isOp(p: Any): Boolean = p match {
+      case q: Product => q.productPrefix == "RecordExtend" || q.productPrefix == "RecordRestrict"
+      case _ => false
+    }
+    // The base of a chain of record operations, and the values the chain sets.
+    def chain(p: Product, values: List[Any]): (Any, List[Any]) = p.productPrefix match {
+      case "RecordExtend" =>
+        val rest = field[Any](p, "exp2")
+        if (isOp(rest)) chain(rest.asInstanceOf[Product], field[Any](p, "exp1") :: values) else (rest, field[Any](p, "exp1") :: values)
+      case _ =>
+        val rest = field[Any](p, "exp")
+        if (isOp(rest)) chain(rest.asInstanceOf[Product], values) else (rest, values)
+    }
+    def shapeOf(e: Any): String = e match {
+      case p: Product if p.productPrefix == "Var" => "var"
+      case p: Product if p.productPrefix == "ApplyDef" || p.productPrefix == "ApplySig" || p.productPrefix == "ApplyOp" =>
+        s"call:${symName(field[Any](field[Any](p, "symUse"), "sym"))}"
+      case p: Product => p.productPrefix
+      case _ => "?"
+    }
+    def go(node: Any): Unit = node match {
+      case null | _: Type | _: UnkindedType | _: SourceLocation | _: Symbol | _: String | _: java.lang.Number | _: java.lang.Boolean => ()
+      case p: Product if p.productPrefix == "LocalDef" && p.getClass.getName.contains("Expr") =>
+        val name = varName(p)
+        val body0 = field[Any](p, "exp1")
+        val declared = body0 match {
+          case a: Product if a.productPrefix == "Ascribe" && loc(a) == loc(field[Any](a, "exp")) => names(field[Any](a, "expectedType")).distinct
+          case _ => Nil
+        }
+        val isDeclared = body0 match {
+          case a: Product => a.productPrefix == "Ascribe" && loc(a) == loc(field[Any](a, "exp")) && field[Option[Any]](a, "expectedType").isDefined
+          case _ => false
+        }
+        val line = loc(p).startLine
+        sink.localDef(fn, name, isDeclared, line)
+        declared.foreach(t => sink.localDefRet(fn, name, line, t))
+        p.productIterator.foreach(go)
+      case p: Product if p.productPrefix == "Lambda" && p.getClass.getName.contains("Expr") =>
+        val fparam = field[Any](p, "fparam")
+        val written = fparam.getClass.getMethods.exists(_.getName == "src") match {
+          case true => if (field[Product](fparam, "src").productPrefix == "Ascribed") names(field[Any](fparam, "tpe")) else Nil
+          case false => names(field[Any](fparam, "tpe"))
+        }
+        written.distinct.foreach(t => sink.lambdaParam(fn, varName(fparam), t, loc(p).startLine))
+        p.productIterator.foreach(go)
+      case p: Product if isOp(p) && p.getClass.getName.contains("Expr") =>
+        val (base, values) = chain(p, Nil)
+        sink.recordUpdate(fn, shapeOf(base), base match { case b: Product if b.getClass.getMethods.exists(_.getName == "loc") => loc(b).startLine; case _ => loc(p).startLine })
+        values.foreach(go)
+        go(base)
+      case p: Product => p.productIterator.foreach(go)
+      case xs: Iterable[_] => xs.foreach(go)
+      case _ => ()
+    }
+    go(body)
+  }
 }
 
 /** One TSV file per relation. Columns are tab-separated; text columns have tabs and newlines replaced by spaces.
@@ -583,6 +663,11 @@ final class Sink(dir: Path) {
   def strLit(fn: String, text: String, line: Int): Unit = { fnNames += fn; row("str_lit", fn, text, line) }
   def boolLit(fn: String, value: String, where: String, line: Int, parentLine: Int): Unit = { fnNames += fn; row("bool_lit", fn, value, where, line, parentLine) }
   def tagArg(fn: String, kase: String, index: Int, shape: String, tycon: String, line: Int): Unit = { fnNames += fn; caseNames += kase; row("tag_arg", fn, kase, index, shape, tycon, line) }
+  def testDef(fn: String): Unit = { fnNames += fn; row("test_def", fn) }
+  def localDef(fn: String, name: String, retDeclared: Boolean, line: Int): Unit = { fnNames += fn; row("local_def", fn, name, retDeclared, line) }
+  def localDefRet(fn: String, name: String, line: Int, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("local_def_ret", fn, name, line, tycon) }
+  def lambdaParam(fn: String, name: String, tycon: String, line: Int): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("lambda_param", fn, name, tycon, line) }
+  def recordUpdate(fn: String, base: String, line: Int): Unit = { fnNames += fn; row("record_update", fn, base, line) }
   def branch(fn: String, kind: String, line: Int): Unit = { fnNames += fn; row("branch", fn, kind, line) }
   def argTypeAll(fn: String, i: Int, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("arg_type_all", fn, i, tycon) }
   def retTypeAll(fn: String, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("ret_type_all", fn, tycon) }
@@ -752,6 +837,7 @@ object Typed {
     for (d <- allDefs if !synthetic(d); file <- sourceFile(d.loc)) {
       val fn = symName(d.sym)
       sink.defn(fn, d.sym.name, d.sym.namespace.mkString("."), file, d.sym.loc.startLine, d.spec.mod.isPublic)
+      if (d.spec.ann.isTest) sink.testDef(fn)
       effNames(d.spec.eff).distinct.foreach(e => sink.effectOf(fn, e))
       d.spec.fparams.toList.zipWithIndex.foreach { case (fp, i) =>
         sink.argType(fn, i, headName(fp.tpe))
@@ -764,6 +850,7 @@ object Typed {
       walkBody(fn, d.exp, sink)
       walkBools(fn, d.exp, sink)
       walkTagArgs(fn, d.exp, sink)
+      walkShapes(fn, d.exp, sink)
     }
     for ((sym, e) <- root.enums; file <- sourceFile(e.loc)) {
       sink.enumDef(symName(sym), sym.namespace.mkString("."), file, sym.loc.startLine, e.mod.isPublic)
@@ -881,6 +968,7 @@ object Resolved {
     for (d <- allDefs if !synthetic(d); file <- sourceFile(d.loc)) {
       val fn = symName(d.sym)
       sink.defn(fn, d.sym.name, d.sym.namespace.mkString("."), file, d.sym.loc.startLine, d.spec.mod.isPublic)
+      if (d.spec.ann.isTest) sink.testDef(fn)
       d.spec.eff.toList.flatMap(effNames).distinct.foreach(e => sink.effectOf(fn, e))
       d.spec.fparams.toList.zipWithIndex.foreach { case (fp, i) =>
         sink.argType(fn, i, fp.tpe.map(headName).getOrElse("?"))
@@ -893,6 +981,7 @@ object Resolved {
       walkBody(fn, d.exp, sink)
       walkBools(fn, d.exp, sink)
       walkTagArgs(fn, d.exp, sink)
+      walkShapes(fn, d.exp, sink)
     }
     for ((sym, e) <- root.enums; file <- sourceFile(e.loc)) {
       sink.enumDef(symName(sym), sym.namespace.mkString("."), file, sym.loc.startLine, e.mod.isPublic)

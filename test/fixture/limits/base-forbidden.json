@@ -14,7 +14,7 @@
     "pure-rules": 1,
     "silent-parse": 3,
     "raw-alias": 1,
-    "flat-rules": 6, "bool-arg": 2, "wrapped-bool": 3,
+    "flat-rules": 6, "bool-arg": 2, "wrapped-bool": 3, "builder-shapes": 5,
     "wrapped-key": 4
   }
 }

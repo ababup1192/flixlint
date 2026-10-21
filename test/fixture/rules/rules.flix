@@ -73,7 +73,8 @@ mod FixtureRules {
             customRule({ id = "raw-alias", check = rawAlias }),
             customRule({ id = "flat-rules", check = flatRules }),
             customRule({ id = "bool-arg", check = boolArg }),
-            customRule({ id = "wrapped-bool", check = wrappedBool })
+            customRule({ id = "wrapped-bool", check = wrappedBool }),
+            customRule({ id = "builder-shapes", check = builderShapes })
         })
     })
 
@@ -102,6 +103,27 @@ mod FixtureRules {
             |> List.filter(c -> Flixlint.Facts.defOf(facts, c#caller)
                 |> Option.exists(d -> Flixlint.Glob.matches("src/domain/**", d#file) and d#file != "src/domain/Auth.flix"))
             |> List.map(c -> Flixlint.Violation.atCall(facts, "capability-site", c, "use cases receive Permit as an argument; only the boundary asks Auth"))
+
+    /// In src/app/Builders.flix: a def that is not a test and returns a record (TestDef, RetType), a local def without a
+    /// return type (LocalDef), a lambda parameter with a written type (LambdaParam), a record update from a variable
+    /// (RecordUpdate). The local def with a return type, the lambda left to inference and the test are not reported.
+    def builderShapes(facts: Facts): List[Violation] =
+        let inBuilders = fn -> Flixlint.Facts.defOf(facts, fn) |> Option.exists(d -> d#file == "src/app/Builders.flix");
+        let reason = "a builder shape";
+        let records = Flixlint.Facts.defs(facts)
+            |> List.filter(d -> inBuilders(d#fn) and not Flixlint.Facts.isTest(facts, d#fn)
+                and Flixlint.Facts.retType(facts, d#fn) == Some(Type.Record))
+            |> List.map(d -> Flixlint.Violation.atDef(facts, "builder-shapes", d, "returns a record", reason));
+        let untyped = Flixlint.Facts.localDefs(facts)
+            |> List.filter(l -> inBuilders(l#fn) and not l#retDeclared)
+            |> List.map(l -> Flixlint.Violation.inBody(facts, "builder-shapes", l#fn, l#line, "local def ${l#name} has no return type", reason));
+        let lambdas = Flixlint.Facts.lambdaParams(facts)
+            |> List.filter(p -> inBuilders(p#fn))
+            |> List.map(p -> Flixlint.Violation.inBody(facts, "builder-shapes", p#fn, p#line, "lambda parameter ${p#name} has a written type", reason));
+        let updates = Flixlint.Facts.recordUpdates(facts)
+            |> List.filter(u -> inBuilders(u#fn) and u#base == "var")
+            |> List.map(u -> Flixlint.Violation.inBody(facts, "builder-shapes", u#fn, u#line, "updates a record from a variable", reason));
+        records ::: untyped ::: lambdas ::: updates
 
     /// A Bool wrapped in Some / Ok / Err (TagArg): by its type at the typed stage, and by its shape at both (a literal,
     /// `not`, `and` / `or`, a comparison), so the resolved stage stops the same three in this fixture.
