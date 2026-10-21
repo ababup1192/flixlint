@@ -1,7 +1,7 @@
 [package]
 # Flix 0.78 の [package] が持てるのは version・repository・flix だけ（name・description・license・authors は
 # ManifestParser が拒む）。名前はリポジトリ、説明は README、ライセンスは LICENSE.md に在る。
-version     = "0.5.1"
+version     = "0.5.2"
 repository  = "github:ababup1192/flixlint"
 flix        = "0.78.0"
 
