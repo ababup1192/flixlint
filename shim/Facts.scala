@@ -118,7 +118,7 @@ object Facts {
     */
   def write(flix: Flix, args: Args, files: List[Path], spans: Option[Path], t0: Long): Int = {
     val t1 = System.nanoTime()
-    var genericNs = 0L
+    var genericJob: Option[Background] = None
 
     val sink = new Sink(args.out)
     // WhyNot: the set of files is not left to be read off the definitions. A file that holds only type aliases, or
@@ -131,7 +131,9 @@ object Facts {
         val t2 = System.nanoTime()
         errors.foreach(e => System.err.println(e.messageWithLoc(flix.getFormatter)(optRoot)))
         optRoot match {
-          case Some(root) => Typed.emit(root, sink); spans.foreach(Spans.typed(root, _)); genericNs = generic(root, args, files)
+          case Some(root) =>
+            genericJob = Some(new Background(generic(root, args, files)))
+            Typed.emit(root, sink); spans.foreach(Spans.typed(root, _))
           case None => Generic.clear(args.out.resolve("generic")); System.err.println("flixlint: no typed AST (compilation errors above)")
         }
         (errors.length, t2 - t1)
@@ -139,17 +141,31 @@ object Facts {
         val (root, errors) = Resolved.run(flix)
         val t2 = System.nanoTime()
         errors.foreach(e => System.err.println(e.messageWithLoc(flix.getFormatter)(None)))
+        genericJob = Some(new Background(generic(root, args, files)))
         Resolved.emit(root, sink)
         spans.foreach(Spans.resolved(root, _))
-        genericNs = generic(root, args, files)
         (errors.length, t2 - t1)
       case other => throw new UsageError(s"unknown --stage $other (typed or resolved)")
     }
     sink.close()
     Names.write(args.namesOut.getOrElse(args.out.resolve("Names.flix")), args.out, sink, args.namesOf.map(p => Names.usedIn(Files.readString(p))))
+    val walked = System.nanoTime()
+    val genericNs = genericJob.map(_.join()).getOrElse(0L)
     val t3 = System.nanoTime()
-    System.err.println(f"flixlint facts: stage=${args.stage} files=${files.length} compile=${phaseNs / 1e9}%.1fs walk=${(t3 - t1 - phaseNs - genericNs) / 1e9}%.2fs generic=${genericNs / 1e9}%.2fs total=${(t3 - t0) / 1e9}%.1fs")
+    System.err.println(f"flixlint facts: stage=${args.stage} files=${files.length} compile=${phaseNs / 1e9}%.1fs walk=${(walked - t1 - phaseNs) / 1e9}%.2fs generic=${genericNs / 1e9}%.2fs (alongside) total=${(t3 - t0) / 1e9}%.1fs")
     if (nErrors > 0) 3 else 0
+  }
+
+  /** A computation on a thread of its own; `join` waits for it and gives its result, or throws what it threw.
+    * WhyNot: the generic walk is not run after the fact walker. Both only read the compiler's AST and write their own
+    * tables, so running them side by side adds the longer of the two to a run instead of both. The thread's stack is as
+    * deep as the main thread's (bin/flixlint runs the JVM with -Xss32m): the walk recurses down the AST.
+    */
+  final class Background(body: => Long) {
+    @volatile private var result: Either[Throwable, Long] = Right(0L)
+    private val thread = new Thread(null, () => result = (try Right(body) catch { case e: Throwable => Left(e) }), "flixlint-generic", 64L << 20)
+    thread.start()
+    def join(): Long = { thread.join(); result.fold(e => throw e, identity) }
   }
 
   /** The generic AST of `root` beside the facts (`<out>/generic`, read by Flixlint.Ast), with the names the rule file

@@ -143,6 +143,9 @@ object Generic {
     out
   }
 
+  /** The lines of a source file, counted on its bytes (decoding the text again would cost what the walk itself does). */
+  private def lineCount(f: Path): Long = { val b = Files.readAllBytes(f); var n = 0L; b.foreach(x => if (x == '\n') n += 1); n }
+
   /** Removes the files of `dir` (the relations are files only; a directory in it is left alone). */
   def clear(dir: Path): Unit =
     if (Files.isDirectory(dir)) {
@@ -294,7 +297,16 @@ object Generic {
 
     // WhyNot: dispatched on `productPrefix` and the fields by name, like the walker. `Type` and `UnkindedType` name their
     // cases alike, so one function serves both stages, and a case it does not know is still a row (`Other`).
-    private def goNew(t: Any): Int = {
+    private def goNew(t: Any): Int = t match {
+      // the forms most types are made of, read by the compiler's classes (the rest by field name below)
+      case Type.Apply(a, b, _) => apply(go(a), go(b))
+      case UnkindedType.Apply(a, b, _) => apply(go(a), go(b))
+      case Type.Cst(c, _) => tc(c)
+      case UnkindedType.Cst(c, _) => tc(c)
+      case _ => goByName(t)
+    }
+
+    private def goByName(t: Any): Int = {
       val p = t.asInstanceOf[Product]
       def f[A](n: String): A = Elem.get[A](p, n)
       p.productPrefix match {
@@ -394,8 +406,9 @@ object Generic {
     def write(dir: Path): Unit = {
       Files.createDirectories(dir)
       def column(name: String, xs: Array[Int]): Unit = {
-        val out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(dir.resolve(name + ".i32")), 1 << 16))
-        try xs.foreach(out.writeInt) finally out.close()
+        val bytes = java.nio.ByteBuffer.allocate(4 * xs.length)
+        bytes.asIntBuffer().put(xs)
+        Files.write(dir.resolve(name + ".i32"), bytes.array())
       }
       def text(name: String, lines: Iterable[String]): Unit = {
         val w = new PrintWriter(Files.newBufferedWriter(dir.resolve(name), StandardCharsets.UTF_8))
@@ -532,10 +545,19 @@ object Generic {
       case v: Symbol.VarSym => local(v, v.text)
       case r: Symbol.RegionSym => local(r, r.text)
       case l: Symbol.LabelSym => local(l, l.text)
+      case m: Symbol.ModuleSym => moduleName(m)
       case _ =>
-        val n = Facts.symName(s)
-        if (compilerId.findFirstIn(n).isDefined) local(s, n) else n
+        val known = named.get(s)
+        if (known != null) known
+        else {
+          val n = Facts.symName(s)
+          val t = if (compilerId.findFirstIn(n).isDefined) local(s, n) else n
+          named.put(s, t)
+          t
+        }
     }
+    /** The text of each symbol that is not local, made once (a function is named at every call). */
+    private val named = new java.util.HashMap[Symbol, String]()
   }
 
   private def tcName(tc: TypeConstructor): String = tc match {
@@ -547,14 +569,19 @@ object Generic {
 
   private final class Walker(out: Out) {
     private val locals = new LocalNames
+    /** The file of the declaration being walked. */
+    var file: String = ""
     private def lineOf(pos: Pos, loc: Option[SourceLocation]): Int = loc.map(_.startLine).filter(_ != pos.l).getOrElse(-1)
 
     /** A node and its subtree; its id. */
     def node(p: Product, parent: Int, slot: Int, index: Int, root: Int, inherited: Pos): Int = {
       val id = out.next
       val r = if (root < 0) id else root
-      val pos = locOf(p).map(posOf).getOrElse(inherited)
       val nc = nodeClass(p)
+      val pos = if (nc.loc < 0) inherited else p.productElement(nc.loc) match {
+        case l: SourceLocation if l.startLine > 0 => posOf(l)
+        case _ => inherited
+      }
       out.kind += nc.kind
       out.parent += parent; out.slot += slot; out.index += index; out.root += r
       out.line += pos.l; out.col += pos.c; out.endLine += pos.el; out.endCol += pos.ec; out.synthetic += pos.syn
@@ -594,7 +621,8 @@ object Generic {
           val s = v.asInstanceOf[Symbol]
           s match {
             case _: Symbol.VarSym | _: Symbol.RegionSym | _: Symbol.LabelSym => out.attr(owner, name, locals.text(s), -1)
-            case _ => out.mentioned += s; out.attr(owner, name, locals.text(s), lineOf(pos, locOf(s)))
+            // a symbol's location is where it is declared: a line of another file is not written as this one's
+            case _ => out.mentioned += s; out.attr(owner, name, locals.text(s), lineOf(pos, locOf(s).filter(l => Facts.sourceFile(l).contains(file))))
           }
         case Shape.SymUse =>
           val s = Elem.get[Symbol](v, "sym")
@@ -610,6 +638,7 @@ object Generic {
           if (c.productArity == 1) out.attr(owner, name + ".lit", String.valueOf(c.productElement(0)), -1)
         case Shape.Name => out.attr(owner, name, scala.util.Try(Facts.field[Any](v, "name").toString).getOrElse(v.toString), -1)
         case Shape.Desc => out.attr(owner, name, className(v.asInstanceOf[java.lang.constant.ClassDesc]), -1)
+        case Shape.JClass => out.attr(owner, name, className(Elem.get[java.lang.constant.ClassDesc](v, "desc")), -1)
         case Shape.Opt => v.asInstanceOf[Option[Any]].foreach(x => value(x, owner, name, index, root, pos, exprLike))
         case Shape.Nel =>
           var i = 0
@@ -629,7 +658,7 @@ object Generic {
   private object Shape {
     final val Skip = 0; final val TypeV = 1; final val Text = 2; final val Sym = 3; final val SymUse = 4; final val TyCon = 5
     final val Constant = 6; final val Name = 7; final val Desc = 8; final val Opt = 9; final val Nel = 10; final val MapV = 11
-    final val Iter = 12; final val Node = 13; final val Leaf = 14
+    final val Iter = 12; final val Node = 13; final val Leaf = 14; final val JClass = 15
 
     private val shapes = new ClassValue[Integer] {
       override def computeValue(c: Class[_]): Integer = {
@@ -643,6 +672,8 @@ object Generic {
         else if (n.contains("Constant$")) Constant
         else if (n.contains("ast.Name$")) Name
         else if (classOf[java.lang.constant.ClassDesc].isAssignableFrom(c)) Desc
+        // an imported Java class is its name; its members (every method and field of the class) are not walked
+        else if (n.endsWith("jvm.JavaClass")) JClass
         else if (classOf[Option[_]].isAssignableFrom(c)) Opt
         else if (n.endsWith("collection.Nel")) Nel
         else if (classOf[scala.collection.Map[_, _]].isAssignableFrom(c)) MapV
@@ -656,16 +687,17 @@ object Generic {
     def of(c: Class[_]): Int = shapes.get(c).intValue
   }
 
-  /** The kind number of a node class, whether it is an expression or a pattern, whether it calls Java, and its field names,
-    * worked out once per class (from the first node of the class: the field names are its `productElementNames`). */
-  private final case class NodeClass(kind: Int, exprLike: Boolean, javaCall: Boolean, fields: Array[String])
+  /** The kind number of a node class, whether it is an expression or a pattern, whether it calls Java, its field names and
+    * the position of its location among them (-1 for none), worked out once per class (from the first node of the class: the field names are its `productElementNames`). */
+  private final case class NodeClass(kind: Int, exprLike: Boolean, javaCall: Boolean, fields: Array[String], loc: Int)
 
   private val nodeClasses = mutable.HashMap.empty[Class[_], NodeClass]
 
   private def nodeClass(p: Product): NodeClass = nodeClasses.getOrElseUpdate(p.getClass, {
     val kind = AstSchema.kindOfClass(p.getClass)
     val number = AstNames.kindNumbers.getOrElse(kind, throw new IllegalStateException(s"the kind $kind is not in the ast_schema (make ast-kinds)"))
-    NodeClass(number, kind.startsWith("Expr.") || kind.startsWith("Pattern."), kind.startsWith("Expr.Invoke"), p.productElementNames.toArray)
+    val fields = p.productElementNames.toArray
+    NodeClass(number, kind.startsWith("Expr.") || kind.startsWith("Pattern."), kind.startsWith("Expr.Invoke"), fields, fields.indexOf("loc"))
   })
 
   // ---- the declarations, and the external ones ----
@@ -678,6 +710,15 @@ object Generic {
       case other => Facts.field[scala.collection.Map[Any, List[Any]]](other, "m").values.flatten.toList // ListMap: a key to its values
     }
 
+  /** A module spelt as the qualified names of its members are (`$pkg$github$owner$name.Mod`, not `github:owner/name.Mod`). */
+  def moduleName(m: Any): String = Facts.field[List[String]](m, "ns").mkString(".")
+
+  /** The `use` and `import` of every module, with the module they are written in (Root's `uses`: a module to its uses). */
+  private def uses(root: Product): List[(Any, Option[String])] =
+    if (!Facts.hasField(root, "uses")) Nil
+    else Facts.field[scala.collection.Map[Any, List[Any]]](Facts.field[Any](root, "uses"), "m").toList
+      .flatMap { case (m, us) => us.map(u => (u, Some(moduleName(m)))) }
+
   private def fileOf(d: Any): Option[String] = locOf(d).flatMap(Facts.sourceFile)
 
   private def emit(root: Product, stage: String, files: List[String], limits: Limits): Out = {
@@ -688,15 +729,20 @@ object Generic {
     val w = new Walker(out)
     val instanceDefs = values(root, "instances").flatMap(i => Facts.field[List[Any]](i, "defs"))
     val defs = (values(root, "defs") ++ instanceDefs).filterNot(Facts.synthetic)
-    val roots = (defs ++ values(root, "enums") ++ values(root, "typeAliases") ++ values(root, "effects"))
-      .flatMap(d => fileOf(d).map(f => (d.asInstanceOf[Product], f)))
-      .sortBy { case (d, f) => (f, locOf(d).map(_.startLine).getOrElse(0), locOf(d).map(_.startCol).getOrElse(0)) }
+    val decls = (defs ++ values(root, "enums") ++ values(root, "typeAliases") ++ values(root, "effects")).map(d => (d, Option.empty[String]))
+    val roots = (decls ++ uses(root))
+      .flatMap { case (d, m) => fileOf(d).map(f => (d.asInstanceOf[Product], f, m)) }
+      .sortBy { case (d, f, _) => (f, locOf(d).map(_.startLine).getOrElse(0), locOf(d).map(_.startCol).getOrElse(0)) }
     val sizes = mutable.ListBuffer.empty[(String, Int)]
-    roots.foreach { case (d, f) =>
+    roots.foreach { case (d, f, module) =>
       val before = out.next
+      w.file = f
       val id = w.node(d, -1, -1, 0, -1, Pos(0, 0, 0, 0, 0))
+      // a use is in force in the module it is written in; the use itself does not say which
+      module.foreach(m => out.attr(id, "mod", m, -1))
       out.decl(id, f)
-      sizes += ((s"${AstSchema.kindOfClass(d.getClass)} ${Facts.symName(Facts.field[Any](d, "sym"))} ($f:${out.line(id)})", out.next - before))
+      val name = if (Facts.hasField(d, "sym")) Facts.symName(Facts.field[Any](d, "sym")) else d.productPrefix
+      sizes += ((s"${AstSchema.kindOfClass(d.getClass)} $name ($f:${out.line(id)})", out.next - before))
       out.checkLimits(sizes.toList)
     }
     out.walkNs = System.nanoTime() - tWalk

@@ -434,6 +434,12 @@ resolved	TypeParam.Kinded	sym	Symbol.UnkindedTypeVarSym
 resolved	TypeParam.Unkinded		
 resolved	TypeParam.Unkinded	name	Name.Ident
 resolved	TypeParam.Unkinded	sym	Symbol.UnkindedTypeVarSym
+resolved	UseOrImport.Import		
+resolved	UseOrImport.Import	alias	Name.Ident
+resolved	UseOrImport.Import	clazz	jvm.JavaClass
+resolved	UseOrImport.Use		
+resolved	UseOrImport.Use	alias	Name.Ident
+resolved	UseOrImport.Use	sym	Symbol
 resolved	jvm.JavaField		
 resolved	jvm.JavaField	fieldType	jvm.JavaType
 resolved	jvm.JavaField	modifiers	int
@@ -1063,6 +1069,12 @@ typed	TypeAlias	tpe	Type
 typed	TypeParam		
 typed	TypeParam	name	Name.Ident
 typed	TypeParam	sym	Symbol.KindedTypeVarSym
+typed	UseOrImport.Import		
+typed	UseOrImport.Import	alias	Name.Ident
+typed	UseOrImport.Import	clazz	jvm.JavaClass
+typed	UseOrImport.Use		
+typed	UseOrImport.Use	alias	Name.Ident
+typed	UseOrImport.Use	sym	Symbol
 typed	jvm.JavaField		
 typed	jvm.JavaField	fieldType	jvm.JavaType
 typed	jvm.JavaField	modifiers	int

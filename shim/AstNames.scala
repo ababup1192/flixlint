@@ -3,7 +3,7 @@ package flixlint
 
 /** The names of `Flixlint.AstKinds`, in number order, and the hash of the `ast_schema` they come from. */
 object AstNames {
-  val schemaHash: String = "c1a3ec810457b609"
+  val schemaHash: String = "32aaa77c5f393c58"
   val kinds: Vector[String] = Vector(
     "Annotation.CompileTest", "Annotation.DefaultHandler", "Annotation.Deprecated", "Annotation.DontInline", "Annotation.Error", "Annotation.Experimental", "Annotation.Inline", "Annotation.Lazy",
     "Annotation.LazyWhenPure", "Annotation.LoweringTargetChannel", "Annotation.LoweringTargetDatalog", "Annotation.Parallel", "Annotation.ParallelWhenPure", "Annotation.Skip", "Annotation.TailRecursive", "Annotation.Terminates",
@@ -24,8 +24,8 @@ object AstNames {
     "Pattern.Tuple", "Pattern.Var", "Pattern.Wild", "Predicate.Body.Atom", "Predicate.Body.Functional", "Predicate.Body.Guard", "Predicate.Head.Atom", "PredicateAndArity",
     "PredicateParam", "PredicateParam.PredicateParamUntyped", "PredicateParam.PredicateParamWithType", "RestrictableChoosePattern.Error", "RestrictableChoosePattern.Tag", "RestrictableChoosePattern.Var", "RestrictableChoosePattern.Wild", "RestrictableChooseRule",
     "SelectChannelRule", "Spec", "TraitConstraint", "Tuple2", "TypeAlias", "TypeParam", "TypeParam.Implicit", "TypeParam.Kinded",
-    "TypeParam.Unkinded", "jvm.JavaField", "jvm.JavaFieldRef", "jvm.JavaMethod", "jvm.JavaMethodRef", "jvm.JavaType.GenericArray", "jvm.JavaType.NonGeneric", "jvm.JavaType.Parameterized",
-    "jvm.JavaType.Variable", "jvm.JavaType.Wildcard", "jvm.JavaTypeParameter", "jvm.JavaTypeVariable", "jvm.JavaTypeVariableOwner.Class", "jvm.JavaTypeVariableOwner.Method")
+    "TypeParam.Unkinded", "UseOrImport.Import", "UseOrImport.Use", "jvm.JavaField", "jvm.JavaFieldRef", "jvm.JavaMethod", "jvm.JavaMethodRef", "jvm.JavaType.GenericArray",
+    "jvm.JavaType.NonGeneric", "jvm.JavaType.Parameterized", "jvm.JavaType.Variable", "jvm.JavaType.Wildcard", "jvm.JavaTypeParameter", "jvm.JavaTypeVariable", "jvm.JavaTypeVariableOwner.Class", "jvm.JavaTypeVariableOwner.Method")
   val slots: Vector[String] = Vector(
     "_2", "ann", "annotations", "arguments", "bnd", "body", "cases", "chan",
     "clazz", "component", "constructor", "constructors", "cparams", "cs", "default", "derives",
@@ -67,9 +67,9 @@ object AstNames {
     "Modifiers", "Op", "ParYieldFragment", "Pattern.Cst", "Pattern.Error", "Pattern.Record", "Pattern.Record.RecordLabelPattern", "Pattern.Tag",
     "Pattern.Tuple", "Pattern.Var", "Pattern.Wild", "Predicate.Body.Atom", "Predicate.Body.Functional", "Predicate.Body.Guard", "Predicate.Head.Atom", "PredicateAndArity",
     "PredicateParam", "RestrictableChoosePattern.Error", "RestrictableChoosePattern.Tag", "RestrictableChoosePattern.Var", "RestrictableChoosePattern.Wild", "RestrictableChooseRule", "SelectChannelRule", "Spec",
-    "TraitConstraint", "Tuple2", "TypeAlias", "TypeParam", "jvm.JavaField", "jvm.JavaFieldRef", "jvm.JavaMethod", "jvm.JavaMethodRef",
-    "jvm.JavaType.GenericArray", "jvm.JavaType.NonGeneric", "jvm.JavaType.Parameterized", "jvm.JavaType.Variable", "jvm.JavaType.Wildcard", "jvm.JavaTypeParameter", "jvm.JavaTypeVariable", "jvm.JavaTypeVariableOwner.Class",
-    "jvm.JavaTypeVariableOwner.Method")
+    "TraitConstraint", "Tuple2", "TypeAlias", "TypeParam", "UseOrImport.Import", "UseOrImport.Use", "jvm.JavaField", "jvm.JavaFieldRef",
+    "jvm.JavaMethod", "jvm.JavaMethodRef", "jvm.JavaType.GenericArray", "jvm.JavaType.NonGeneric", "jvm.JavaType.Parameterized", "jvm.JavaType.Variable", "jvm.JavaType.Wildcard", "jvm.JavaTypeParameter",
+    "jvm.JavaTypeVariable", "jvm.JavaTypeVariableOwner.Class", "jvm.JavaTypeVariableOwner.Method")
   val resolvedKinds: Set[String] = Set(
     "Annotation.CompileTest", "Annotation.DefaultHandler", "Annotation.Deprecated", "Annotation.DontInline", "Annotation.Error", "Annotation.Experimental", "Annotation.Inline", "Annotation.Lazy",
     "Annotation.LazyWhenPure", "Annotation.LoweringTargetChannel", "Annotation.LoweringTargetDatalog", "Annotation.Parallel", "Annotation.ParallelWhenPure", "Annotation.Skip", "Annotation.TailRecursive", "Annotation.Terminates",
@@ -89,9 +89,9 @@ object AstNames {
     "Op", "ParYieldFragment", "Pattern.Cst", "Pattern.Error", "Pattern.Record", "Pattern.Record.RecordLabelPattern", "Pattern.Tag", "Pattern.Tuple",
     "Pattern.Var", "Pattern.Wild", "Predicate.Body.Atom", "Predicate.Body.Functional", "Predicate.Body.Guard", "Predicate.Head.Atom", "PredicateAndArity", "PredicateParam.PredicateParamUntyped",
     "PredicateParam.PredicateParamWithType", "RestrictableChoosePattern.Error", "RestrictableChoosePattern.Tag", "RestrictableChoosePattern.Var", "RestrictableChoosePattern.Wild", "RestrictableChooseRule", "SelectChannelRule", "Spec",
-    "TraitConstraint", "Tuple2", "TypeAlias", "TypeParam.Implicit", "TypeParam.Kinded", "TypeParam.Unkinded", "jvm.JavaField", "jvm.JavaFieldRef",
-    "jvm.JavaMethodRef", "jvm.JavaType.GenericArray", "jvm.JavaType.NonGeneric", "jvm.JavaType.Parameterized", "jvm.JavaType.Variable", "jvm.JavaType.Wildcard", "jvm.JavaTypeVariable", "jvm.JavaTypeVariableOwner.Class",
-    "jvm.JavaTypeVariableOwner.Method")
+    "TraitConstraint", "Tuple2", "TypeAlias", "TypeParam.Implicit", "TypeParam.Kinded", "TypeParam.Unkinded", "UseOrImport.Import", "UseOrImport.Use",
+    "jvm.JavaField", "jvm.JavaFieldRef", "jvm.JavaMethodRef", "jvm.JavaType.GenericArray", "jvm.JavaType.NonGeneric", "jvm.JavaType.Parameterized", "jvm.JavaType.Variable", "jvm.JavaType.Wildcard",
+    "jvm.JavaTypeVariable", "jvm.JavaTypeVariableOwner.Class", "jvm.JavaTypeVariableOwner.Method")
   val typedSlots: Set[String] = Set(
     "_2", "ann", "annotations", "arguments", "bnd", "body", "cases", "chan",
     "clazz", "component", "constructor", "constructors", "cparams", "cs", "default", "derives",

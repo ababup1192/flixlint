@@ -7,7 +7,7 @@
 pub mod Flixlint.AstKinds {
 
     /// The hash of the `ast_schema` these names were made from; the shim writes the same hash with the columns.
-    pub def schemaHash(): String = "c1a3ec810457b609"
+    pub def schemaHash(): String = "32aaa77c5f393c58"
 
     /// A kind of node: the compiler's class without the stage (`Expr.ApplyDef` is `Kind.Expr_ApplyDef`).
     pub enum Kind with Eq, Order, ToString {
@@ -164,6 +164,8 @@ pub mod Flixlint.AstKinds {
         case TypeParam_Implicit
         case TypeParam_Kinded
         case TypeParam_Unkinded
+        case UseOrImport_Import
+        case UseOrImport_Use
         case Jvm_JavaField
         case Jvm_JavaFieldRef
         case Jvm_JavaMethod
@@ -334,19 +336,21 @@ pub mod Flixlint.AstKinds {
         case Kind.TypeParam_Implicit => 150
         case Kind.TypeParam_Kinded => 151
         case Kind.TypeParam_Unkinded => 152
-        case Kind.Jvm_JavaField => 153
-        case Kind.Jvm_JavaFieldRef => 154
-        case Kind.Jvm_JavaMethod => 155
-        case Kind.Jvm_JavaMethodRef => 156
-        case Kind.Jvm_JavaType_GenericArray => 157
-        case Kind.Jvm_JavaType_NonGeneric => 158
-        case Kind.Jvm_JavaType_Parameterized => 159
-        case Kind.Jvm_JavaType_Variable => 160
-        case Kind.Jvm_JavaType_Wildcard => 161
-        case Kind.Jvm_JavaTypeParameter => 162
-        case Kind.Jvm_JavaTypeVariable => 163
-        case Kind.Jvm_JavaTypeVariableOwner_Class => 164
-        case Kind.Jvm_JavaTypeVariableOwner_Method => 165
+        case Kind.UseOrImport_Import => 153
+        case Kind.UseOrImport_Use => 154
+        case Kind.Jvm_JavaField => 155
+        case Kind.Jvm_JavaFieldRef => 156
+        case Kind.Jvm_JavaMethod => 157
+        case Kind.Jvm_JavaMethodRef => 158
+        case Kind.Jvm_JavaType_GenericArray => 159
+        case Kind.Jvm_JavaType_NonGeneric => 160
+        case Kind.Jvm_JavaType_Parameterized => 161
+        case Kind.Jvm_JavaType_Variable => 162
+        case Kind.Jvm_JavaType_Wildcard => 163
+        case Kind.Jvm_JavaTypeParameter => 164
+        case Kind.Jvm_JavaTypeVariable => 165
+        case Kind.Jvm_JavaTypeVariableOwner_Class => 166
+        case Kind.Jvm_JavaTypeVariableOwner_Method => 167
     }
 
     /// The compiler's name of `kind` (`Annotation.CompileTest`).
@@ -504,6 +508,8 @@ pub mod Flixlint.AstKinds {
         case Kind.TypeParam_Implicit => "TypeParam.Implicit"
         case Kind.TypeParam_Kinded => "TypeParam.Kinded"
         case Kind.TypeParam_Unkinded => "TypeParam.Unkinded"
+        case Kind.UseOrImport_Import => "UseOrImport.Import"
+        case Kind.UseOrImport_Use => "UseOrImport.Use"
         case Kind.Jvm_JavaField => "jvm.JavaField"
         case Kind.Jvm_JavaFieldRef => "jvm.JavaFieldRef"
         case Kind.Jvm_JavaMethod => "jvm.JavaMethod"
@@ -674,24 +680,26 @@ pub mod Flixlint.AstKinds {
         case 150 => Some(Kind.TypeParam_Implicit)
         case 151 => Some(Kind.TypeParam_Kinded)
         case 152 => Some(Kind.TypeParam_Unkinded)
-        case 153 => Some(Kind.Jvm_JavaField)
-        case 154 => Some(Kind.Jvm_JavaFieldRef)
-        case 155 => Some(Kind.Jvm_JavaMethod)
-        case 156 => Some(Kind.Jvm_JavaMethodRef)
-        case 157 => Some(Kind.Jvm_JavaType_GenericArray)
-        case 158 => Some(Kind.Jvm_JavaType_NonGeneric)
-        case 159 => Some(Kind.Jvm_JavaType_Parameterized)
-        case 160 => Some(Kind.Jvm_JavaType_Variable)
-        case 161 => Some(Kind.Jvm_JavaType_Wildcard)
-        case 162 => Some(Kind.Jvm_JavaTypeParameter)
-        case 163 => Some(Kind.Jvm_JavaTypeVariable)
-        case 164 => Some(Kind.Jvm_JavaTypeVariableOwner_Class)
-        case 165 => Some(Kind.Jvm_JavaTypeVariableOwner_Method)
+        case 153 => Some(Kind.UseOrImport_Import)
+        case 154 => Some(Kind.UseOrImport_Use)
+        case 155 => Some(Kind.Jvm_JavaField)
+        case 156 => Some(Kind.Jvm_JavaFieldRef)
+        case 157 => Some(Kind.Jvm_JavaMethod)
+        case 158 => Some(Kind.Jvm_JavaMethodRef)
+        case 159 => Some(Kind.Jvm_JavaType_GenericArray)
+        case 160 => Some(Kind.Jvm_JavaType_NonGeneric)
+        case 161 => Some(Kind.Jvm_JavaType_Parameterized)
+        case 162 => Some(Kind.Jvm_JavaType_Variable)
+        case 163 => Some(Kind.Jvm_JavaType_Wildcard)
+        case 164 => Some(Kind.Jvm_JavaTypeParameter)
+        case 165 => Some(Kind.Jvm_JavaTypeVariable)
+        case 166 => Some(Kind.Jvm_JavaTypeVariableOwner_Class)
+        case 167 => Some(Kind.Jvm_JavaTypeVariableOwner_Method)
         case _ => None
     }
 
     /// Every `Kind`, in number order.
-    pub def kinds(): Vector[Kind] = Vector#{Kind.Annotation_CompileTest, Kind.Annotation_DefaultHandler, Kind.Annotation_Deprecated, Kind.Annotation_DontInline, Kind.Annotation_Error, Kind.Annotation_Experimental, Kind.Annotation_Inline, Kind.Annotation_Lazy, Kind.Annotation_LazyWhenPure, Kind.Annotation_LoweringTargetChannel, Kind.Annotation_LoweringTargetDatalog, Kind.Annotation_Parallel, Kind.Annotation_ParallelWhenPure, Kind.Annotation_Skip, Kind.Annotation_TailRecursive, Kind.Annotation_Terminates, Kind.Annotation_Test, Kind.Annotations, Kind.Binder, Kind.Case, Kind.CatchRule, Kind.Constraint, Kind.ConstraintParam, Kind.Def, Kind.Derivation, Kind.Derivations, Kind.Effect, Kind.Enum, Kind.EqualityConstraint, Kind.Expr_ApplyClo, Kind.Expr_ApplyDef, Kind.Expr_ApplyLocalDef, Kind.Expr_ApplyOp, Kind.Expr_ApplySig, Kind.Expr_ArrayLength, Kind.Expr_ArrayLit, Kind.Expr_ArrayLoad, Kind.Expr_ArrayNew, Kind.Expr_ArrayStore, Kind.Expr_Ascribe, Kind.Expr_Binary, Kind.Expr_CheckedCast, Kind.Expr_Cst, Kind.Expr_Discard, Kind.Expr_Error, Kind.Expr_ExtMatch, Kind.Expr_ExtTag, Kind.Expr_FixpointConstraintSet, Kind.Expr_FixpointInjectInto, Kind.Expr_FixpointLambda, Kind.Expr_FixpointMerge, Kind.Expr_FixpointQueryWithProvenance, Kind.Expr_FixpointQueryWithSelect, Kind.Expr_FixpointSolveWithProject, Kind.Expr_Force, Kind.Expr_GetChannel, Kind.Expr_GetField, Kind.Expr_GetStaticField, Kind.Expr_Handler, Kind.Expr_Hole, Kind.Expr_HoleWithExp, Kind.Expr_IfThenElse, Kind.Expr_InstanceOf, Kind.Expr_InvokeConstructor, Kind.Expr_InvokeMethod, Kind.Expr_InvokeStaticMethod, Kind.Expr_InvokeSuperConstructor, Kind.Expr_InvokeSuperMethod, Kind.Expr_Lambda, Kind.Expr_Lazy, Kind.Expr_Let, Kind.Expr_LocalDef, Kind.Expr_Match, Kind.Expr_NewChannel, Kind.Expr_NewObject, Kind.Expr_OpenAs, Kind.Expr_ParYield, Kind.Expr_PutChannel, Kind.Expr_PutField, Kind.Expr_PutStaticField, Kind.Expr_RecordExtend, Kind.Expr_RecordRestrict, Kind.Expr_RecordSelect, Kind.Expr_Region, Kind.Expr_RestrictableChoose, Kind.Expr_RestrictableTag, Kind.Expr_RunWith, Kind.Expr_SelectChannel, Kind.Expr_Spawn, Kind.Expr_Stm, Kind.Expr_StructGet, Kind.Expr_StructNew, Kind.Expr_StructPut, Kind.Expr_Tag, Kind.Expr_Throw, Kind.Expr_TryCatch, Kind.Expr_Tuple, Kind.Expr_Unary, Kind.Expr_UncheckedCast, Kind.Expr_Unsafe, Kind.Expr_Use, Kind.Expr_Var, Kind.Expr_VectorLength, Kind.Expr_VectorLit, Kind.Expr_VectorLoad, Kind.ExtMatchRule, Kind.ExtPattern_Default, Kind.ExtPattern_Error, Kind.ExtPattern_Tag, Kind.ExtTagPattern_Error, Kind.ExtTagPattern_Unit, Kind.ExtTagPattern_Var, Kind.ExtTagPattern_Wild, Kind.FormalParam, Kind.HandlerRule, Kind.JClass, Kind.JvmAnnotation, Kind.JvmConstructor, Kind.JvmMethod, Kind.MatchRule, Kind.Modifiers, Kind.Op, Kind.ParYieldFragment, Kind.Pattern_Cst, Kind.Pattern_Error, Kind.Pattern_Record, Kind.Pattern_Record_RecordLabelPattern, Kind.Pattern_Tag, Kind.Pattern_Tuple, Kind.Pattern_Var, Kind.Pattern_Wild, Kind.Predicate_Body_Atom, Kind.Predicate_Body_Functional, Kind.Predicate_Body_Guard, Kind.Predicate_Head_Atom, Kind.PredicateAndArity, Kind.PredicateParam, Kind.PredicateParam_PredicateParamUntyped, Kind.PredicateParam_PredicateParamWithType, Kind.RestrictableChoosePattern_Error, Kind.RestrictableChoosePattern_Tag, Kind.RestrictableChoosePattern_Var, Kind.RestrictableChoosePattern_Wild, Kind.RestrictableChooseRule, Kind.SelectChannelRule, Kind.Spec, Kind.TraitConstraint, Kind.Tuple2, Kind.TypeAlias, Kind.TypeParam, Kind.TypeParam_Implicit, Kind.TypeParam_Kinded, Kind.TypeParam_Unkinded, Kind.Jvm_JavaField, Kind.Jvm_JavaFieldRef, Kind.Jvm_JavaMethod, Kind.Jvm_JavaMethodRef, Kind.Jvm_JavaType_GenericArray, Kind.Jvm_JavaType_NonGeneric, Kind.Jvm_JavaType_Parameterized, Kind.Jvm_JavaType_Variable, Kind.Jvm_JavaType_Wildcard, Kind.Jvm_JavaTypeParameter, Kind.Jvm_JavaTypeVariable, Kind.Jvm_JavaTypeVariableOwner_Class, Kind.Jvm_JavaTypeVariableOwner_Method}
+    pub def kinds(): Vector[Kind] = Vector#{Kind.Annotation_CompileTest, Kind.Annotation_DefaultHandler, Kind.Annotation_Deprecated, Kind.Annotation_DontInline, Kind.Annotation_Error, Kind.Annotation_Experimental, Kind.Annotation_Inline, Kind.Annotation_Lazy, Kind.Annotation_LazyWhenPure, Kind.Annotation_LoweringTargetChannel, Kind.Annotation_LoweringTargetDatalog, Kind.Annotation_Parallel, Kind.Annotation_ParallelWhenPure, Kind.Annotation_Skip, Kind.Annotation_TailRecursive, Kind.Annotation_Terminates, Kind.Annotation_Test, Kind.Annotations, Kind.Binder, Kind.Case, Kind.CatchRule, Kind.Constraint, Kind.ConstraintParam, Kind.Def, Kind.Derivation, Kind.Derivations, Kind.Effect, Kind.Enum, Kind.EqualityConstraint, Kind.Expr_ApplyClo, Kind.Expr_ApplyDef, Kind.Expr_ApplyLocalDef, Kind.Expr_ApplyOp, Kind.Expr_ApplySig, Kind.Expr_ArrayLength, Kind.Expr_ArrayLit, Kind.Expr_ArrayLoad, Kind.Expr_ArrayNew, Kind.Expr_ArrayStore, Kind.Expr_Ascribe, Kind.Expr_Binary, Kind.Expr_CheckedCast, Kind.Expr_Cst, Kind.Expr_Discard, Kind.Expr_Error, Kind.Expr_ExtMatch, Kind.Expr_ExtTag, Kind.Expr_FixpointConstraintSet, Kind.Expr_FixpointInjectInto, Kind.Expr_FixpointLambda, Kind.Expr_FixpointMerge, Kind.Expr_FixpointQueryWithProvenance, Kind.Expr_FixpointQueryWithSelect, Kind.Expr_FixpointSolveWithProject, Kind.Expr_Force, Kind.Expr_GetChannel, Kind.Expr_GetField, Kind.Expr_GetStaticField, Kind.Expr_Handler, Kind.Expr_Hole, Kind.Expr_HoleWithExp, Kind.Expr_IfThenElse, Kind.Expr_InstanceOf, Kind.Expr_InvokeConstructor, Kind.Expr_InvokeMethod, Kind.Expr_InvokeStaticMethod, Kind.Expr_InvokeSuperConstructor, Kind.Expr_InvokeSuperMethod, Kind.Expr_Lambda, Kind.Expr_Lazy, Kind.Expr_Let, Kind.Expr_LocalDef, Kind.Expr_Match, Kind.Expr_NewChannel, Kind.Expr_NewObject, Kind.Expr_OpenAs, Kind.Expr_ParYield, Kind.Expr_PutChannel, Kind.Expr_PutField, Kind.Expr_PutStaticField, Kind.Expr_RecordExtend, Kind.Expr_RecordRestrict, Kind.Expr_RecordSelect, Kind.Expr_Region, Kind.Expr_RestrictableChoose, Kind.Expr_RestrictableTag, Kind.Expr_RunWith, Kind.Expr_SelectChannel, Kind.Expr_Spawn, Kind.Expr_Stm, Kind.Expr_StructGet, Kind.Expr_StructNew, Kind.Expr_StructPut, Kind.Expr_Tag, Kind.Expr_Throw, Kind.Expr_TryCatch, Kind.Expr_Tuple, Kind.Expr_Unary, Kind.Expr_UncheckedCast, Kind.Expr_Unsafe, Kind.Expr_Use, Kind.Expr_Var, Kind.Expr_VectorLength, Kind.Expr_VectorLit, Kind.Expr_VectorLoad, Kind.ExtMatchRule, Kind.ExtPattern_Default, Kind.ExtPattern_Error, Kind.ExtPattern_Tag, Kind.ExtTagPattern_Error, Kind.ExtTagPattern_Unit, Kind.ExtTagPattern_Var, Kind.ExtTagPattern_Wild, Kind.FormalParam, Kind.HandlerRule, Kind.JClass, Kind.JvmAnnotation, Kind.JvmConstructor, Kind.JvmMethod, Kind.MatchRule, Kind.Modifiers, Kind.Op, Kind.ParYieldFragment, Kind.Pattern_Cst, Kind.Pattern_Error, Kind.Pattern_Record, Kind.Pattern_Record_RecordLabelPattern, Kind.Pattern_Tag, Kind.Pattern_Tuple, Kind.Pattern_Var, Kind.Pattern_Wild, Kind.Predicate_Body_Atom, Kind.Predicate_Body_Functional, Kind.Predicate_Body_Guard, Kind.Predicate_Head_Atom, Kind.PredicateAndArity, Kind.PredicateParam, Kind.PredicateParam_PredicateParamUntyped, Kind.PredicateParam_PredicateParamWithType, Kind.RestrictableChoosePattern_Error, Kind.RestrictableChoosePattern_Tag, Kind.RestrictableChoosePattern_Var, Kind.RestrictableChoosePattern_Wild, Kind.RestrictableChooseRule, Kind.SelectChannelRule, Kind.Spec, Kind.TraitConstraint, Kind.Tuple2, Kind.TypeAlias, Kind.TypeParam, Kind.TypeParam_Implicit, Kind.TypeParam_Kinded, Kind.TypeParam_Unkinded, Kind.UseOrImport_Import, Kind.UseOrImport_Use, Kind.Jvm_JavaField, Kind.Jvm_JavaFieldRef, Kind.Jvm_JavaMethod, Kind.Jvm_JavaMethodRef, Kind.Jvm_JavaType_GenericArray, Kind.Jvm_JavaType_NonGeneric, Kind.Jvm_JavaType_Parameterized, Kind.Jvm_JavaType_Variable, Kind.Jvm_JavaType_Wildcard, Kind.Jvm_JavaTypeParameter, Kind.Jvm_JavaTypeVariable, Kind.Jvm_JavaTypeVariableOwner_Class, Kind.Jvm_JavaTypeVariableOwner_Method}
 
     /// A field of a node that holds nodes (`exps` is `Slot.Exps`).
     pub enum Slot with Eq, Order, ToString {

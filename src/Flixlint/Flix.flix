@@ -260,6 +260,45 @@ pub mod Flixlint.Flix {
         let guards = Flixlint.Ast.ofKind(ast, Kind.MatchRule) |> List.filterMap(r -> Flixlint.Ast.child(ast, r, Slot.Guard) |> Option.map(g -> ("guard", g)));
         own ::: guards
 
+    // ---- use and import ----
+
+    /// A `use` or a Java `import` of the sources: the name it brings in (`Auth.Permit`, `java.lang.System`), the name it
+    /// is known by in the module, and the module it is written in.
+    pub type alias Use = { node = Node, name = String, localName = String, module = String, file = String, line = Int32, isImport = Bool }
+
+    /// Every `use` and `import` of the sources, in file and line order.
+    pub def uses(ast: Ast): List[Use] =
+        Flixlint.Ast.ofKinds(ast, List#{Kind.UseOrImport_Use, Kind.UseOrImport_Import}) |> List.map(u -> {
+            let isImport = Flixlint.Ast.is(ast, Kind.UseOrImport_Import, u);
+            { node = u, name = Flixlint.Ast.attr(ast, u, if (isImport) Attr.Clazz else Attr.Sym) |> Option.getWithDefault("?"),
+              localName = Flixlint.Ast.attr(ast, u, Attr.Alias) |> Option.getWithDefault(""),
+              module = Flixlint.Ast.attr(ast, u, Attr.Mod) |> Option.getWithDefault(""),
+              file = Flixlint.Ast.file(ast, u), line = Flixlint.Ast.line(ast, u), isImport = isImport }
+        })
+
+    /// The names the declarations of each module use, by (file, module): the functions they call, the cases they build and
+    /// match, the effects and types they write (aliases as written), and the Java classes they name. A `use` of a name is
+    /// used when one of these is the name or a name inside it (`Auth.Permit` for `Auth.Permit.Permit`).
+    pub def namesUsed(ast: Ast): Map[(String, String), Set[String]] =
+        let named = Set#{Attr.Sym, Attr.SymUse, Attr.Clazz, Attr.Owner};
+        let typeNames = t -> Flixlint.Ast.typeNames(ast, t, Flixlint.Ast.AliasMode.Closed);
+        let isUse = r -> Flixlint.Ast.is(ast, Kind.UseOrImport_Use, r) or Flixlint.Ast.is(ast, Kind.UseOrImport_Import, r);
+        Flixlint.Ast.nodes(ast) |> List.filter(n -> not isUse(Flixlint.Ast.root(ast, n))) |> List.foldLeft((acc, n) -> {
+            let root = Flixlint.Ast.root(ast, n);
+            let key = (Flixlint.Ast.file(ast, n), moduleOf(nameOf(ast, root)));
+            let leaves = Flixlint.Ast.leaves(ast, n);
+            let fromValues = leaves |> List.filter(l -> Set.memberOf(l#attr, named)) |> List.filterMap(l -> l#value)
+                |> List.filter(v -> not String.contains(substr = "#", v));
+            let types = (leaves |> List.filterMap(l -> l#tpe)) ::: (Flixlint.Ast.typeOf(ast, n) |> Option.toList) ::: (Flixlint.Ast.effectOf(ast, n) |> Option.toList);
+            let names = fromValues ::: List.flatMap(typeNames, types);
+            if (List.isEmpty(names)) acc else Map.insertWith(Set.union, key, List.toSet(names), acc)
+        }, Map.empty())
+
+    /// Whether a `use` brings in a name its module never uses.
+    pub def isUnused(used: Map[(String, String), Set[String]], u: Use): Bool =
+        let names = Map.getWithDefault((u#file, u#module), Set.empty(), used);
+        not Set.exists(n -> n == u#name or String.startsWith(prefix = "${u#name}.", n), names)
+
     // ---- the targets a rule names (docs/design-generic.md 2.2: a rule names what it is about with a Names value, so a
     // name the sources no longer have fails to compile instead of quietly matching nothing) ----
 
@@ -300,7 +339,9 @@ pub mod Flixlint.Flix {
     /// names (none for an enum, an alias, an effect).
     pub def violation(ast: Ast, id: String, n: Node, line: Int32, message: String, reason: String): Violation =
         let r = Flixlint.Ast.root(ast, n);
-        let name = nameOf(ast, r);
+        // a `use` has no name of its own; it is told by the module it is written in
+        let isUse = Flixlint.Ast.is(ast, Kind.UseOrImport_Use, r) or Flixlint.Ast.is(ast, Kind.UseOrImport_Import, r);
+        let name = if (isUse) Flixlint.Ast.attr(ast, r, Attr.Mod) |> Option.getWithDefault("?") else nameOf(ast, r);
         { file = Flixlint.Ast.file(ast, n), line = line, id = id, subject = name, message = message, reason = reason, path = Nil, notes = Nil,
           inFn = if (Flixlint.Ast.is(ast, Kind.Def, r)) Some(Flixlint.Names.fnOf(name)) else None }
 }

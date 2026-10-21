@@ -131,18 +131,21 @@ object AstSchema {
   }
 
   /** A value the walker passes over: its location, its doc comment, its scheme, its kind, its security context, the
-    * scope of a typed hole (the names in scope, which would walk the whole NamedAst). */
+    * scope of a typed hole (the names in scope, which would walk the whole NamedAst), the source file a `use` is in. */
   def isSkippedClass(c: Class[_]): Boolean = {
     val n = c.getName
     classOf[SourceLocation].isAssignableFrom(c) ||
-      n.endsWith("shared.Doc") || n.endsWith("ast.Scheme") || n.contains("ast.Kind") || n.contains("shared.SecurityContext") || n.endsWith("shared.LocalScope")
+      n.endsWith("shared.Doc") || n.endsWith("ast.Scheme") || n.contains("ast.Kind") || n.contains("shared.SecurityContext") || n.endsWith("shared.LocalScope") ||
+      n.endsWith("shared.Source")
   }
 
-  /** A symbol use, a constant or a name: written as an attribute of its owner, not as a node. */
+  /** A symbol use, a constant, a name or a Java class (by its name; its members are not walked): written as an
+    * attribute of its owner, not as a node. */
   def isLeafClass(c: Class[_]): Boolean = {
     val n = c.getName
     n.contains("SymUse$") || n.contains("Constant$") || n.contains("ast.Name$") ||
-      n.endsWith("shared.SymUse") || n.endsWith("shared.Constant") || n.endsWith("ast.Name")
+      n.endsWith("shared.SymUse") || n.endsWith("shared.Constant") || n.endsWith("ast.Name") ||
+      n.endsWith("jvm.JavaClass")
   }
 
   private def isConstant(c: Class[_]): Boolean = c.getName.contains("Constant")
@@ -211,7 +214,7 @@ object AstSchema {
 
   /** The roots of a stage: the map values of `defs`, `enums`, `typeAliases` and `effects` of its Root. */
   private def rootClasses(root: Class[_]): List[Class[_]] =
-    List("defs", "enums", "typeAliases", "effects").flatMap(n => elements(toT(root.getDeclaredField(n).getGenericType, Map.empty)).map(_.raw))
+    List("defs", "enums", "typeAliases", "effects", "uses").flatMap(n => elements(toT(root.getDeclaredField(n).getGenericType, Map.empty)).map(_.raw))
 
   private def stageRows(stage: String, root: Class[_]): List[Row] = {
     val seen = scala.collection.mutable.HashSet.empty[String]

@@ -337,6 +337,15 @@ pub mod Flixlint.Ast {
 
     def string(ast: Ast, i: Int32): String = if (i < 0) "" else Vector.nth(i, data(ast)#strings) |> Option.getWithDefault("")
 
+    /// Every leaf of `n`, in field order: its attribute, and its value or its type.
+    pub def leaves(ast: Ast, n: Node): List[{ attr = Attr, value = Option[String], tpe = Option[TypeRef] }] =
+        let d = data(ast);
+        attrRows(ast, n) |> List.filterMap(r -> Flixlint.AstKinds.attrOfIndex(Vector.get(r, d#attrName)) |> Option.map(a -> {
+            let v = Vector.get(r, d#attrValue);
+            let t = Vector.get(r, d#attrType);
+            { attr = a, value = if (v < 0) None else Some(string(ast, v)), tpe = if (t < 0) None else Some(TypeRef.TypeRef(t)) }
+        }))
+
     /// The (first) value of the leaf `a` of `n`: a symbol's qualified name (`List.map`), a variable (`x#3`), a constant's
     /// kind (`Str`) and text (`Attr.Cst_lit`), an operator, a label, a modifier.
     pub def attr(ast: Ast, n: Node, a: Attr): Option[String] = attrs(ast, n, a) |> List.head

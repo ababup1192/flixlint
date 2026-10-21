@@ -1,0 +1,3 @@
+src/Tidy.flix:3: unused-use: Tidy: brings in Auth.Permit, which the module never uses
+    remove the use, or use the name
+    fix it, or add |> allowInFile("src/Tidy.flix", "reason") to rule unused-use
