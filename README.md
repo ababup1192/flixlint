@@ -91,16 +91,19 @@ lint:
 When neither `--pkg` nor `--jar` is given, the shim sets the project up with the compiler's own `Bootstrap`, the way
 `flix check` does: the packages and jars your `flix.toml` names (a package's own dependencies come along), installed
 into `lib/` if they are not there yet, and the project's `.flix` files, of which the ones under the SRC you give are
-compiled. A run whose packages are all installed does not reach the network. The project is the nearest directory with
+compiled. A run whose packages are all installed does not reach the network; in a workspace that lacks some (a fresh
+worktree, say) the lint reaches it to install them, as `flix check` does there, and says in one line what it installed.
+The compiler gets the options `flix check` uses (no progress bar). The project is the nearest directory with
 a `flix.toml` at or above the sources, never above the current directory; `--project-root DIR` names it when that is
 not where it is. A project with no `flix.toml` gets no dependencies, and `--pkg` / `--jar` override the whole thing.
 When the setup fails (a package to download and no network, a broken `flix.toml`) it is exit 4 with Flix's message.
 
-`--offline` does not set the project up: it reads `flix.toml` with the compiler's `ManifestParser` and passes the
-versions it names out of `lib/` as they are: `lib/github/<owner>/<name>/<version>/` for a Flix package (its own
-manifest is read there too), `lib/external/` for a `[jar-dependencies]` jar, and every jar under `lib/cache/` for
-`[mvn-dependencies]`. Nothing is downloaded, and a package `lib/` does not have is exit 4 with the message to run
-`flix check` once. If you pass `--pkg` / `--jar` yourself and miss one, the sources do not compile and it is exit 3.
+`--offline` sets the project up the same way with the network shut (every connection through Java's proxy settings
+goes nowhere): a project whose packages are installed runs as before, and one that would have to fetch something stops
+with exit 4, naming the first thing Flix wanted and telling you to run `flix check` once. If you pass `--pkg` / `--jar`
+yourself and miss one, the sources do not compile and it is exit 3. `test/bootstrap-cases.sh PROJECT BUILD_DIR` runs
+`flix check` and flixlint on copies of a project (lib/ as it is with the network shut, no lib/, no lib/ with
+`--offline`, no Maven jars, a locally built package with the lock set to it) and checks that both pass or both stop.
 
 Your rule file names things through the generated module, so it starts with
 `use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}`.
@@ -134,9 +137,9 @@ bin/flixlint --version
 |---|---|
 | `--flix-jar JAR` | The Flix compiler (`flix.jar`, 0.78.0). `FLIX_JAR` in the environment works too; with neither, `bin/flix-jar` resolves it. |
 | `--rules PATH/rules.flix` | The rule file: a Flix module with `pub def rules(): Flixlint.RuleSet` (see below). |
-| `--pkg FPKG` / `--jar JAR` | Dependencies the sources need (`lib/github/<owner>/<name>/<version>/<name>-<version>.fpkg`, `lib/cache/**/*.jar`). Repeatable. A package is named after that path (Flix 0.78 mounts packages by id). With neither, they come from the project's `flix.toml` (`Bootstrap`, or `lib/` with `--offline`). |
+| `--pkg FPKG` / `--jar JAR` | Dependencies the sources need (`lib/github/<owner>/<name>/<version>/<name>-<version>.fpkg`, `lib/cache/**/*.jar`). Repeatable. A package is named after that path (Flix 0.78 mounts packages by id). With neither, they come from the project's `flix.toml` (`Bootstrap`, as `flix check`). |
 | `--project-root DIR` | The directory whose `flix.toml` names the dependencies (default: the nearest one at or above the sources, within the current directory). |
-| `--offline` | Read the dependencies out of `lib/` as they are instead of setting the project up with `Bootstrap` (no install, no network). |
+| `--offline` | Set the project up with the network shut: what is not installed stops the run (exit 4) instead of being installed. |
 | `--stage typed` (default) | Facts from the typed AST (`Flix.check()`): everything below, including compile errors. |
 | `--stage resolved` | Facts from the AST right after name resolution, before kinding and typing. Several times faster; the same facts except Java instance-method calls (the receiver's class is not known yet). |
 | `--today YYYY-MM-DD` | The date `allowUntil` is compared with (default: the real date). Tests fix it. |
@@ -517,6 +520,7 @@ test/expected*.txt           the reports both of them must produce
 test/generic/Main.flix       checks that the kind numbers of the fixture's relations name the same kinds as AstKinds.flix
 test/generic/compare.sh      a project's custom rules as written on the old facts and on the generic AST, compared
 test/generic/limit/         a record alias used 100 times: the walk stays inside its size limit
+test/bootstrap-cases.sh      flix check and flixlint on copies of a project with dependencies: both pass or both stop (by hand; needs the network)
 test/fixture/rules/generic.flix  the fixture's custom rules written on the generic AST
 spike/                       the spike of the generic AST (32caeb9) and the game's custom rules on the generic AST
                              (spike/game, compared with test/generic/compare.sh on the game); not compiled
@@ -680,16 +684,19 @@ lint:
 `--pkg` も `--jar` も渡さなければ、shim はコンパイラ自身の `Bootstrap` で、`flix check` と同じようにプロジェクトを
 組む: `flix.toml` に書かれた package と jar（package の依存も付いてくる。`lib/` に無ければ入れる）と、プロジェクトの
 `.flix` のファイル（そのうち渡した SRC の下の物をコンパイルする）。package が全部入っていればネットには出ない。
+欠けた作業場（作ったばかりの worktree など）では、そこで `flix check` を流した時と同じく lint がネットに出て入れ、
+入れた物を 1 行で言う。コンパイラのオプションは `flix check` と同じ（進み具合の表示だけ無し）。
 プロジェクトはソースの位置から上に辿って最初に `flix.toml` が在るディレクトリで、カレントディレクトリより上には
 行かない。そこに無い時は `--project-root DIR` で指す。`flix.toml` の無いプロジェクトには依存が渡らない。
 `--pkg` / `--jar` を渡せば全部そちらが勝つ。組めない時（落とす package が在るのにネットが無い・`flix.toml` が
 壊れている）は Flix の文を添えて exit 4 になる。
 
-`--offline` はプロジェクトを組まず、`flix.toml` をコンパイラの `ManifestParser` で読み、そこに書かれた版を `lib/` から
-そのまま渡す。Flix の package は `lib/github/<owner>/<name>/<version>/`（その package 自身の manifest もそこで読む）、
-`[jar-dependencies]` の jar は `lib/external/`、`[mvn-dependencies]` は `lib/cache/` の下の jar を全部。何も
-ダウンロードせず、`lib/` に無い package は exit 4 になり、`flix check` を 1 回回すよう促す。`--pkg` / `--jar` を
-自分で渡して取りこぼした時は、ソースがコンパイルできず exit 3 になる。
+`--offline` は、同じ組み方をネットを塞いで行う（Java の proxy の設定を通る接続を全部行き止まりにする）。package が
+入っているプロジェクトは同じように流れ、何かを落とす必要のあるプロジェクトは exit 4 で止まり、Flix が最初に欲しがった
+物を名指して `flix check` を 1 回回すよう促す。`--pkg` / `--jar` を自分で渡して取りこぼした時は、ソースがコンパイルできず
+exit 3 になる。`test/bootstrap-cases.sh PROJECT BUILD_DIR` は、プロジェクトの写しで `flix check` と flixlint を流し（lib/
+そのままでネット無し・lib/ 無し・lib/ 無しで `--offline`・Maven の jar 無し・手元で組んだ package に lock を揃えた物）、
+両方が通るか両方が止まるかを確かめる。
 
 rule のファイルは生成されたモジュール越しに名前を指すので、
 `use Flixlint.Names.{Fn, Eff, Mod, Case, Enum, Type}` で始まる。
@@ -722,9 +729,9 @@ bin/flixlint --version
 |---|---|
 | `--flix-jar JAR` | Flix のコンパイラ（`flix.jar`、0.78.0）。環境変数の `FLIX_JAR` でも良い。どちらも無ければ `bin/flix-jar` が解決する |
 | `--rules PATH/rules.flix` | rule のファイル。`pub def rules(): Flixlint.RuleSet` を持つ Flix のモジュール（後述） |
-| `--pkg FPKG` / `--jar JAR` | ソースが要る依存（`lib/github/<owner>/<name>/<version>/<name>-<version>.fpkg`、`lib/cache/**/*.jar`）。繰り返せる。package の名前はこのパスから取る（Flix 0.78 は package を id で mount する）。どちらも無ければプロジェクトの `flix.toml` から取る（`Bootstrap`。`--offline` なら `lib/` から） |
+| `--pkg FPKG` / `--jar JAR` | ソースが要る依存（`lib/github/<owner>/<name>/<version>/<name>-<version>.fpkg`、`lib/cache/**/*.jar`）。繰り返せる。package の名前はこのパスから取る（Flix 0.78 は package を id で mount する）。どちらも無ければプロジェクトの `flix.toml` から取る（`Bootstrap`。`flix check` と同じ） |
 | `--project-root DIR` | 依存を書いた `flix.toml` の在るディレクトリ（既定はソースの位置から上に辿って最初の物。カレントディレクトリの中まで） |
-| `--offline` | `Bootstrap` でプロジェクトを組まず、依存を `lib/` からそのまま読む（入れない・ネットに出ない） |
+| `--offline` | ネットを塞いでプロジェクトを組む。入っていない物は入れずに止まる（exit 4） |
 | `--stage typed`（既定） | 型付き AST（`Flix.check()`）の facts。下の全部が出る。コンパイルエラーもここで出る |
 | `--stage resolved` | 名前解決の直後、kinding と typing の前の AST の facts。数倍速い。Java の instance method の呼び出し（受け手のクラスがまだ分からない）以外は同じ |
 | `--today YYYY-MM-DD` | `allowUntil` と比べる日付（既定は実日付）。テストは固定する |
@@ -1091,6 +1098,7 @@ test/expected*.txt           その 2 つが出さなければならない報告
 test/generic/Main.flix       fixture の事実の kind の番号が AstKinds.flix と同じ kind を指す事を確かめる
 test/generic/compare.sh      プロジェクトの custom 規則を、旧い事実で書いた物と汎用の AST で書いた物で流して比べる
 test/generic/limit/         record の alias を 100 か所で使うプロジェクト。walk が量の上限に収まる事
+test/bootstrap-cases.sh      依存の在るプロジェクトの写しで flix check と flixlint: 両方通るか両方止まるか（手で流す。ネットが要る）
 test/fixture/rules/generic.flix  fixture の custom 規則を汎用の AST で書いた物
 spike/                       汎用の AST のスパイク（32caeb9）と、ゲームの custom 規則を汎用の AST で書いた物
                              （spike/game。ゲームに向けて test/generic/compare.sh で比べる）。コンパイルしない

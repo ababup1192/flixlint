@@ -101,16 +101,15 @@ object Facts {
     write(flix, args, files, spans, t0)
   }
 
-  /** The packages and jars of the run and the project's own sources: the ones given by hand (`--pkg` / `--jar`), those of
-    * `lib/` read as they are (`--offline`), or those Flix's `Bootstrap` sets up for the project's `flix.toml`, the way
-    * `flix check` does (it installs what is missing, so it may reach the network).
+  /** The packages and jars of the run and the project's own sources: the ones given by hand (`--pkg` / `--jar`), or
+    * those Flix's `Bootstrap` sets up for the project's `flix.toml`, the way `flix check` does (it installs what is
+    * missing, so it may reach the network; with `--offline` it stops there instead).
     */
   def projectOf(args: Args): Project =
     if (args.pkgs.nonEmpty || args.jars.nonEmpty) Project(Deps.ofPaths(args.pkgs, args.jars, args.projectRoot, args.srcs), None)
-    else if (args.offline) Project(Deps.ofProject(args.projectRoot, args.srcs), None)
     else Deps.findRoot(args.projectRoot, args.srcs) match {
       case None => Project(Deps(Nil, Nil, Map.empty), None)
-      case Some(root) => Deps.ofBootstrap(root)
+      case Some(root) => Deps.ofBootstrap(root, args.offline)
     }
 
   /** The dependencies of a run, and the sources `Bootstrap` found for the project (None when it was not used). */
@@ -132,9 +131,9 @@ object Facts {
   def compiler(deps: Deps): Flix = {
     // The packages, the jars and the mount table are fixed when the compiler is made (Flix 0.78).
     val flix = new Flix(deps.pkgs, deps.jars, deps.mounts)
-    // WhyNot: subeffecting is not set here. The sources must type the same way `flix check` types them, and the
-    // compiler's default is what `flix check` uses (Flix 0.78 has none; a set the CLI does not use fails sources it accepts).
-    flix.setOptions(Options.Default.copy(lib = LibLevel.All, progress = false))
+    // The options of the CLI's `flix check` with its own defaults (`Options.Default` with `lib = All`, `installDeps`, the
+    // GitHub token; subeffecting none), so the sources type the same way it types them. Only the progress bar is off.
+    flix.setOptions(Options.Default.copy(lib = LibLevel.All, installDeps = true, githubToken = sys.env.get("GITHUB_TOKEN").filter(_.nonEmpty), progress = false))
     flix
   }
 
@@ -204,7 +203,7 @@ object Facts {
 
   def listFlix(p: Path): List[Path] =
     if (Files.isDirectory(p)) {
-      // Closed, as `listJars` does: the resident server walks the sources on every run.
+      // Closed: the resident server walks the sources on every run.
       val entries = Files.walk(p)
       try entries.iterator().asScala.filter(f => f.toString.endsWith(".flix") && Files.isRegularFile(f)).toList.sorted
       finally entries.close()
@@ -217,24 +216,13 @@ object Facts {
     */
   final case class Deps(pkgs: List[InstalledPackage], jars: List[Path], mounts: Map[Mountpoint, PackageId])
 
-  /** The dependencies of the project: set up by `Bootstrap` as `flix check` does (`ofBootstrap`), or, with `--offline`,
-    * read from `flix.toml` with the compiler's own `ManifestParser` and turned into the paths the compiler has already
-    * unpacked them to (`lib/github`, `lib/cache`, `lib/external`; `ofProject`).
+  /** The dependencies of a project come from one place: the compiler's own `Bootstrap`, which `flix check` runs
+    * (`ofBootstrap`). Only `--pkg` / `--jar` given by hand bypass it (`ofPaths`, for tools outside a project).
     *
-    * WhyNot (`--offline`): `FlixPackageManager.findTransitiveDependencies` is not used. It reaches GitHub; the manifest of
-    * every installed package sits next to its fpkg, so the closure is taken from disk. Nothing is downloaded: a package
-    * that is not there is an error telling the caller to run `flix check`.
-    *
-    * WhyNot: `lib/**/*.fpkg` is not passed wholesale. lib/ keeps every version ever resolved, and two versions of
-    * one package bring the same definitions in twice. Jars are passed whole: two versions of one artifact on the
-    * classpath is first-wins, not a redefinition.
+    * WhyNot: flixlint does not read `flix.toml` and `lib/` itself (it did up to 0.8.0). A second reading of the manifest
+    * and of lib/ had to follow every Flix upgrade, and stopped where `flix check` installs what is missing.
     */
   object Deps {
-    def ofProject(explicitRoot: Option[Path], srcs: List[Path]): Deps = findRoot(explicitRoot, srcs) match {
-      case None => Deps(Nil, Nil, Map.empty)
-      case Some(root) => ofRoot(root)
-    }
-
     /** `--pkg` / `--jar` given by hand. A package is named after where `flix check` unpacks it
       * (`lib/github/<owner>/<name>/<version>/<name>-<version>.fpkg`), its own mounts are read from the manifest next to
       * it, and the root mounts from the project's `flix.toml` when there is one.
@@ -277,79 +265,73 @@ object Facts {
       }
     }
 
-    /** The packages and jars `Bootstrap` installs for the project (into `lib/`, as `flix check`), and its sources.
-      * A failure (no network for a package that is not installed, a bad `flix.toml`) is a usage error that names
-      * `--offline`. What `Bootstrap` prints goes to stderr only when it fails.
+    /** The packages and jars `Bootstrap` sets up for the project (installing what is missing into `lib/`, as
+      * `flix check` does), and its sources. With `offline`, a run that would reach the network stops instead, naming
+      * what it wanted. A failure is a usage error with Flix's message; what `Bootstrap` prints goes to stderr only then.
+      * When `lib/` changed (something was installed) one line says what.
       *
-      * WhyNot: `Bootstrap.mkFlix` is not used. It sets the options `flix check` uses for building, and the walk needs
-      * `LibLevel.All` and no progress bar (`compiler`); the packages, jars and mounts are the same.
+      * WhyNot: `Bootstrap.mkFlix` is not used. Its options are the ones `flix check` builds with; the walk needs no
+      * progress bar (`compiler`), and the packages, jars and mounts are the same.
       */
-    def ofBootstrap(root: Path): Project = {
+    def ofBootstrap(root: Path, offline: Boolean): Project = {
       val said = new java.io.ByteArrayOutputStream()
       val out = new java.io.PrintStream(said, true, "UTF-8")
-      Bootstrap.bootstrap(root, None)(Formatter.NoFormatter, out) match {
-        case Result.Ok(b) =>
+      val before = libFiles(root)
+      val wanted = scala.collection.mutable.ListBuffer.empty[String]
+      val result = if (offline) withoutNetwork(wanted)(Bootstrap.bootstrap(root, githubToken)(Formatter.NoFormatter, out))
+                   else Bootstrap.bootstrap(root, githubToken)(Formatter.NoFormatter, out)
+      // the packages and jars, not the resolver's own files beside them (`.x.jar.checked`, `x.jar__sha1`)
+      val added = libFiles(root).filterNot { case (p, size) => before.get(p).contains(size) }.keys
+        .map(_.getFileName.toString).filter(n => !n.startsWith(".") && (n.endsWith(".jar") || n.endsWith(".fpkg"))).toList.sorted
+      if (added.nonEmpty)
+        System.err.println(s"flixlint: Flix installed ${added.length} into ${root.resolve("lib")}: ${added.take(3).mkString(", ")}${if (added.length > 3) ", ..." else ""}")
+      result match {
+        case Result.Ok(b) if wanted.isEmpty =>
           val pf = b.projectFiles
           val mounts = parse(root.resolve("flix.toml")).mounts
           Project(Deps(pf.pkgs, pf.jars, mounts), Some(pf.sources.map(_.toAbsolutePath.normalize)))
+        case _ if wanted.nonEmpty =>
+          throw new UsageError(s"$root: --offline, and Flix needed the network for ${wanted.head}; run 'flix check' there once")
         case Result.Err(e) =>
           System.err.print(said.toString("UTF-8"))
-          throw new UsageError(s"$root: Flix could not set up the project's dependencies (${e.message(Formatter.NoFormatter)}); " +
-            "run 'flix check' there, or pass --offline to read lib/ as it is")
+          throw new UsageError(s"$root: Flix could not set up the project's dependencies: ${e.message(Formatter.NoFormatter)}")
+        case _ => throw new IllegalStateException("unreachable")
       }
     }
 
-    private def ofRoot(root: Path): Deps = {
+    /** The token `flix` uses for GitHub, from the same variable. */
+    private def githubToken: Option[String] = sys.env.get("GITHUB_TOKEN").filter(_.nonEmpty)
+
+    /** `run` with every connection through Java's proxy selector sent to a closed port, the URIs it wanted collected.
+      * WhyNot: not a check of lib/ written here. That would be a second reading of the manifest beside `Bootstrap`.
+      */
+    private def withoutNetwork[A](wanted: scala.collection.mutable.ListBuffer[String])(run: => A): A = {
+      val previous = java.net.ProxySelector.getDefault
+      java.net.ProxySelector.setDefault(new java.net.ProxySelector {
+        def select(uri: java.net.URI): java.util.List[java.net.Proxy] = {
+          wanted.synchronized(wanted += uri.toString)
+          java.util.List.of(new java.net.Proxy(java.net.Proxy.Type.HTTP, new java.net.InetSocketAddress("127.0.0.1", 9)))
+        }
+        def connectFailed(uri: java.net.URI, sa: java.net.SocketAddress, e: java.io.IOException): Unit = ()
+      })
+      try run finally java.net.ProxySelector.setDefault(previous)
+    }
+
+    /** The files under `lib/` and their sizes. */
+    private def libFiles(root: Path): Map[Path, Long] = {
       val lib = root.resolve("lib")
-      val fpkgs = scala.collection.mutable.LinkedHashMap.empty[PackageId, InstalledPackage]
-      val versions = scala.collection.mutable.Map.empty[PackageId, String]
-      val externals = scala.collection.mutable.LinkedHashMap.empty[String, Path]
-      // WhyNot: one version per package. Flix 0.78 keys the mount tables by the package id, so two versions of one
-      // package cannot both be given to the compiler; the first one met in the walk (depth first, from the root) wins,
-      // and each other version is named on stderr.
-      def walk(manifest: Manifest): Unit = {
-        manifest.jarDependencies.foreach { d =>
-          externals.getOrElseUpdate(d.fileName, need(lib.resolve("external").resolve(d.fileName), root))
-        }
-        manifest.flixDependencies.foreach { d =>
-          val version = d.version.toString
-          versions.get(d.id).filter(_ != version).foreach { kept =>
-            System.err.println(s"flixlint: ${d.id.owner}/${d.id.name} $version is left out; $kept was met first and is the one given to the compiler")
-          }
-          if (!fpkgs.contains(d.id)) {
-            versions += (d.id -> version)
-            val dir = lib.resolve("github").resolve(d.id.owner).resolve(d.id.name).resolve(version)
-            val fpkg = need(dir.resolve(s"${d.id.name}-$version.fpkg"), root)
-            val nested = dir.resolve(s"${d.id.name}-$version.toml")
-            val nestedManifest = if (Files.isRegularFile(nested)) Some(parse(nested)) else None
-            fpkgs += (d.id -> InstalledPackage(fpkg, d.id, SecurityContext.Unrestricted, nestedManifest.map(_.mounts).getOrElse(Map.empty)))
-            nestedManifest.foreach(walk)
-          }
-        }
+      if (!Files.isDirectory(lib)) Map.empty
+      else {
+        val entries = Files.walk(lib)
+        try entries.iterator().asScala.filter(Files.isRegularFile(_)).map(f => root.relativize(f) -> Files.size(f)).toMap
+        finally entries.close()
       }
-      val rootManifest = parse(root.resolve("flix.toml"))
-      walk(rootManifest)
-      Deps(fpkgs.values.toList, listJars(lib.resolve("cache")) ++ externals.values.toList, rootManifest.mounts)
     }
 
     private def parse(toml: Path): Manifest = ManifestParser.parse(toml) match {
       case Result.Ok(m) => m
       case Result.Err(e) => throw new UsageError(s"$toml: ${e.message(Formatter.NoFormatter)}")
     }
-
-    private def need(p: Path, root: Path): Path =
-      if (Files.isRegularFile(p)) p
-      else throw new UsageError(
-        s"$p is missing; run 'flix check' once in $root so that the compiler unpacks the dependencies of its " +
-          "flix.toml into lib/, or pass --pkg / --jar yourself")
-
-    private def listJars(dir: Path): List[Path] =
-      if (!Files.isDirectory(dir)) Nil
-      else {
-        val entries = Files.walk(dir)
-        try entries.iterator().asScala.filter(f => f.toString.endsWith(".jar") && Files.isRegularFile(f)).toList.sorted
-        finally entries.close()
-      }
   }
 
   // ---- generic helpers over the AST (both stages) ----
