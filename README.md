@@ -565,6 +565,12 @@ the sources.
   classes, the node's location by its field position and each symbol's name once took about 0.1 s off; taking more off is
   work on the warm-up or on the walk itself. Maximum RSS of one run 4.02 GB -> 5.26 GB resolved (1.31 times, but 3.7 to
   6.1 GB from run to run in 0.7.2: two walks alive at once) and 7.81 GB -> 7.25 GB typed.
+- v0.8 against 0.7.2 the same way (the game with the rules of `id-x-lintrules2`; load average [to measure]), medians: one
+  run [to measure] resolved and [to measure] typed; the second run of a resident server [to measure] resolved and
+  [to measure] typed; maximum RSS of one run [to measure] resolved and [to measure] typed. v0.8 builds the facts from the
+  generic AST (`Flixlint.Rel`) instead of reading the shim's TSV, so `load=` carries building the relations and `judge=`
+  is lighter by the deep tables, which are cheaper to build: `load=` [to measure], `judge=` [to measure]. What is left is
+  the walk of the bodies (Rel's bodyTables, about 0.5 s). The old fact walk and its TSV go in v0.9.
 - Two compiles of the same sources give the same generic relations, byte for byte: the walk numbers variables, regions
   and labels in the order it meets them (`x#0`) and drops the compiler's counter from the names it made (`arg$63098`).
 
@@ -1123,6 +1129,11 @@ spike/                       汎用の AST のスパイク（32caeb9）と、ゲ
   直に読む・節の位置を欄の番号で読む・シンボルの名前を 1 度だけ作る、で削れたのは約 0.1 秒で、さらに削るなら温まるまでか walk
   そのものの直しになる。1 回きりの最大 RSS は resolved 4.02GB → 5.26GB（1.31 倍。ただし 0.7.2 は回ごとに 3.7〜6.1GB 振れる: 2 つの
   walk が同時に生きている）・typed 7.81GB → 7.25GB。
+- v0.8 と 0.7.2 を同じやり方で（ゲームは id-x-lintrules2 の規則で。load average は【測る】）。中央値: 1 回きり resolved
+  【測る】・typed【測る】、常駐の 2 回目 resolved【測る】・typed【測る】、最大 RSS（1 回きり）resolved【測る】・typed【測る】。
+  v0.8 は事実（Facts）を shim の TSV ではなく汎用の AST から作る（`Flixlint.Rel`）ので、`load=` に関係を作る秒が乗り、
+  deep の表を作るのが安くなった分だけ `judge=` が減る: `load=`【測る】・`judge=`【測る】。残る重さは本体の walk（Rel の
+  bodyTables・約 0.5 秒）。旧い事実の walk と TSV は v0.9 で消える。
 - 同じソースを 2 回コンパイルしても、汎用の事実はバイトまで同じ。変数・region・label は walk が出会った順の番号（`x#0`）で書き、
   コンパイラが作った名前の中の通し番号（`arg$63098`）は落とす。
 
