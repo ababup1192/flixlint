@@ -8,6 +8,7 @@
 #   fixture, rules/clean.flix  -> exit 0
 #   fixture, rules/rules.flix --limits limits/*.json -> the ratchet: exit 0 at the count, 1 over or under it, 2 for a limit of no rule
 #   examples/rules.flix        -> exit 1, test/expected-examples.txt (the four rules of examples/README.md)
+#   test/spans, --spans alone  -> exit 0, test/expected-spans-<stage>.txt (the name index: every kind, a receiver known by each way)
 #
 #   FLIX_JAR=/path/to/flix.jar test/run.sh   （FLIX_JAR を渡さなければ bin/flix-jar が解決する）
 set -eu
@@ -51,6 +52,18 @@ LIMITS=limits/at.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-r
 LIMITS=limits/over.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-over.txt
 LIMITS=limits/lower.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-lower.txt
 LIMITS=limits/stale.json lint test/fixture rules/rules.flix 2026-09-19 2 expected-ratchet-stale.txt
+
+# The name index (--spans) alone, without rules: exit 0 and every occurrence where test/expected-spans-<stage>.txt says.
+# WhyNot: the two stages are not compared with each other here. Each run is one stage; the expected files differ only by
+# the typed stage's label-* rows and scrut=, which a reader can check with a diff of the two files.
+spans_out="$root/build/spans/spans-$stage.tsv"
+mkdir -p "$root/build/spans"
+set +e
+(cd "$root/test/spans" && "$lint" --spans "$spans_out" --stage "$stage" --build-dir "$root/build/spans" src) > /dev/null 2> "$root/build/spans.stderr"
+code=$?
+set -e
+[ "$code" = 0 ] || { echo "test/spans: expected exit 0, got $code" >&2; cat "$root/build/spans.stderr" >&2; exit 1; }
+diff "$root/test/expected-spans-$stage.txt" "$spans_out" || { echo "test/spans: the index differs from test/expected-spans-$stage.txt (< expected / > actual)" >&2; exit 1; }
 
 # WhyNot: 呼び方と環境の誤りを exit 2 のままにしない。flix.jar が無くても shim が組めなくても --rules の
 # パスが違っても broken.flix の行が緑になり、「規則が壊れている事」を確かめたつもりの検査が何も確かめない。

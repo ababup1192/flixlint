@@ -3,8 +3,11 @@
 #
 #   flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
 #            [--today YYYY-MM-DD] [--limits FILE.json] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
-#            [--java-opts "..."] SRC...
+#            [--java-opts "..."] [--spans FILE] SRC...
+#   flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] SRC...
 #   flixlint --version
+#
+# --spans FILE also writes the position of every name (README "Spans"); without --rules only that index is written.
 #
 # Exit codes: 0 no violation, 1 violations (or a ratchet off its limit), 2 the rules are wrong (rules.flix does not compile, an allow that matches
 #             nothing, an allowInFile of a file that is not among the sources, a limit for no rule), 3 the sources do not compile,
@@ -40,6 +43,7 @@ stage="typed"
 today=""
 limits=""
 facts_out=""
+spans=""
 build_dir="build/flixlint"
 shim="${FLIXLINT_SHIM:-}"
 java_opts="${FLIXLINT_JAVA_OPTS:--Xss32m -XX:MaxRAMPercentage=35}"
@@ -47,7 +51,7 @@ srcs=()
 
 # WhyNot: 使い方の断りに 1 も 2 も使わない。1 は「違反が在る」、2 は「規則が間違っている」で、CI からは
 # どちらも lint が仕事をした結果に見える。呼び方と環境の誤りは 4 で分ける。
-usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "flixlint: $1" >&2; exit 4; }
 
 while [ $# -gt 0 ]; do
@@ -60,6 +64,7 @@ while [ $# -gt 0 ]; do
         --today) today="$2"; shift 2 ;;
         --limits) limits="$2"; shift 2 ;;
         --facts-out) facts_out="$2"; shift 2 ;;
+        --spans) spans="$2"; shift 2 ;;
         --build-dir) build_dir="$2"; shift 2 ;;
         --shim) shim="$2"; shift 2 ;;
         --java-opts) java_opts="$2"; shift 2 ;;
@@ -73,8 +78,8 @@ done
 # 何も指さなかった時だけ bin/flix-jar の解決に落ちる（FLIX_JAR か --flix-jar が在ればそちらが勝つ）。
 if [ -z "$flix_jar" ] && [ -x "$here/bin/flix-jar" ]; then flix_jar="$("$here/bin/flix-jar" || true)"; fi
 [ -n "$flix_jar" ] && [ -f "$flix_jar" ] || die "--flix-jar JAR (or FLIX_JAR) must point at flix.jar"
-[ -n "$rules" ] || die "--rules PATH/rules.flix is required"
-[ -f "$rules" ] || die "rules file not found: $rules"
+[ -n "$rules" ] || [ -n "$spans" ] || die "--rules PATH/rules.flix is required (or --spans FILE for the index alone)"
+[ -z "$rules" ] || [ -f "$rules" ] || die "rules file not found: $rules"
 [ ${#srcs[@]} -gt 0 ] || die "at least one source directory is required"
 case "$stage" in typed|resolved) ;; *) die "unknown --stage $stage (typed or resolved)" ;; esac
 [ -n "$today" ] || today="$(date +%Y-%m-%d)"
@@ -90,8 +95,10 @@ root_opt=()
 [ -n "$project_root" ] && root_opt=(--project-root "$project_root")
 
 # The module of rules.flix that holds `pub def rules(): Flixlint.RuleSet`: its first `mod` declaration.
-rules_mod="$(grep -m1 -oE '^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+[A-Za-z0-9_.]+' "$rules" | awk '{print $NF}')"
-[ -n "$rules_mod" ] || die "$rules must declare a module (mod MyRules { pub def rules(): Flixlint.RuleSet = ... })"
+if [ -n "$rules" ]; then
+    rules_mod="$(grep -m1 -oE '^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+[A-Za-z0-9_.]+' "$rules" | awk '{print $NF}')"
+    [ -n "$rules_mod" ] || die "$rules must declare a module (mod MyRules { pub def rules(): Flixlint.RuleSet = ... })"
+fi
 
 # ---- 1. the shim (built once, or taken prebuilt from --shim / FLIXLINT_SHIM) ----
 # WhyNot: the built shim does not go under $build_dir by default. It only depends on shim/*.scala and the compiler
@@ -123,7 +130,9 @@ engine="$build_dir/engine"
 rm -rf "$engine/src"; mkdir -p "$engine/src/Flixlint"
 # shellcheck disable=SC2086
 set +e
-java $java_opts -cp "$flix_jar:$shim" flixlint.Facts --out "$facts_out" --names-out "$engine/src/Flixlint/Names.flix" --stage "$stage" "${root_opt[@]}" "${pkgs[@]}" "${jars[@]}" "${srcs[@]}"
+spans_opt=()
+[ -n "$spans" ] && spans_opt=(--spans "$spans")
+java $java_opts -cp "$flix_jar:$shim" flixlint.Facts --out "$facts_out" --names-out "$engine/src/Flixlint/Names.flix" --stage "$stage" "${spans_opt[@]}" "${root_opt[@]}" "${pkgs[@]}" "${jars[@]}" "${srcs[@]}"
 status=$?
 set -e
 if [ "$status" -ne 0 ]; then
@@ -136,6 +145,8 @@ if [ "$status" -ne 0 ]; then
     fi
     exit "$status"
 fi
+# --spans without --rules: the index is what was asked for, and the rule engine has nothing to run.
+[ -n "$rules" ] || exit 0
 
 # ---- 2. the engine: library + Names.flix + rules.flix + main ----
 cp "$here"/src/Flixlint/*.flix "$engine/src/Flixlint/"

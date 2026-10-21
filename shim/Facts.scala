@@ -15,7 +15,7 @@ import scala.jdk.CollectionConverters._
   * `Flixlint/Names.flix`: one Flix enum per kind of name (Fn / Eff / Mod / Case / Enum / Type) with every name the facts mention,
   * so that rules refer to functions, effects and types as enum cases and a stale name fails to compile.
   *
-  * Usage: Facts --out DIR [--names-out FILE] [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]...
+  * Usage: Facts --out DIR [--names-out FILE] [--stage typed|resolved] [--spans FILE (see Spans)] [--pkg FPKG]... [--jar JAR]...
   *               [--project-root DIR] SRC...
   *
   * WhyNot: the walker dispatches on `productPrefix` and reads fields by name instead of pattern matching on the
@@ -62,7 +62,7 @@ object Facts {
   // WhyNot: a crash must not leave exit 1. bin/flixlint reserves 1 for "there are violations", so an
   // uncaught exception here would read to CI as a report of new violations.
   def main(argv: Array[String]): Unit =
-    try run(argv)
+    try { val (spans, rest) = Spans.split(argv); run(rest, spans) }
     catch {
       case e: UsageError =>
         System.err.println(s"flixlint: ${e.getMessage}")
@@ -73,7 +73,7 @@ object Facts {
         sys.exit(4)
     }
 
-  def run(argv: Array[String]): Unit = {
+  def run(argv: Array[String], spans: Option[Path] = None): Unit = {
     val args = parseArgs(argv)
     val t0 = System.nanoTime()
     val deps =
@@ -100,7 +100,7 @@ object Facts {
         val t2 = System.nanoTime()
         errors.foreach(e => System.err.println(e.messageWithLoc(flix.getFormatter)(optRoot)))
         optRoot match {
-          case Some(root) => Typed.emit(root, sink)
+          case Some(root) => Typed.emit(root, sink); spans.foreach(Spans.typed(root, _))
           case None => System.err.println("flixlint: no typed AST (compilation errors above)")
         }
         (errors.length, t2 - t1)
@@ -109,6 +109,7 @@ object Facts {
         val t2 = System.nanoTime()
         errors.foreach(e => System.err.println(e.messageWithLoc(flix.getFormatter)(None)))
         Resolved.emit(root, sink)
+        spans.foreach(Spans.resolved(root, _))
         (errors.length, t2 - t1)
       case other => throw new UsageError(s"unknown --stage $other (typed or resolved)")
     }

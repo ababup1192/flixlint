@@ -119,7 +119,8 @@ the shim runs: the shim runs on the compiler jar's classpath inside `bin/flixlin
 ```
 bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
              [--today YYYY-MM-DD] [--limits FILE.json] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
-             [--java-opts "..."] SRC...
+             [--java-opts "..."] [--spans FILE] SRC...
+bin/flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] SRC...
 bin/flixlint --version
 ```
 
@@ -137,6 +138,7 @@ bin/flixlint --version
 | `--build-dir DIR` | Working directory for the facts and the rule engine (default `build/flixlint`), relative to the current directory. |
 | `--shim JAR` | A prebuilt shim jar, instead of building one with `scala-cli`. `FLIXLINT_SHIM` works too. |
 | `--java-opts "..."` | The JVM options both java steps get (default `-Xss32m -XX:MaxRAMPercentage=35`). `FLIXLINT_JAVA_OPTS` works too. |
+| `--spans FILE` | Also write the position of every name the sources write (see [Spans](#spans)). Without `--rules`, only that index is written. |
 | `--version` | The version in `flix.toml`. |
 | `SRC...` | Source directories or files, relative to the current directory. File paths in violations and in `allowInFile` are relative to that directory too. |
 
@@ -329,6 +331,51 @@ deriving `ToString` on an enum of that size takes the compiler minutes (80 s at 
 the tables from case to name are split into chunks because one list literal of ten thousand tuples is a JVM method too
 large to compile.
 
+## Spans
+
+`--spans FILE` writes, in the same run as the facts, the position of every name the sources write: one line per
+occurrence, for tools that rewrite code (look a name up, then edit exactly those characters). With `--spans` and no
+`--rules`, only this index is written and the rule engine does not run (exit 0, or 3 when the sources do not compile).
+The spans are not facts: the rule engine never reads them and nothing in `Names.flix` comes from them, so a lint does
+not pay for them (they are an order of magnitude more rows than all facts together: 65k at the resolved stage and 85k
+at the typed stage on a 179-file project).
+
+```
+# flixlint-spans 1 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra
+def-use	src/Shapes.flix	23	23	23	27	Shapes.area	Shapes.isRound
+label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	recv=Shapes.World via=decl
+```
+
+The first line is a header with the format version (bumped when a column or a kind changes meaning) and the stage.
+Then tab-separated columns `kind file sl sc el ec sym owner extra`: the start and end line and column are the
+compiler's (1-based, `ec` one past the last character, counted in UTF-16 code units, so a Japanese character counts 1
+and an emoji 2); `owner` is the top-level def the occurrence is in (lambdas and local defs count as the enclosing def);
+`sym` is qualified the way the facts are. Rows are sorted by file and position.
+
+| Kind | Stage | Span | `sym` | `extra` |
+|---|---|---|---|---|
+| `def-decl` | both | the name of a `def` | the def | `pub` when public |
+| `def-use` | both | a call or a reference (`World.moveTo`, or `moveTo` brought in by `use`) | the def | `sugar` when syntax stands for it (below) |
+| `enum-decl` | both | the name of an `enum` | the enum | |
+| `case-decl` | both | a case of it (`owner` is the enum) | the case | |
+| `case-construct` / `case-pattern` | both | a case built in an expression / matched in a pattern | the case | `sugar` (below) |
+| `match-site` | both | the whole `match` expression | empty | `arms=N wild=N var=N guard=N enum=E`; the typed stage adds `scrut=T` |
+| `label-select` | typed | `x` in `e#x` | the label | `recv=A via=V` (below) |
+| `label-update` | typed | `x` in `{ x = v \| e }` (a bare `{ +x = v \| e }` is not one) | the label | `recv=A via=V` |
+
+- `match-site`: `wild` and `var` count the arms whose top-level pattern is `_` / a variable, `guard` the arms with an
+  `if`; `enum` is the enum of the first top-level case pattern (`-` when there is none, e.g. a match on a tuple);
+  `scrut` is the head of the scrutinee's type.
+- `sugar`: the span is not the written name but syntax that stands for it. `a :: b` builds `List.Cons` and its span is
+  the whole expression; `a % b` calls `Int32.remainder`; `Vector#{...}` calls `Vector.toList`. A rewrite leaves these alone.
+- `recv=A via=V` names the type alias the receiver `e` is declared with. Inference expands aliases, so it is read where
+  a type was written: `via=decl` a parameter, an ascribed `let`, an ascription, or the return type of the def called;
+  `via=row` the receiver's closed record type has exactly the fields of one alias (`recv=A|B via=ambiguous` when
+  several aliases have them); `recv=? via=open` an open row (row polymorphism); `recv=? via=none` anything else.
+- An occurrence is written once per kind, place and symbol (the desugarer walks some expressions twice).
+- The resolved and the typed stage write the same rows for every kind they share (on a 179-file project: 65,443 rows,
+  identical); the typed stage adds the `label-*` rows and `scrut=`. `test/expected-spans-<stage>.txt` holds both.
+
 ## Layout
 
 ```
@@ -339,6 +386,7 @@ Makefile                     test / test-resolved / shim / clean / release
 bin/flixlint                 the command: shim -> facts + Flixlint/Names.flix, engine jar -> violations
 bin/flix-jar                 where the compiler jar is, when neither --flix-jar nor FLIX_JAR says
 shim/Facts.scala             AST -> TSV facts and Flixlint/Names.flix (typed stage, and the resolved stage that stops before the typer)
+shim/Spans.scala             --spans: AST -> the position of every name (README "Spans"), kept out of the facts
 src/Flixlint.flix            what a rule file uses: the family records and builders, transitivelyIn / allowIn / allowInFile / allowUntil, ruleSet
 src/Flixlint/Facts.flix      the facts loaded from the TSV, and the lookups custom rules use
 src/Flixlint/Engine.flix     the judgments, the allows, the report and the exit code
@@ -347,6 +395,7 @@ src/Flixlint/Glob.flix       the glob of `files`
 src/Flixlint/Ratchet.flix    `--limits`: rules judged by their count against a limits file
 examples/                    a six-file project and four rules, small enough to read in a minute
 test/fixture/                a 7-file project that violates every family and three custom rules; test/run.sh checks the report
+test/spans/                  a 1-file project for --spans; test/run.sh compares its index with test/expected-spans-<stage>.txt
 test/expected*.txt           the reports both of them must produce
 ```
 
@@ -495,7 +544,8 @@ shim は `bin/flixlint` の中で、コンパイラの jar の classpath の上�
 ```
 bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
              [--today YYYY-MM-DD] [--limits FILE.json] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
-             [--java-opts "..."] SRC...
+             [--java-opts "..."] [--spans FILE] SRC...
+bin/flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] SRC...
 bin/flixlint --version
 ```
 
@@ -513,6 +563,7 @@ bin/flixlint --version
 | `--build-dir DIR` | facts と rule engine の作業場所（既定は `build/flixlint`。カレントディレクトリからの相対） |
 | `--shim JAR` | `scala-cli` で組む代わりに、組んである shim の jar を渡す。`FLIXLINT_SHIM` でも良い |
 | `--java-opts "..."` | 2 つの java の段に渡す JVM のオプション（既定は `-Xss32m -XX:MaxRAMPercentage=35`）。`FLIXLINT_JAVA_OPTS` でも良い |
+| `--spans FILE` | ソースに書かれた名前の位置も書く（[spans（名前の位置）](#spans名前の位置)）。`--rules` が無ければその索引だけを書く |
 | `--version` | `flix.toml` の版 |
 | `SRC...` | ソースのディレクトリかファイル（カレントディレクトリからの相対）。違反と `allowInFile` のパスも同じ起点 |
 
@@ -704,6 +755,48 @@ rule も書ける。227 ファイルのプロジェクトで `Fn` の case は 1
 ため（3,000 case で 80 秒、無しなら 6 秒）。case から名前への表を塊に割っているのは、1 万組の list literal 1 つが
 JVM のメソッドとして大きすぎてコンパイルできないため。
 
+## spans（名前の位置）
+
+`--spans FILE` は facts と同じ走行で、ソースに書かれた名前の位置を 1 出現 1 行で書く。コードを書き換える道具が
+名前を引き、ちょうどその字を書き換えるための物。`--spans` だけで `--rules` が無ければ、この索引だけを書いて規則の
+エンジンは流さない（終了コードは 0、ソースがコンパイルできなければ 3）。spans は facts ではない。規則のエンジンは
+読まず、`Names.flix` にも入らないので、lint の時間は増えない（行の数は facts 全部より 1 桁多い。179 ファイルの
+プロジェクトで resolved の段 6.5 万行・typed の段 8.5 万行）。
+
+```
+# flixlint-spans 1 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra
+def-use	src/Shapes.flix	23	23	23	27	Shapes.area	Shapes.isRound
+label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	recv=Shapes.World via=decl
+```
+
+1 行目は頭の行で、形の版（列か種類の意味が変わると上がる）と段を持つ。続く行はタブ区切りの
+`kind file sl sc el ec sym owner extra`。始まりと終わりの行・列はコンパイラの数え方（1 から・`ec` は最後の字の次・
+UTF-16 の単位なので日本語の字は 1、絵文字は 2）。`owner` はその出現を囲む top-level の def（lambda と局所の def は
+囲む def に数える）。`sym` は facts と同じ qualified な名前。行はファイルと位置の順に並ぶ。
+
+| kind | 段 | 範囲 | `sym` | `extra` |
+|---|---|---|---|---|
+| `def-decl` | 両方 | `def` の名前 | その def | 公開なら `pub` |
+| `def-use` | 両方 | 呼び出しか参照（`World.moveTo`、`use` で入れた素の `moveTo`） | その def | 構文が指す時は `sugar`（下） |
+| `enum-decl` | 両方 | `enum` の名前 | その enum | |
+| `case-decl` | 両方 | その case（`owner` は enum） | その case | |
+| `case-construct` / `case-pattern` | 両方 | 式で作る case / 型で当てる case | その case | `sugar`（下） |
+| `match-site` | 両方 | `match` の式全体 | 空 | `arms=N wild=N var=N guard=N enum=E`。typed の段は `scrut=T` を足す |
+| `label-select` | typed | `e#x` の `x` | 欄の名前 | `recv=A via=V`（下） |
+| `label-update` | typed | `{ x = v \| e }` の `x`（`{ +x = v \| e }` は足すだけなので入らない） | 欄の名前 | `recv=A via=V` |
+
+- `match-site`: `wild`・`var` は一番上の型が `_`・変数の腕の数、`guard` は `if` つきの腕の数。`enum` は一番上の
+  型の最初の case の enum（無ければ `-`。tuple への match など）。`scrut` は match する値の型の頭。
+- `sugar`: 範囲が書かれた名前でなく、それを指す構文。`a :: b` は `List.Cons` を作り範囲は式全体、`a % b` は
+  `Int32.remainder`、`Vector#{...}` は `Vector.toList`。書き換えはこれに触らない。
+- `recv=A via=V` は受け手 `e` を宣言した型 alias。推論は alias を開くので、型を書いた所から読む: `via=decl` は
+  引数・型を書いた `let`・型の注記・呼んだ def の戻りの型、`via=row` は受け手の閉じた record の欄の組が 1 つの
+  alias と同じ（同じ組の alias が複数なら `recv=A|B via=ambiguous`）、`recv=? via=open` は開いた row（row 多相）、
+  `recv=? via=none` はそれ以外。
+- 1 出現は種類・場所・名前ごとに 1 行（desugar が同じ式を 2 度通る事がある）。
+- resolved と typed の段は、共通の種類で同じ行を書く（179 ファイルのプロジェクトで 65,443 行が一致）。typed の段は
+  `label-*` の行と `scrut=` を足す。両方の期待は `test/expected-spans-<段>.txt`。
+
 ## ファイル構成
 
 ```
@@ -714,6 +807,7 @@ Makefile                     test / test-resolved / shim / clean / release
 bin/flixlint                 コマンド本体: shim -> facts + Flixlint/Names.flix、エンジンの jar -> 違反
 bin/flix-jar                 --flix-jar も FLIX_JAR も無い時の、コンパイラの jar の在り処
 shim/Facts.scala             AST -> TSV の facts と Flixlint/Names.flix（typed の段と、typer の手前で止まる resolved の段）
+shim/Spans.scala             --spans: AST -> 名前の位置の索引（「spans（名前の位置）」）。facts には入れない
 src/Flixlint.flix            rule のファイルが使う物: family の record と builder、transitivelyIn / allowIn / allowInFile / allowUntil、ruleSet
 src/Flixlint/Facts.flix      TSV から読んだ facts と、custom rule が使う引く関数
 src/Flixlint/Engine.flix     判定・allow・報告・exit code
@@ -722,6 +816,7 @@ src/Flixlint/Glob.flix       `files` の glob
 src/Flixlint/Ratchet.flix    `--limits`: 上限のファイルと数で判じる rule
 examples/                    6 ファイルのプロジェクトと 4 つの rule。1 分で読める大きさ
 test/fixture/                全 family と 3 つの custom rule に違反する 7 ファイルのプロジェクト。報告を test/run.sh が確かめる
+test/spans/                  --spans の 1 ファイルのプロジェクト。索引を test/run.sh が test/expected-spans-<段>.txt と突き合わせる
 test/expected*.txt           その 2 つが出さなければならない報告
 ```
 
