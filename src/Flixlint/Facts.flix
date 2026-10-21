@@ -92,7 +92,7 @@ pub mod Flixlint.Facts {
         tagArgs = List[TagArg],
         argTypes = List[ArgType],
         argTypesAll = List[ArgType],
-        argTypesDeep = List[ArgType],
+        argTypesDeep = Lazy[List[ArgType]],
         caseTypes = List[CaseType],
         caseTypesAll = List[CaseType],
         caseTypesDeep = List[CaseType],
@@ -104,10 +104,10 @@ pub mod Flixlint.Facts {
         effectOf = Map[Fn, Set[Eff]],
         argTypesOf = Map[Fn, List[ArgType]],
         argTypesAllOf = Map[Fn, List[ArgType]],
-        argTypesDeepOf = Map[Fn, List[ArgType]],
+        argTypesDeepOf = Lazy[Map[Fn, List[ArgType]]],
         retTypeOf = Map[Fn, Type],
         retTypesAllOf = Map[Fn, Set[Type]],
-        retTypesDeepOf = Map[Fn, Set[Type]],
+        retTypesDeepOf = Lazy[Map[Fn, Set[Type]]],
         aliasTypesAllOf = Map[Type, Set[Type]],
         strLitsOf = Map[Fn, List[String]],
         effAliases = Map[Eff, Set[Eff]],
@@ -135,7 +135,7 @@ pub mod Flixlint.Facts {
     pub def tagArgs(facts: Facts): List[TagArg] = data(facts)#tagArgs
     pub def argTypes(facts: Facts): List[ArgType] = data(facts)#argTypes
     pub def argTypesAll(facts: Facts): List[ArgType] = data(facts)#argTypesAll
-    pub def argTypesDeep(facts: Facts): List[ArgType] = data(facts)#argTypesDeep
+    pub def argTypesDeep(facts: Facts): List[ArgType] = force data(facts)#argTypesDeep
     pub def caseTypes(facts: Facts): List[CaseType] = data(facts)#caseTypes
     pub def caseTypesAll(facts: Facts): List[CaseType] = data(facts)#caseTypesAll
     pub def caseTypesDeep(facts: Facts): List[CaseType] = data(facts)#caseTypesDeep
@@ -175,10 +175,10 @@ pub mod Flixlint.Facts {
     pub def retTypesAllOf(facts: Facts, fn: Fn): Set[Type] = Map.getWithDefault(fn, Set.empty(), data(facts)#retTypesAllOf)
 
     /// Every type constructor in the parameters of `fn`, with type aliases opened at any depth.
-    pub def argTypesDeepOf(facts: Facts, fn: Fn): List[ArgType] = Map.getWithDefault(fn, Nil, data(facts)#argTypesDeepOf)
+    pub def argTypesDeepOf(facts: Facts, fn: Fn): List[ArgType] = Map.getWithDefault(fn, Nil, force data(facts)#argTypesDeepOf)
 
     /// Every type constructor in the return type of `fn`, with type aliases opened at any depth.
-    pub def retTypesDeepOf(facts: Facts, fn: Fn): Set[Type] = Map.getWithDefault(fn, Set.empty(), data(facts)#retTypesDeepOf)
+    pub def retTypesDeepOf(facts: Facts, fn: Fn): Set[Type] = Map.getWithDefault(fn, Set.empty(), force data(facts)#retTypesDeepOf)
 
     /// Every type constructor a type alias stands for, nested ones included (aliases inside it by their own name).
     pub def aliasTypesAllOf(facts: Facts, aliasType: Type): Set[Type] = Map.getWithDefault(aliasType, Set.empty(), data(facts)#aliasTypesAllOf)
@@ -298,10 +298,10 @@ pub mod Flixlint.Facts {
             effectOf = setsBy(effectRows),
             argTypesOf = grouped(a -> a#fn, types#argTypes |> List.sortBy(a -> (a#fn, a#index))),
             argTypesAllOf = grouped(a -> a#fn, types#argTypesAll |> List.sortBy(a -> (a#fn, a#index))),
-            argTypesDeepOf = grouped(a -> a#fn, types#argTypesDeep |> List.sortBy(a -> (a#fn, a#index))),
+            argTypesDeepOf = lazy grouped(a -> a#fn, force types#argTypesDeep |> List.sortBy(a -> (a#fn, a#index))),
             retTypeOf = List.toMap(types#retTypes),
             retTypesAllOf = setsBy(types#retTypesAll),
-            retTypesDeepOf = setsBy(types#retTypesDeep),
+            retTypesDeepOf = lazy setsBy(force types#retTypesDeep),
             aliasTypesAllOf = aliasTypesAll,
             strLitsOf = grouped(s -> s#fn, strLits |> List.sortBy(s -> (s#fn, s#line))) |> Map.map(List.map(s -> s#text)),
             effAliases = setsBy(aliasRows),
@@ -328,24 +328,29 @@ pub mod Flixlint.Facts {
 
     /// The type relations read by `loadTypes`.
     type alias TypeRows = {
-        argTypes = List[ArgType], argTypesAll = List[ArgType], argTypesDeep = List[ArgType],
-        retTypes = List[(Fn, Type)], retTypesAll = List[(Fn, Type)], retTypesDeep = List[(Fn, Type)],
+        argTypes = List[ArgType], argTypesAll = List[ArgType], argTypesDeep = Lazy[List[ArgType]],
+        retTypes = List[(Fn, Type)], retTypesAll = List[(Fn, Type)], retTypesDeep = Lazy[List[(Fn, Type)]],
         caseTypes = List[CaseType], caseTypesAll = List[CaseType], caseTypesDeep = List[CaseType]
     }
 
     /// The types of parameters, return values and case fields: the head one, all of them, and through aliases.
     /// WhyNot: not inline in `load`. The JVM caps a method at 64 KB, and `load` reaches it as relations are added
     /// (on a project with ten thousand names the compiler would inline these back into `load`, hence @DontInline).
+    /// WhyNot: the Deep rows of parameters and return values are not parsed here. They are most of the facts (every
+    /// alias opened at every depth) and only a custom rule reads them, so they are parsed when one first does.
     @DontInline
     def loadTypes(dir: String, fnOf: String -> Option[Fn], typeOf: String -> Option[Type],
                   enumOf: String -> Option[Enum], caseOf: String -> Option[Case]): TypeRows \ FileRead =
-        let argTypeRows = rel -> rows(dir, rel) |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); t <- typeOf(col(2, c))) yield { fn = fn, index = int(1, c), tycon = t });
-        let argTypes = argTypeRows("arg_type");
-        let argTypesAll = argTypeRows("arg_type_all");
-        let argTypesDeep = argTypeRows("arg_type_deep");
-        let retTypes = rows(dir, "ret_type") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); t <- typeOf(col(1, c))) yield (fn, t));
-        let retTypesAll = rows(dir, "ret_type_all") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); t <- typeOf(col(1, c))) yield (fn, t));
-        let retTypesDeep = rows(dir, "ret_type_deep") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); t <- typeOf(col(1, c))) yield (fn, t));
+        let argType = c -> forM (fn <- fnOf(col(0, c)); t <- typeOf(col(2, c))) yield { fn = fn, index = int(1, c), tycon = t };
+        let retType = c -> forM (fn <- fnOf(col(0, c)); t <- typeOf(col(1, c))) yield (fn, t);
+        let argTypes = rows(dir, "arg_type") |> List.filterMap(argType);
+        let argTypesAll = rows(dir, "arg_type_all") |> List.filterMap(argType);
+        let argDeepLines = lines(dir, "arg_type_deep");
+        let argTypesDeep = lazy (cells(argDeepLines) |> List.filterMap(argType));
+        let retTypes = rows(dir, "ret_type") |> List.filterMap(retType);
+        let retTypesAll = rows(dir, "ret_type_all") |> List.filterMap(retType);
+        let retDeepLines = lines(dir, "ret_type_deep");
+        let retTypesDeep = lazy (cells(retDeepLines) |> List.filterMap(retType));
         let caseTypeRows = rel -> rows(dir, rel) |> List.filterMap(c -> forM (e <- enumOf(col(0, c)); k <- caseOf(col(1, c)); t <- typeOf(col(3, c))) yield { ofEnum = e, constructor = k, index = int(2, c), tycon = t });
         let caseTypes = caseTypeRows("case_type");
         let caseTypesAll = caseTypeRows("case_type_all");
@@ -388,11 +393,18 @@ pub mod Flixlint.Facts {
         List.foldLeft((m, p) -> Map.insertWith((newer, older) -> Set.union(newer, older), fst(p), Set#{snd(p)}, m), Map.empty(), pairs)
 
     /// A missing file is an empty relation (the shim writes a file only when the relation has a row).
-    def rows(dir: String, rel: String): List[Vector[String]] \ FileRead =
+    def rows(dir: String, rel: String): List[Vector[String]] \ FileRead = cells(lines(dir, rel))
+
+    /// The non-empty lines of a relation's file. A missing file is an empty relation.
+    def lines(dir: String, rel: String): List[String] \ FileRead =
         match Fs.FileRead.readLines("${dir}/${rel}.tsv") {
-            case Ok(lines) => lines |> List.filter(l -> not String.isEmpty(l)) |> List.map(l -> String.splitOn(substr = "\t", l) |> List.toVector)
+            case Ok(ls) => List.filter(l -> not String.isEmpty(l), ls)
             case Err(_) => Nil
         }
+
+    /// The columns of each line.
+    def cells(ls: List[String]): List[Vector[String]] =
+        List.map(l -> String.splitOn(substr = "\t", l) |> List.toVector, ls)
 
     def col(i: Int32, c: Vector[String]): String = Vector.get(i, c)
 

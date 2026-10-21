@@ -6,6 +6,7 @@
 #   fixture, rules/broken.flix -> exit 2 (a name the sources do not have: the rules do not compile)
 #   a wrong call or environment -> exit 4, so that the 2 above can only mean "the rules are wrong"
 #   fixture, rules/clean.flix  -> exit 0
+#   fixture, rules/deep.flix   -> exit 1, test/expected-deep.txt (a custom rule on the Deep type relations, parsed only when read)
 #   fixture, rules/rules.flix --limits limits/*.json -> the ratchet: exit 0 at the count, 1 over or under it, 2 for a limit of no rule
 #   examples/rules.flix        -> exit 1, test/expected-examples.txt (the four rules of examples/README.md)
 #   test/spans, --spans alone  -> exit 0, test/expected-spans-<stage>.txt (the name index: every kind, a receiver known by each way)
@@ -44,6 +45,7 @@ lint test/fixture rules/rules.flix 2025-12-31 1 expected-before-expiry.txt
 lint test/fixture rules/stale.flix 2026-09-19 2 expected-stale.txt
 lint test/fixture rules/broken.flix 2026-09-19 2
 lint test/fixture rules/clean.flix 2026-09-19 0
+lint test/fixture rules/deep.flix 2026-09-19 1 expected-deep.txt
 lint examples rules.flix 2026-09-19 1 expected-examples.txt
 
 # The ratchet: the same rules judged by count against limits/*.json (at the count: silent; over: listed; under:

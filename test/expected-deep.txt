@@ -1,0 +1,6 @@
+src/domain/Billing.flix:3: int64-under-alias: Billing.centsOf: returns Int64 through an alias
+    a number behind an alias is read through the alias's own functions
+    fix it, or add |> allowIn(Fn.Billing_centsOf, "reason") to rule int64-under-alias
+src/domain/Billing.flix:3: int64-under-alias: Billing.centsOf: takes Int64 through an alias
+    a number behind an alias is read through the alias's own functions
+    fix it, or add |> allowIn(Fn.Billing_centsOf, "reason") to rule int64-under-alias
