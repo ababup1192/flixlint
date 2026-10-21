@@ -12,14 +12,15 @@ pub mod Flixlint.Engine {
     use Flixlint.Facts.{Facts, Call}
     use Flixlint.Violation.Violation
     use Fs.FileRead.FileRead
+    use Fs.DirList.DirList
     use Sys.Env.Env
     use Sys.Exit.Exit
 
     /// The entry point of the generated engine `main`: the facts directory and today's date come from the environment.
     pub def lint(rules: RuleSet): Unit \ IO =
-        Sys.Exit.runWithIO(() -> Sys.Env.runWithIO(() -> Fs.FileRead.runWithIO(() -> lint0(rules))))
+        Sys.Exit.runWithIO(() -> Sys.Env.runWithIO(() -> Fs.FileRead.runWithIO(() -> Fs.DirList.runWithIO(() -> lint0(rules)))))
 
-    def lint0(rules: RuleSet): Unit \ IO + Env + FileRead + Exit =
+    def lint0(rules: RuleSet): Unit \ IO + Env + FileRead + DirList + Exit =
         let factsDir = Sys.Env.getVar("FLIXLINT_FACTS") |> Option.getWithDefault("build/flixlint/facts");
         let today = Sys.Env.getVar("FLIXLINT_TODAY") |> Option.getWithDefault("0000-00-00");
         let facts = Flixlint.Facts.load(factsDir);
@@ -27,9 +28,8 @@ pub mod Flixlint.Engine {
         let outcome = match Sys.Env.getVar("FLIXLINT_LIMITS") |> Option.filter(p -> not String.isEmpty(p)) {
             case None => { violations = judged, failures = Nil, hints = Nil, errors = Nil }
             case Some(path) =>
-                let read = Fs.FileRead.read(path) |> Result.mapErr(_ -> "${path}: cannot be read");
-                match Result.flatMap(Flixlint.Ratchet.parse(path), read) {
-                    case Ok(limits) => Flixlint.Ratchet.apply(path, limits, ruleIds(rules), judged) |> againstBase(path, limits)
+                match Flixlint.Ratchet.read(path) {
+                    case Ok(limits) => Flixlint.Ratchet.apply(limits, ruleIds(rules), judged) |> againstBase(limits)
                     case Err(e) => { violations = judged, failures = Nil, hints = Nil, errors = List#{"flixlint: ${e}"} }
                 }
         };
@@ -45,14 +45,13 @@ pub mod Flixlint.Engine {
 
     /// The ratchet's outcome with the limits checked against the base limits (`FLIXLINT_LIMITS_BASE`, given by
     /// `--limits-base`): a limit may not go up without a reason. Without a base the outcome is as it was.
-    def againstBase(path: String, limits: List[Flixlint.Ratchet.Limit], outcome: Flixlint.Ratchet.Outcome): Flixlint.Ratchet.Outcome \ Env + FileRead =
+    def againstBase(limits: List[Flixlint.Ratchet.Limit], outcome: Flixlint.Ratchet.Outcome): Flixlint.Ratchet.Outcome \ Env + FileRead + DirList =
         match Sys.Env.getVar("FLIXLINT_LIMITS_BASE") |> Option.filter(p -> not String.isEmpty(p)) {
             case None => outcome
             case Some(basePath) =>
-                let read = Fs.FileRead.read(basePath) |> Result.mapErr(_ -> "${basePath}: cannot be read");
-                match Result.flatMap(Flixlint.Ratchet.parse(basePath), read) {
+                match Flixlint.Ratchet.read(basePath) {
                     case Ok(base) =>
-                        let (failures, hints) = Flixlint.Ratchet.raised(path, basePath, limits, base);
+                        let (failures, hints) = Flixlint.Ratchet.raised(basePath, limits, base);
                         { failures = outcome#failures ::: failures, hints = outcome#hints ::: hints | outcome }
                     case Err(e) => { errors = outcome#errors ::: List#{"flixlint: ${e}"} | outcome }
                 }

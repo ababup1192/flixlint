@@ -1,1 +1,1 @@
-flixlint: ratchet clock: limits/base-forbidden.json has no limit for it (forbidden, or a new rule), and limits/at.json allows 4; remove the line to forbid it, or write it as { "limit": 4, "raiseReason": "why" }
+flixlint: ratchet clock: limits/base-forbidden.json has no limit for it (forbidden, or a new rule), and limits/at.json allows 4; remove it to forbid the rule, or write it as { "limit": 4, "raiseReason": "why" }
