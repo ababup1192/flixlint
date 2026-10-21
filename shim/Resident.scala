@@ -276,7 +276,8 @@ object Resident {
       val built = Files.readString(dir.resolve("built-hash")).trim
       val copy = dir.resolve("resident").resolve(s"engine-$built.jar")
       val loader = engineAt match {
-        case Some((p, h, l)) if p == jar && h == built => l
+        // The copy is checked too: the build directory may have been removed (make clean) while the server ran.
+        case Some((p, h, l)) if p == jar && h == built && Files.isRegularFile(copy) => l
         case other =>
           other.foreach { case (_, h, l) => l.close(); Files.deleteIfExists(dir.resolve("resident").resolve(s"engine-$h.jar")) }
           Files.createDirectories(copy.getParent)
