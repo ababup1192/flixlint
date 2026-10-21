@@ -1,4 +1,4 @@
-.PHONY: test test-resolved shim clean release
+.PHONY: test test-resolved shim clean release ast-kinds
 
 # test/fixture と examples に flixlint を掛けて、報告を test/expected*.txt と突き合わせる。
 # 型検査もここで一緒に済む: 規則のエンジン（src/Flixlint*.flix）は生成物の Names.flix が揃って初めて
@@ -14,6 +14,11 @@ test-resolved:
 # 出来る jar は flixlint のクラスだけで、コンパイラの内部 AST に対して組むので Flix のバージョンに紐づく。
 shim:
 	devbox run -- scala-cli --power package shim --jar "$$(bin/flix-jar)" --library -o build/flixlint-shim.jar -f
+
+# 汎用の AST の語彙（Kind・Slot・Attr）をコンパイラの jar から作る: schema/ast_schema.tsv と src/Flixlint/AstKinds.flix。
+# Flix の版を上げた時に流し、出来た 2 つはリポに置く（実行のたびには作らない）。
+ast-kinds: shim
+	java -cp "$$(bin/flix-jar):build/flixlint-shim.jar" flixlint.AstSchema --schema schema/ast_schema.tsv --kinds src/Flixlint/AstKinds.flix
 
 clean:
 	rm -rf build shim/.scala-build

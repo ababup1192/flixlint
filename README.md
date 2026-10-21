@@ -390,22 +390,29 @@ and an emoji 2); `owner` is the top-level def the occurrence is in (lambdas and 
 flix.toml                    the package metadata (version, repository, the Flix version the shim is compiled against)
 LICENSE.md                   Apache-2.0
 .github/workflows/ci.yml     make test and make test-resolved on the Flix release jar
-Makefile                     test / test-resolved / shim / clean / release
+Makefile                     test / test-resolved / shim / ast-kinds / clean / release
 bin/flixlint                 the command: shim -> facts + Flixlint/Names.flix, engine jar -> violations
 bin/flix-jar                 where the compiler jar is, when neither --flix-jar nor FLIX_JAR says
 shim/Facts.scala             AST -> TSV facts and Flixlint/Names.flix (typed stage, and the resolved stage that stops before the typer)
 shim/Spans.scala             --spans: AST -> the position of every name (README "Spans"), kept out of the facts
 shim/Lint.scala              the facts, then the built engine jar in the same JVM
+shim/Generic.scala           (v0.7, in progress) AST -> the generic columns (kind, parent), numbered by the ast_schema
+shim/AstSchema.scala         make ast-kinds: the compiler jar -> schema/ast_schema.tsv and src/Flixlint/AstKinds.flix
+schema/ast_schema.tsv        every field of every node class of both stages (stage, kind, slot, field type); generated
 src/Flixlint.flix            what a rule file uses: the family records and builders, transitivelyIn / allowIn / allowInFile / allowUntil, ruleSet
 src/Flixlint/Facts.flix      the facts loaded from the TSV, and the lookups custom rules use
 src/Flixlint/Engine.flix     the judgments, the allows, the report and the exit code
 src/Flixlint/Violation.flix  the violation record and how it is rendered
 src/Flixlint/Glob.flix       the glob of `files`
 src/Flixlint/Ratchet.flix    `--limits`: rules judged by their count against a limits file
+src/Flixlint/Ast.flix        (v0.7, in progress) the generic columns loaded: the nodes of a kind, the parent of a node
+src/Flixlint/AstKinds.flix   the generated Kind / Slot / Attr enums, their numbers and the schema hash (do not edit)
 examples/                    a six-file project and four rules, small enough to read in a minute
 test/fixture/                a 7-file project that violates every family and three custom rules; test/run.sh checks the report
 test/spans/                  a 1-file project for --spans; test/run.sh compares its index with test/expected-spans-<stage>.txt
 test/expected*.txt           the reports both of them must produce
+test/generic/Main.flix       checks that the kind numbers of the fixture's columns name the same kinds as AstKinds.flix
+spike/                       the spike of the generic AST (32caeb9), kept to check the rewrite against; not compiled
 ```
 
 `make test` runs the test (`make test-resolved`, or `FLIXLINT_STAGE=resolved test/run.sh`, runs it at the resolved
@@ -427,6 +434,12 @@ the sources.
 - The shim depends on the compiler's internal AST (`ca.uwaterloo.flix.language.ast.*`) and on two private members of
   `Flix` for the resolved stage. A compiler upgrade is a change to `shim/Facts.scala` only; the rules and the TSV
   contract do not move.
+- Loading the generic AST columns (v0.7, `flixlint.Generic` and `Flixlint.Ast`): on the game internet_dungeon, typed stage
+  (334,019 nodes, the `kind` and `parent` columns = 668,038 Int32), `load=` over 5 runs on a Mac mini (M4 Pro, Mac16,11) was
+  15, 15, 11, 14, 12 ms, median 14 ms, which is 0.021 s per 1M Int32 (the load also checks the schema hash). All the
+  columns of the design (about 8M Int32) would take about 0.17 s, under the 1.0 s bound, so the columns are kept as
+  `Vector[Int32]`. Flix specialises `Array.toVector` on `Int32` to `int[]`, so the values are not boxed and the load
+  copies once. Measured with `spike/load-bench/run.sh PROJECT typed`.
 
 ## License
 
@@ -819,22 +832,29 @@ UTF-16 の単位なので日本語の字は 1、絵文字は 2）。`owner` は�
 flix.toml                    パッケージの情報（版・リポジトリ・shim を組む対象の Flix の版）
 LICENSE.md                   Apache-2.0
 .github/workflows/ci.yml     Flix の release の jar で make test と make test-resolved
-Makefile                     test / test-resolved / shim / clean / release
+Makefile                     test / test-resolved / shim / ast-kinds / clean / release
 bin/flixlint                 コマンド本体: shim -> facts + Flixlint/Names.flix、エンジンの jar -> 違反
 bin/flix-jar                 --flix-jar も FLIX_JAR も無い時の、コンパイラの jar の在り処
 shim/Facts.scala             AST -> TSV の facts と Flixlint/Names.flix（typed の段と、typer の手前で止まる resolved の段）
 shim/Spans.scala             --spans: AST -> 名前の位置の索引（「spans（名前の位置）」）。facts には入れない
 shim/Lint.scala              facts を書き、組んであるエンジンの jar を同じ JVM で流す
+shim/Generic.scala           （v0.7・作りかけ）AST -> 汎用の列（kind・parent）。番号は ast_schema の物
+shim/AstSchema.scala         make ast-kinds: コンパイラの jar -> schema/ast_schema.tsv と src/Flixlint/AstKinds.flix
+schema/ast_schema.tsv        両段の全部の節のクラスの全部の欄（段・kind・欄・欄の型）。生成物
 src/Flixlint.flix            rule のファイルが使う物: family の record と builder、transitivelyIn / allowIn / allowInFile / allowUntil、ruleSet
 src/Flixlint/Facts.flix      TSV から読んだ facts と、custom rule が使う引く関数
 src/Flixlint/Engine.flix     判定・allow・報告・exit code
 src/Flixlint/Violation.flix  違反の record と、その出し方
 src/Flixlint/Glob.flix       `files` の glob
 src/Flixlint/Ratchet.flix    `--limits`: 上限のファイルと数で判じる rule
+src/Flixlint/Ast.flix        （v0.7・作りかけ）汎用の列の読み込み: kind ごとの節・節の親
+src/Flixlint/AstKinds.flix   生成した Kind・Slot・Attr の enum と番号と schema の hash（手で直さない）
 examples/                    6 ファイルのプロジェクトと 4 つの rule。1 分で読める大きさ
 test/fixture/                全 family と 3 つの custom rule に違反する 7 ファイルのプロジェクト。報告を test/run.sh が確かめる
 test/spans/                  --spans の 1 ファイルのプロジェクト。索引を test/run.sh が test/expected-spans-<段>.txt と突き合わせる
 test/expected*.txt           その 2 つが出さなければならない報告
+test/generic/Main.flix       fixture の列の kind の番号が AstKinds.flix と同じ kind を指す事を確かめる
+spike/                       汎用の AST のスパイク（32caeb9）。作り替えの答え合わせに置く。コンパイルしない
 ```
 
 テストを回すのは `make test`（`make test-resolved`、または `FLIXLINT_STAGE=resolved test/run.sh` が resolved の
@@ -858,6 +878,11 @@ test/expected*.txt           その 2 つが出さなければならない報告
 - shim はコンパイラの内部 AST（`ca.uwaterloo.flix.language.ast.*`）と、resolved の段のために `Flix` の
   private な 2 つのメンバに依存している。コンパイラを上げる時に直すのは `shim/Facts.scala` だけで、rule と
   TSV の取り決めは動かない
+- 汎用の AST の列の読み込み（v0.7・`flixlint.Generic` と `Flixlint.Ast`）: ゲーム internet_dungeon の typed の段
+  （334,019 節・`kind` と `parent` の 2 列 = 668,038 個の Int32）で、Mac mini（M4 Pro・Mac16,11）で 5 回流した `load=` は
+  15・15・11・14・12 ms、中央値 14 ms。1M 個あたり 0.021 秒（schema の hash の確かめを含む）。設計の全部の列
+  （約 8M 個）でも約 0.17 秒で 1.0 秒に届かないので、列は `Vector[Int32]` で持つ。Flix は `Int32` の `Array.toVector`
+  を `int[]` に作り分けるので、値は箱詰めされず、読み込みの写しは 1 回。測り方は `spike/load-bench/run.sh PROJECT typed`
 
 ## ライセンス
 
