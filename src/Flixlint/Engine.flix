@@ -139,11 +139,12 @@ pub mod Flixlint.Engine {
             |> List.map(a -> Flixlint.Violation.inBody(facts, r#id, a#caller, a#line,
                 "calls ${Flixlint.Facts.fnName(facts, a#callee)} with \"${a#text}\"", r#reason))
 
-    /// CaseTypeAll(ofEnum, case, argType), nested type constructors included; reported at the enum's declaration,
+    /// CaseTypeDeep(ofEnum, case, argType), nested type constructors and what type aliases stand for included (a field
+    /// typed `Keys` with `type alias Keys = List[ColumnName]` takes `ColumnName`); reported at the enum's declaration,
     /// so only `allowInFile` can allow it.
     def caseArgTypeRule(facts: Facts, r: DisallowedCaseArgType): List[Violation] =
         let declared = Flixlint.Facts.enums(facts) |> List.find(e -> e#ofEnum == r#ofEnum);
-        Flixlint.Facts.caseTypesAll(facts)
+        Flixlint.Facts.caseTypesDeep(facts)
             |> List.filter(ct -> ct#ofEnum == r#ofEnum and ct#tycon == r#argType)
             |> List.map(ct ->
                 let (file, line) = declared |> Option.map(e -> (e#file, e#line)) |> Option.getWithDefault(("?", 0));

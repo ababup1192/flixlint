@@ -43,10 +43,12 @@ pub mod Flixlint.Facts {
     pub type alias StrLit = { fn = Fn, text = String, line = Int32 }
 
     /// A type constructor of the `index`-th parameter of `fn`: the head one (`argTypes`), or any one in the
-    /// type, nested ones included (`argTypesAll`: `List[ColumnName]` gives `List` and `ColumnName`).
+    /// type, nested ones included (`argTypesAll`: `List[ColumnName]` gives `List` and `ColumnName`), or any one with
+    /// type aliases opened as well (`argTypesDeep`: `type alias Ctx = { w = World }` gives `Ctx` and `World`).
     pub type alias ArgType = { fn = Fn, index = Int32, tycon = Type }
 
-    /// A type constructor of the `index`-th field of an enum case: the head one (`caseTypes`) or any one (`caseTypesAll`).
+    /// A type constructor of the `index`-th field of an enum case: the head one (`caseTypes`), any one (`caseTypesAll`),
+    /// or any one with type aliases opened as well (`caseTypesDeep`).
     pub type alias CaseType = { ofEnum = Enum, constructor = Case, index = Int32, tycon = Type }
 
     /// Where an enum is declared.
@@ -68,8 +70,10 @@ pub mod Flixlint.Facts {
         strLits = List[StrLit],
         argTypes = List[ArgType],
         argTypesAll = List[ArgType],
+        argTypesDeep = List[ArgType],
         caseTypes = List[CaseType],
         caseTypesAll = List[CaseType],
+        caseTypesDeep = List[CaseType],
         enums = List[EnumDef],
         effects = List[EffDef],
         defOf = Map[Fn, Def],
@@ -77,8 +81,10 @@ pub mod Flixlint.Facts {
         effectOf = Map[Fn, Set[Eff]],
         argTypesOf = Map[Fn, List[ArgType]],
         argTypesAllOf = Map[Fn, List[ArgType]],
+        argTypesDeepOf = Map[Fn, List[ArgType]],
         retTypeOf = Map[Fn, Type],
         retTypesAllOf = Map[Fn, Set[Type]],
+        retTypesDeepOf = Map[Fn, Set[Type]],
         strLitsOf = Map[Fn, List[String]],
         effAliases = Map[Eff, Set[Eff]],
         files = Set[String],
@@ -102,8 +108,10 @@ pub mod Flixlint.Facts {
     pub def strLits(facts: Facts): List[StrLit] = data(facts)#strLits
     pub def argTypes(facts: Facts): List[ArgType] = data(facts)#argTypes
     pub def argTypesAll(facts: Facts): List[ArgType] = data(facts)#argTypesAll
+    pub def argTypesDeep(facts: Facts): List[ArgType] = data(facts)#argTypesDeep
     pub def caseTypes(facts: Facts): List[CaseType] = data(facts)#caseTypes
     pub def caseTypesAll(facts: Facts): List[CaseType] = data(facts)#caseTypesAll
+    pub def caseTypesDeep(facts: Facts): List[CaseType] = data(facts)#caseTypesDeep
     pub def enums(facts: Facts): List[EnumDef] = data(facts)#enums
     pub def effects(facts: Facts): List[EffDef] = data(facts)#effects
     /// Every file the walk was given, whether or not it holds a definition an `allowInFile` could name.
@@ -137,6 +145,12 @@ pub mod Flixlint.Facts {
 
     /// Every type constructor in the return type of `fn`, nested ones included.
     pub def retTypesAllOf(facts: Facts, fn: Fn): Set[Type] = Map.getWithDefault(fn, Set.empty(), data(facts)#retTypesAllOf)
+
+    /// Every type constructor in the parameters of `fn`, with type aliases opened at any depth.
+    pub def argTypesDeepOf(facts: Facts, fn: Fn): List[ArgType] = Map.getWithDefault(fn, Nil, data(facts)#argTypesDeepOf)
+
+    /// Every type constructor in the return type of `fn`, with type aliases opened at any depth.
+    pub def retTypesDeepOf(facts: Facts, fn: Fn): Set[Type] = Map.getWithDefault(fn, Set.empty(), data(facts)#retTypesDeepOf)
 
     /// The string literals in the body of `fn`, in source order.
     pub def strLitsIn(facts: Facts, fn: Fn): List[String] = Map.getWithDefault(fn, Nil, data(facts)#strLitsOf)
@@ -219,11 +233,14 @@ pub mod Flixlint.Facts {
         let argTypeRows = rel -> rows(dir, rel) |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); t <- typeOf(col(2, c))) yield { fn = fn, index = int(1, c), tycon = t });
         let argTypes = argTypeRows("arg_type");
         let argTypesAll = argTypeRows("arg_type_all");
+        let argTypesDeep = argTypeRows("arg_type_deep");
         let retTypes = rows(dir, "ret_type") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); t <- typeOf(col(1, c))) yield (fn, t));
         let retTypesAll = rows(dir, "ret_type_all") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); t <- typeOf(col(1, c))) yield (fn, t));
+        let retTypesDeep = rows(dir, "ret_type_deep") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); t <- typeOf(col(1, c))) yield (fn, t));
         let caseTypeRows = rel -> rows(dir, rel) |> List.filterMap(c -> forM (e <- enumOf(col(0, c)); k <- caseOf(col(1, c)); t <- typeOf(col(3, c))) yield { ofEnum = e, constructor = k, index = int(2, c), tycon = t });
         let caseTypes = caseTypeRows("case_type");
         let caseTypesAll = caseTypeRows("case_type_all");
+        let caseTypesDeep = caseTypeRows("case_type_deep");
         let aliasRows = rows(dir, "eff_alias") |> List.filterMap(c -> forM (a <- effOf(col(0, c)); e <- effOf(col(1, c))) yield (a, e));
         let enums = rows(dir, "enum") |> List.filterMap(c -> forM (e <- enumOf(col(0, c)); m <- modOf(col(1, c))) yield { ofEnum = e, module = m, file = col(2, c), line = int(3, c) });
         let effects = rows(dir, "eff") |> List.filterMap(c -> forM (e <- effOf(col(0, c)); m <- modOf(col(1, c))) yield { effect = e, module = m, file = col(2, c), line = int(3, c) });
@@ -241,8 +258,10 @@ pub mod Flixlint.Facts {
             strLits = strLits,
             argTypes = argTypes,
             argTypesAll = argTypesAll,
+            argTypesDeep = argTypesDeep,
             caseTypes = caseTypes,
             caseTypesAll = caseTypesAll,
+            caseTypesDeep = caseTypesDeep,
             enums = enums,
             effects = effects,
             defOf = defs |> List.map(d -> (d#fn, d)) |> List.toMap,
@@ -250,8 +269,10 @@ pub mod Flixlint.Facts {
             effectOf = setsBy(effectRows),
             argTypesOf = grouped(a -> a#fn, argTypes |> List.sortBy(a -> (a#fn, a#index))),
             argTypesAllOf = grouped(a -> a#fn, argTypesAll |> List.sortBy(a -> (a#fn, a#index))),
+            argTypesDeepOf = grouped(a -> a#fn, argTypesDeep |> List.sortBy(a -> (a#fn, a#index))),
             retTypeOf = List.toMap(retTypes),
             retTypesAllOf = setsBy(retTypesAll),
+            retTypesDeepOf = setsBy(retTypesDeep),
             strLitsOf = grouped(s -> s#fn, strLits |> List.sortBy(s -> (s#fn, s#line))) |> Map.map(List.map(s -> s#text)),
             effAliases = setsBy(aliasRows),
             files = List.foldLeft((acc, f) -> Set.insert(f, acc), Set.empty(), sourceFiles)

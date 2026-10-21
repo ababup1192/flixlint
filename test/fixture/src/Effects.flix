@@ -14,9 +14,13 @@ pub type alias WriteEff = Db + Http
 
 pub enum ColumnName(String)
 
+/// The key list under an alias: wrapped-key has to look through `Keys` to see the `ColumnName`.
+pub type alias Keys = List[ColumnName]
+
 pub enum Predicate {
     case Eq(ColumnName, String)
     case In(List[ColumnName])
+    case AnyOf(Keys)
     case Any
 }
 

@@ -1,7 +1,10 @@
-src/Effects.flix:17: wrapped-key: Predicate.Eq: takes ColumnName
+src/Effects.flix:20: wrapped-key: Predicate.AnyOf: takes ColumnName
     predicates name columns through Column, never a raw ColumnName
     fix it, or add |> allowInFile("src/Effects.flix", "reason") to rule wrapped-key
-src/Effects.flix:17: wrapped-key: Predicate.In: takes ColumnName
+src/Effects.flix:20: wrapped-key: Predicate.Eq: takes ColumnName
+    predicates name columns through Column, never a raw ColumnName
+    fix it, or add |> allowInFile("src/Effects.flix", "reason") to rule wrapped-key
+src/Effects.flix:20: wrapped-key: Predicate.In: takes ColumnName
     predicates name columns through Column, never a raw ColumnName
     fix it, or add |> allowInFile("src/Effects.flix", "reason") to rule wrapped-key
 src/Wall.flix:14: clock: Report.title: calls Wall.today

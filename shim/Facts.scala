@@ -461,6 +461,9 @@ final class Sink(dir: Path) {
   def argTypeAll(fn: String, i: Int, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("arg_type_all", fn, i, tycon) }
   def retTypeAll(fn: String, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("ret_type_all", fn, tycon) }
   def caseTypeAll(enum0: String, enumCase: String, i: Int, tycon: String): Unit = { enumNames += enum0; caseNames += enumCase; typeNames += tycon; row("case_type_all", enum0, enumCase, i, tycon) }
+  def argTypeDeep(fn: String, i: Int, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("arg_type_deep", fn, i, tycon) }
+  def retTypeDeep(fn: String, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("ret_type_deep", fn, tycon) }
+  def caseTypeDeep(enum0: String, enumCase: String, i: Int, tycon: String): Unit = { enumNames += enum0; caseNames += enumCase; typeNames += tycon; row("case_type_deep", enum0, enumCase, i, tycon) }
   def argType(fn: String, i: Int, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("arg_type", fn, i, tycon) }
   def retType(fn: String, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("ret_type", fn, tycon) }
   def caseType(enum0: String, enumCase: String, i: Int, tycon: String): Unit = { enumNames += enum0; caseNames += enumCase; typeNames += tycon; row("case_type", enum0, enumCase, i, tycon) }
@@ -586,9 +589,15 @@ object Typed {
   /** Every named type constructor in a type, outermost first (`List[ColumnName]` gives `List`, `ColumnName`). An alias is
     * listed by its own name and its arguments (its target is not); type variables and record / schema rows are left out.
     */
-  def allNames(t: Type): List[String] = t match {
-    case Type.Alias(symUse, args, tpe, _) => symName(symUse.sym) :: (args.flatMap(allNames) ++ allNames(tpe))
-    case Type.Apply(t1, t2, _) => allNames(t1) ++ allNames(t2)
+  def allNames(t: Type): List[String] = namesIn(t, throughAliases = false)
+
+  /** `allNames`, plus what each alias stands for, at any depth (`type alias Ctx = { w = World }` gives `Ctx` and `World`). */
+  def deepNames(t: Type): List[String] = namesIn(t, throughAliases = true)
+
+  private def namesIn(t: Type, throughAliases: Boolean): List[String] = t match {
+    case Type.Alias(symUse, args, tpe, _) =>
+      symName(symUse.sym) :: (args.flatMap(namesIn(_, throughAliases)) ++ (if (throughAliases) namesIn(tpe, throughAliases) else Nil))
+    case Type.Apply(t1, t2, _) => namesIn(t1, throughAliases) ++ namesIn(t2, throughAliases)
     case Type.Var(_, _) => Nil
     case Type.Cst(TypeConstructor.RecordRowExtend(_) | TypeConstructor.SchemaRowExtend(_), _) => Nil
     case _ => List(headName(t))
@@ -608,9 +617,11 @@ object Typed {
       d.spec.fparams.toList.zipWithIndex.foreach { case (fp, i) =>
         sink.argType(fn, i, headName(fp.tpe))
         allNames(fp.tpe).distinct.foreach(n => sink.argTypeAll(fn, i, n))
+        deepNames(fp.tpe).distinct.foreach(n => sink.argTypeDeep(fn, i, n))
       }
       sink.retType(fn, headName(d.spec.retTpe))
       allNames(d.spec.retTpe).distinct.foreach(n => sink.retTypeAll(fn, n))
+      deepNames(d.spec.retTpe).distinct.foreach(n => sink.retTypeDeep(fn, n))
       walkBody(fn, d.exp, sink)
     }
     for ((sym, e) <- root.enums; file <- sourceFile(e.loc)) {
@@ -618,6 +629,7 @@ object Typed {
       for ((cs, c) <- e.cases; (t, i) <- c.tpes.zipWithIndex) {
         sink.caseType(symName(sym), symName(cs), i, headName(t))
         allNames(t).distinct.foreach(n => sink.caseTypeAll(symName(sym), symName(cs), i, n))
+        deepNames(t).distinct.foreach(n => sink.caseTypeDeep(symName(sym), symName(cs), i, n))
       }
     }
     for ((sym, e) <- root.effects; file <- sourceFile(e.loc))
@@ -689,10 +701,16 @@ object Resolved {
   }
 
   /** Every named type constructor in a type, outermost first (see `Typed.allNames`). */
-  def allNames(t: UnkindedType): List[String] = t match {
-    case UnkindedType.Alias(symUse, args, tpe, _) => symName(symUse.sym) :: (args.flatMap(allNames) ++ allNames(tpe))
-    case UnkindedType.Apply(t1, t2, _) => allNames(t1) ++ allNames(t2)
-    case UnkindedType.Arrow(eff, _, _) => "Arrow" :: eff.toList.flatMap(allNames)
+  def allNames(t: UnkindedType): List[String] = namesIn(t, throughAliases = false)
+
+  /** `allNames`, plus what each alias stands for (see `Typed.deepNames`). */
+  def deepNames(t: UnkindedType): List[String] = namesIn(t, throughAliases = true)
+
+  private def namesIn(t: UnkindedType, throughAliases: Boolean): List[String] = t match {
+    case UnkindedType.Alias(symUse, args, tpe, _) =>
+      symName(symUse.sym) :: (args.flatMap(namesIn(_, throughAliases)) ++ (if (throughAliases) namesIn(tpe, throughAliases) else Nil))
+    case UnkindedType.Apply(t1, t2, _) => namesIn(t1, throughAliases) ++ namesIn(t2, throughAliases)
+    case UnkindedType.Arrow(eff, _, _) => "Arrow" :: eff.toList.flatMap(namesIn(_, throughAliases))
     case UnkindedType.Var(_, _) => Nil
     case UnkindedType.Cst(TypeConstructor.RecordRowExtend(_) | TypeConstructor.SchemaRowExtend(_), _) => Nil
     case _ => List(headName(t))
@@ -711,9 +729,11 @@ object Resolved {
       d.spec.fparams.toList.zipWithIndex.foreach { case (fp, i) =>
         sink.argType(fn, i, fp.tpe.map(headName).getOrElse("?"))
         fp.tpe.toList.flatMap(allNames).distinct.foreach(n => sink.argTypeAll(fn, i, n))
+        fp.tpe.toList.flatMap(deepNames).distinct.foreach(n => sink.argTypeDeep(fn, i, n))
       }
       sink.retType(fn, headName(d.spec.tpe))
       allNames(d.spec.tpe).distinct.foreach(n => sink.retTypeAll(fn, n))
+      deepNames(d.spec.tpe).distinct.foreach(n => sink.retTypeDeep(fn, n))
       walkBody(fn, d.exp, sink)
     }
     for ((sym, e) <- root.enums; file <- sourceFile(e.loc)) {
@@ -721,6 +741,7 @@ object Resolved {
       for (c <- e.cases; (t, i) <- c.tpes.zipWithIndex) {
         sink.caseType(symName(sym), symName(c.sym), i, headName(t))
         allNames(t).distinct.foreach(n => sink.caseTypeAll(symName(sym), symName(c.sym), i, n))
+        deepNames(t).distinct.foreach(n => sink.caseTypeDeep(symName(sym), symName(c.sym), i, n))
       }
     }
     for ((sym, e) <- root.effects; file <- sourceFile(e.loc))

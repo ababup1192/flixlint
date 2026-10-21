@@ -215,7 +215,7 @@ the family's.
 | `Flixlint.disallowConstructor` | `Flixlint.constructors` | `constructor = Case` | Constructs | do not build this case (with `transitivelyIn`, nor call a pub function that does) |
 | `Flixlint.disallowCallInLambdaOf` | `Flixlint.callsInLambda` | `function = Fn, inLambdaOf = Set[Fn], files = glob` | CallsInLambdaArgOf + Def | do not call this inside a lambda passed to one of these (`List.map(x -> f(x), xs)`, `List.map(f, xs)`), in the files matching the glob (`**` for all of them) |
 | `Flixlint.disallowCallWithArg` | `Flixlint.callsWithArg` | `function = Fn, argIndex = Int32, values = Set[String]` | ArgLit + StrLit | do not call this with one of these string literals at that argument; `valuesFromLiteralsIn(Fn.X)` adds the literals of `X`'s body |
-| `Flixlint.disallowCaseArgType` | `Flixlint.caseArgTypes` | `ofEnum = Enum, argType = Type` | CaseTypeAll | no case of this enum has this type in a field (`ColumnName` or `List[ColumnName]`) |
+| `Flixlint.disallowCaseArgType` | `Flixlint.caseArgTypes` | `ofEnum = Enum, argType = Type` | CaseTypeDeep | no case of this enum has this type in a field (`ColumnName`, `List[ColumnName]`, or an alias that stands for either) |
 | `Flixlint.disallowDependency` | `Flixlint.dependencies` | `files = glob, module = Mod` | Calls + Constructs + ArgTypeAll + RetTypeAll + CaseTypeAll | the functions in these files neither call this module (or its submodules), nor build its cases, nor have its types in a parameter or the return type; the enums declared there have none in a case |
 | `Flixlint.customRule` | `Flixlint.customs` | `check = Facts -> List[Violation]` | all of them | what the families cannot say (see [Custom rules](#custom-rules)) |
 
@@ -237,7 +237,7 @@ disallowHandler:          Handles(fn, effect), or a call to a pub function of th
 disallowConstructor:      Constructs(fn, case), or a call to a pub function of the transitivelyIn modules that reaches one
 disallowCallInLambdaOf:   CallsInLambdaArgOf(caller, function, outer), outer ∈ inLambdaOf, Def(caller).file matches files
 disallowCallWithArg:      ArgLit(caller, function, argIndex, text), text ∈ values ∪ StrLit(valuesFrom)
-disallowCaseArgType:      CaseTypeAll(enum, case, argType), reported at the enum's declaration
+disallowCaseArgType:      CaseTypeDeep(enum, case, argType), reported at the enum's declaration
 disallowDependency:       Def(caller).file matches files, and the callee, a built case, a parameter or return type (nested) is in module; or an enum declared in files has such a case type
 wrappers(x, mods):        the pub functions of mods that reach x through Calls (a fixpoint over the calls)
 ```
@@ -277,8 +277,8 @@ What the families cannot say is written against the facts, in the same rule set;
 [`examples/rules.flix`](examples/rules.flix) is one.
 
 `Flixlint.Facts` gives the relations as lists of records (`defs`, `calls`, `handles`, `constructs`, `callsInLambda`,
-`argLits`, `argCalls`, `pipedInto`, `strLits`, `argTypes`, `argTypesAll`, `caseTypes`, `caseTypesAll`, `enums`, `effects`)
-and the lookups (`defOf`, `callsFrom`, `callsTo`, `effectOf`, `argType`, `argTypesAllOf`, `retType`, `retTypesAllOf`,
+`argLits`, `argCalls`, `pipedInto`, `strLits`, `argTypes`, `argTypesAll`, `argTypesDeep`, `caseTypes`, `caseTypesAll`, `caseTypesDeep`, `enums`, `effects`)
+and the lookups (`defOf`, `callsFrom`, `callsTo`, `effectOf`, `argType`, `argTypesAllOf`, `argTypesDeepOf`, `retType`, `retTypesAllOf`, `retTypesDeepOf`,
 `strLitsIn`, `expandEffects`, `fnName`, `isIn`); `Flixlint.Violation` builds violations (`atCall`, `atDef`, `inBody`,
 `atDeclaration`, `withPath`, `withNote`); `Flixlint.Glob.matches(pattern, path)` is the glob of `files` (`*` stays
 inside one path segment, `**` crosses segments, `{a,b}` is either alternative, and groups nest: `src/{a,{b,c}}/**`).
@@ -314,6 +314,7 @@ facts directory holds fewer files than the table below has rows.
 | `ArgTypeAll` | `fn, index, tycon` | Every type constructor in the `index`-th parameter, nested ones included (`List[ColumnName]` gives `List` and `ColumnName`; an alias is listed by its own name and its arguments; type variables and record rows are left out). |
 | `RetType` / `RetTypeAll` | `fn, tycon` | The head type constructor of the return type / every one in it. |
 | `CaseType` / `CaseTypeAll` | `enum, case, index, tycon` | The head type constructor of the `index`-th field of an enum case / every one in it. |
+| `ArgTypeDeep` / `RetTypeDeep` / `CaseTypeDeep` | as the `All` ones | The same, with every alias also opened to what it stands for, at any depth (`type alias Ctx = { w = World }` gives `Ctx` and `World`). `disallowCaseArgType` reads `CaseTypeDeep`; `disallowDependency` keeps the `All` ones, so a type reached only through an alias declared outside the module is not a dependency. |
 | `Enum` / `Eff` | `name, mod, file, line, pub` | Where an enum / an effect is declared. |
 
 Definitions coming from packages and the standard library are not listed in `Def` (only project sources are), but they
@@ -586,7 +587,7 @@ entry が 1 つも無い family は、単に list から外す。
 | `Flixlint.disallowConstructor` | `Flixlint.constructors` | `constructor = Case` | Constructs | この case を組まない（`transitivelyIn` を付ければ、組む pub 関数の呼び出しも） |
 | `Flixlint.disallowCallInLambdaOf` | `Flixlint.callsInLambda` | `function = Fn, inLambdaOf = Set[Fn], files = glob` | CallsInLambdaArgOf + Def | glob に当たるファイルで、これらに渡すラムダの中でこれを呼ばない（`List.map(x -> f(x), xs)`、`List.map(f, xs)`）。全部なら `**` |
 | `Flixlint.disallowCallWithArg` | `Flixlint.callsWithArg` | `function = Fn, argIndex = Int32, values = Set[String]` | ArgLit + StrLit | その位置の引数にこれらの文字列リテラルを渡して呼ばない。`valuesFromLiteralsIn(Fn.X)` で `X` の本体のリテラルを足せる |
-| `Flixlint.disallowCaseArgType` | `Flixlint.caseArgTypes` | `ofEnum = Enum, argType = Type` | CaseTypeAll | この enum のどの case も、この型を項目に持たない（`ColumnName` も `List[ColumnName]` も） |
+| `Flixlint.disallowCaseArgType` | `Flixlint.caseArgTypes` | `ofEnum = Enum, argType = Type` | CaseTypeDeep | この enum のどの case も、この型を項目に持たない（`ColumnName` も `List[ColumnName]` も、そのどちらかを指すエイリアスも） |
 | `Flixlint.disallowDependency` | `Flixlint.dependencies` | `files = glob, module = Mod` | Calls + Constructs + ArgTypeAll + RetTypeAll + CaseTypeAll | これらのファイルの関数は、このモジュール（と配下）を呼ばず、その case を組まず、引数と戻り値の型にその型を持たない。そこで宣言した enum の case も持たない |
 | `Flixlint.customRule` | `Flixlint.customs` | `check = Facts -> List[Violation]` | 全部 | family で言えない物（[custom rule](#custom-rule)） |
 
@@ -608,7 +609,7 @@ disallowHandler:          Handles(fn, effect), or a call to a pub function of th
 disallowConstructor:      Constructs(fn, case), or a call to a pub function of the transitivelyIn modules that reaches one
 disallowCallInLambdaOf:   CallsInLambdaArgOf(caller, function, outer), outer ∈ inLambdaOf, Def(caller).file matches files
 disallowCallWithArg:      ArgLit(caller, function, argIndex, text), text ∈ values ∪ StrLit(valuesFrom)
-disallowCaseArgType:      CaseTypeAll(enum, case, argType), reported at the enum's declaration
+disallowCaseArgType:      CaseTypeDeep(enum, case, argType), reported at the enum's declaration
 disallowDependency:       Def(caller).file matches files, and the callee, a built case, a parameter or return type (nested) is in module; or an enum declared in files has such a case type
 wrappers(x, mods):        the pub functions of mods that reach x through Calls (a fixpoint over the calls)
 ```
@@ -646,9 +647,9 @@ family で言えない物は facts に対して書き、同じ rule set に入�
 の `findReadsOnly` がその 1 つ。
 
 `Flixlint.Facts` は関係を record の list で渡し（`defs`、`calls`、`handles`、`constructs`、`callsInLambda`、
-`argLits`、`argCalls`、`pipedInto`、`strLits`、`argTypes`、`argTypesAll`、`caseTypes`、`caseTypesAll`、`enums`、
-`effects`）、引く関数（`defOf`、`callsFrom`、`callsTo`、`effectOf`、`argType`、`argTypesAllOf`、`retType`、
-`retTypesAllOf`、`strLitsIn`、`expandEffects`、`fnName`、`isIn`）も持つ。`Flixlint.Violation` が違反を組み
+`argLits`、`argCalls`、`pipedInto`、`strLits`、`argTypes`、`argTypesAll`、`argTypesDeep`、`caseTypes`、`caseTypesAll`、`caseTypesDeep`、`enums`、
+`effects`）、引く関数（`defOf`、`callsFrom`、`callsTo`、`effectOf`、`argType`、`argTypesAllOf`、`argTypesDeepOf`、`retType`、
+`retTypesAllOf`、`retTypesDeepOf`、`strLitsIn`、`expandEffects`、`fnName`、`isIn`）も持つ。`Flixlint.Violation` が違反を組み
 （`atCall`、`atDef`、`inBody`、`atDeclaration`、`withPath`、`withNote`）、`Flixlint.Glob.matches(pattern, path)`
 が `files` の glob（`*` はパスの 1 区切りの中、`**` は区切りを跨ぐ、`{a,b}` はどちらか。入れ子にできる: `src/{a,{b,c}}/**`）。
 
@@ -683,6 +684,7 @@ qualify するのと同じ形になる。`Auth.permit`、`Auth.Permit.Permit`（
 | `ArgTypeAll` | `fn, index, tycon` | `index` 番目の引数の型に現れる型コンストラクタを入れ子まで全部（`List[ColumnName]` なら `List` と `ColumnName`。エイリアスは自分の名前とその引数を載せる。型変数と record の row は外す） |
 | `RetType` / `RetTypeAll` | `fn, tycon` | 戻り値の型の先頭の型コンストラクタ / その中の全部 |
 | `CaseType` / `CaseTypeAll` | `enum, case, index, tycon` | enum の case の `index` 番目の項目の先頭の型コンストラクタ / その中の全部 |
+| `ArgTypeDeep` / `RetTypeDeep` / `CaseTypeDeep` | `All` と同じ | 上と同じで、エイリアスを指す先まで何段でも開く（`type alias Ctx = { w = World }` なら `Ctx` と `World`）。`disallowCaseArgType` は `CaseTypeDeep` を読み、`disallowDependency` は `All` のままなので、モジュールの外で宣言したエイリアス越しにだけ届く型は依存に数えない |
 | `Enum` / `Eff` | `name, mod, file, line, pub` | enum / effect を宣言した場所 |
 
 package と標準ライブラリから来る定義は `Def` に載らない（載るのはプロジェクトのソースだけ）が、callee・
