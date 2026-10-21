@@ -21,7 +21,8 @@
 #           is already built (flixlint.Lint), in a JVM of its own right after a rebuild.
 #
 # Environment: FLIX_JAR (the compiler), FLIXLINT_SHIM (a prebuilt shim jar), FLIXLINT_JAVA_OPTS,
-#              FLIXLINT_RESIDENT=1 (as --resident), FLIXLINT_RESIDENT_IDLE (as --idle-minutes; 30).
+#              FLIXLINT_RESIDENT=1 (as --resident), FLIXLINT_RESIDENT_IDLE (as --idle-minutes; 30),
+#              FLIXLINT_TIMING=1 (the rule engine prints how long loading, judging and each custom rule took, on stderr).
 #
 # --resident keeps one JVM per project root (the current directory) and identity (the compiler jar and the shim jar)
 # with the compiler and the rule engines loaded (shim/Resident.scala): after the first run only the files that changed
@@ -65,7 +66,9 @@ heap_mb=""
 idle_minutes="${FLIXLINT_RESIDENT_IDLE:-30}"
 run_limit=900
 timeout=""
+timing="${FLIXLINT_TIMING:-}"
 srcs=()
+setting_opts=()
 
 # WhyNot: 使い方の断りに 1 も 2 も使わない。1 は「違反が在る」、2 は「規則が間違っている」で、CI からは
 # どちらも lint が仕事をした結果に見える。呼び方と環境の誤りは 4 で分ける。
@@ -205,7 +208,7 @@ server_log="${socket%.sock}.log"
 resident_client() {
     local kind="$1"; shift
     java -XX:TieredStopAtLevel=1 -XX:+UseSerialGC -cp "$flix_jar:$shim" flixlint.Resident client --socket "$socket" \
-        --root "$root" --identity "$identity" --kind "$kind" ${timeout:+--timeout "$timeout"} "$@"
+        --root "$root" --identity "$identity" --kind "$kind" ${timeout:+--timeout "$timeout"} ${setting_opts[@]+"${setting_opts[@]}"} "$@"
 }
 start_server() {
     local opts="$java_opts"
@@ -293,7 +296,13 @@ printf 'def main(): Unit \\ IO = Flixlint.Engine.lint(%s.rules())\n' "$rules_mod
 # globs expand in, which is the collation order and so the locale's.
 key="$(export LC_ALL=C; { echo "$jar_id"; cat "$engine"/src/*.flix "$engine"/src/Flixlint/*.flix; } | shasum | cut -c1-40)"
 engine_jar="$engine/artifact/engine.jar"
-export FLIXLINT_FACTS="$facts_out" FLIXLINT_TODAY="$today" FLIXLINT_LIMITS="$limits" FLIXLINT_LIMITS_BASE="$limits_base"
+# The engine's settings (Flixlint.Engine.settingsOf), one list for every way the engine runs: the environment of a JVM
+# of its own (flixlint.Lint, engine.jar), and `--setting` of the request to the resident server.
+# WhyNot: the resident client does not read them from its environment. The server's engine never sees the caller's
+# environment, so a setting the client did not know by name was lost there alone (FLIXLINT_TIMING in 0.7.1).
+settings=("FLIXLINT_FACTS=$facts_out" "FLIXLINT_TODAY=$today" "FLIXLINT_LIMITS=$limits" "FLIXLINT_LIMITS_BASE=$limits_base" "FLIXLINT_TIMING=$timing")
+export "${settings[@]}"
+for s in "${settings[@]}"; do setting_opts+=(--setting "$s"); done
 
 # The facts, then the engine in the same JVM when engine.jar was built for these sources (flixlint.Lint).
 # WhyNot: not one JVM for the facts and another for the engine. Each start costs the JVM and the class loading of

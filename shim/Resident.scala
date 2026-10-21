@@ -17,12 +17,12 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong}
   * at either stage, the name index `--spans`, and later the `check` of `make check`) shares the one compiler.
   *
   *   Resident server --socket FILE --root DIR --identity ID [--idle-minutes N] [--run-limit SECONDS]
-  *   Resident client --socket FILE --root DIR --identity ID --kind KIND [--wait SECONDS] [--timeout SECONDS] <the arguments of Lint>
+  *   Resident client --socket FILE --root DIR --identity ID --kind KIND [--wait SECONDS] [--timeout SECONDS] [--setting NAME=VALUE]... <the arguments of Lint>
   *   Resident fixture DIR   (checks the encoder and the decoder against DIR/request.hex and DIR/reply.hex)
   *
   * The wire (protocol 2, README "Resident server") is Java's `DataOutputStream`: `writeInt` big endian, `writeUTF` a
   * 2-byte length and modified UTF-8. A request is the protocol number, the kind (`check` `lint` `spans` `test-jar`
-  * `stop`), the root, the identity, the settings (`FLIXLINT_FACTS=...`, read from the client's environment) and the
+  * `stop`), the root, the identity, the settings (`FLIXLINT_FACTS=...`, the client's `--setting`s) and the
   * arguments. The reply is frames: `O`/`E` bytes for stdout/stderr, `Q` (runs ahead of this one, the kind running and
   * for how many seconds; `0` ahead: this run starts now), `V` the version of the sources checked (the `check` kind),
   * and `X` the exit code, last.
@@ -52,11 +52,10 @@ object Resident {
   val TimedOut = 13
   val Protocol = 2
   val Kinds = List("check", "lint", "spans", "test-jar", "stop")
-  private val Settings = List("FLIXLINT_FACTS", "FLIXLINT_TODAY", "FLIXLINT_LIMITS", "FLIXLINT_LIMITS_BASE")
 
   def main(argv: Array[String]): Unit = argv.toList match {
     case "server" :: rest => server(rest)
-    case "client" :: rest => sys.exit(client(rest, name => Option(System.getenv(name))))
+    case "client" :: rest => sys.exit(client(rest))
     case "fixture" :: dir :: Nil => sys.exit(Wire.fixture(Paths.get(dir)))
     case _ =>
       System.err.println("flixlint: Resident server|client --socket FILE --root DIR --identity ID ... | Resident fixture DIR")
@@ -189,7 +188,7 @@ object Resident {
 
   /** `--socket FILE --root DIR --identity ID` and the options of each side, in front of the rest. */
   private final case class Opts(socket: Path, root: String, identity: String, kind: String, idleMinutes: Long, runLimit: Long,
-                                waitSeconds: Long, timeout: Long, rest: List[String])
+                                waitSeconds: Long, timeout: Long, settings: List[String], rest: List[String])
 
   private def opts(argv: List[String]): Opts = {
     def go(a: List[String], o: Opts): Opts = a match {
@@ -201,17 +200,23 @@ object Resident {
       case "--run-limit" :: v :: t => go(t, o.copy(runLimit = v.toLong))
       case "--wait" :: v :: t => go(t, o.copy(waitSeconds = v.toLong))
       case "--timeout" :: v :: t => go(t, o.copy(timeout = v.toLong))
+      case "--setting" :: v :: t => go(t, o.copy(settings = o.settings :+ v))
       case rest => o.copy(rest = rest)
     }
-    val o = go(argv, Opts(null, null, null, "lint", 30, 900, 0, 0, Nil))
+    val o = go(argv, Opts(null, null, null, "lint", 30, 900, 0, 0, Nil, Nil))
     if (o.socket == null || o.root == null || o.identity == null) throw new Facts.UsageError("Resident needs --socket FILE, --root DIR and --identity ID")
     o
   }
 
   // ---- the client ----
 
-  /** Sends the run to the server and relays its output; the run's exit code, or `NoServer`, `Lost`, `TimedOut`. */
-  def client(argv: List[String], env: String => Option[String]): Int = {
+  /** Sends the run to the server and relays its output; the run's exit code, or `NoServer`, `Lost`, `TimedOut`.
+    *
+    * WhyNot: the settings are not read from the client's environment by a list of names kept here. The caller
+    * (`bin/flixlint`) has the one list the engine reads (`Flixlint.Engine.settingsOf`) and hands it over as `--setting`;
+    * a second list here went out of step with it once (FLIXLINT_TIMING worked on its own and not on the server).
+    */
+  def client(argv: List[String]): Int = {
     val o = opts(argv)
     val deadline = System.nanoTime() + o.waitSeconds * 1000000000L
     connect(o.socket, deadline) match {
@@ -231,7 +236,7 @@ object Resident {
         }
         try {
           val out = new DataOutputStream(new BufferedOutputStream(Channels.newOutputStream(ch)))
-          Wire.writeRequest(out, Request(o.kind, o.root, o.identity, Settings.flatMap(n => env(n).map(v => s"$n=$v")), o.rest))
+          Wire.writeRequest(out, Request(o.kind, o.root, o.identity, o.settings, o.rest))
           out.flush()
           relay(new DataInputStream(Channels.newInputStream(ch)), () => started.set(System.nanoTime()))
         } catch {

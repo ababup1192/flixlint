@@ -162,7 +162,12 @@ object Facts {
   }
 
   def listFlix(p: Path): List[Path] =
-    if (Files.isDirectory(p)) Files.walk(p).iterator().asScala.filter(f => f.toString.endsWith(".flix") && Files.isRegularFile(f)).toList.sorted
+    if (Files.isDirectory(p)) {
+      // Closed, as `listJars` does: the resident server walks the sources on every run.
+      val entries = Files.walk(p)
+      try entries.iterator().asScala.filter(f => f.toString.endsWith(".flix") && Files.isRegularFile(f)).toList.sorted
+      finally entries.close()
+    }
     else if (Files.isRegularFile(p)) List(p)
     else throw new UsageError(s"$p: no such source file or directory")
 

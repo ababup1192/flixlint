@@ -442,7 +442,7 @@ length and modified UTF-8 (a character outside the BMP is its two surrogates, 3 
 | `int` | the protocol, `2` |
 | `UTF` | the kind: `check`, `lint`, `spans`, `test-jar`, `stop` (this version serves `lint`, `spans` and `stop`) |
 | `UTF` `UTF` | the root, the identity (a server answers `X 11` to another) |
-| `int` then `UTF`s | the settings, `NAME=value` (`FLIXLINT_FACTS`, `FLIXLINT_TODAY`, `FLIXLINT_LIMITS`, `FLIXLINT_LIMITS_BASE`) |
+| `int` then `UTF`s | the settings, `NAME=value` (`FLIXLINT_FACTS`, `FLIXLINT_TODAY`, `FLIXLINT_LIMITS`, `FLIXLINT_LIMITS_BASE`, `FLIXLINT_TIMING`) |
 | `int` then `UTF`s | the arguments of the run |
 
 | Reply frame (server to client) | |
@@ -989,7 +989,7 @@ identity」（後ろに改行は付けない）の SHA-256 の頭 16 字に `.so
 | `int` | protocol（`2`） |
 | `UTF` | 種類: `check`・`lint`・`spans`・`test-jar`・`stop`（この版が流すのは `lint`・`spans`・`stop`） |
 | `UTF` `UTF` | 根・identity（違えば server は `X 11` を返す） |
-| `int` と `UTF` の列 | 設定 `NAME=値`（`FLIXLINT_FACTS`・`FLIXLINT_TODAY`・`FLIXLINT_LIMITS`・`FLIXLINT_LIMITS_BASE`） |
+| `int` と `UTF` の列 | 設定 `NAME=値`（`FLIXLINT_FACTS`・`FLIXLINT_TODAY`・`FLIXLINT_LIMITS`・`FLIXLINT_LIMITS_BASE`・`FLIXLINT_TIMING`） |
 | `int` と `UTF` の列 | 走行の引数 |
 
 | 答えの枠（server → クライアント） | |

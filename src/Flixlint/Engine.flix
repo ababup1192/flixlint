@@ -21,7 +21,8 @@ pub mod Flixlint.Engine {
     type alias Settings = { factsDir = String, today = String, limits = Option[String], limitsBase = Option[String], timing = Bool }
 
     /// The entry point of the generated engine `main`: the settings come from the environment (`FLIXLINT_FACTS`,
-    /// `FLIXLINT_TODAY`, `FLIXLINT_LIMITS`, `FLIXLINT_LIMITS_BASE`) and the exit code ends the JVM.
+    /// `FLIXLINT_TODAY`, `FLIXLINT_LIMITS`, `FLIXLINT_LIMITS_BASE`, `FLIXLINT_TIMING`) and the exit code ends the JVM.
+    /// The caller, `bin/flixlint`, has the one list of them (`settings`) for both ways in.
     ///
     /// Under the resident server (`bin/flixlint --resident`, shim/Resident.scala) one JVM serves many runs, so `main`
     /// is called with `--resident NAME=VALUE...` instead: the settings come from those arguments and the exit code is
@@ -40,7 +41,8 @@ pub mod Flixlint.Engine {
                 if (code == 0) () else Sys.Exit.runWithIO(() -> Sys.Exit.exit(code))
         }
 
-    /// The settings, each read by its variable's name.
+    /// The settings, each read by its variable's name (a new one also goes into `settings` of `bin/flixlint`, which
+    /// hands the list to the resident server).
     def settingsOf(get: String -> Option[String] \ ef): Settings \ ef =
         let nonEmpty = name -> get(name) |> Option.filter(p -> not String.isEmpty(p));
         { factsDir = get("FLIXLINT_FACTS") |> Option.getWithDefault("build/flixlint/facts"),
