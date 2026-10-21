@@ -271,7 +271,8 @@ pub mod Flixlint.Facts {
         let tagArgs = loadTagArgs(src, fnOf, caseOf);
         let effects = src("eff") |> List.filterMap(c -> forM (e <- effOf(col(0, c)); m <- modOf(col(1, c))) yield { effect = e, module = m, file = col(2, c), line = int(3, c) });
         let sourceFiles = src("source_file") |> List.map(c -> col(0, c));
-        let sortedCalls = calls |> List.sortBy(c -> (c#caller, c#line, c#callee));
+        let callsFrom = groupSorted(c -> c#caller, c -> (c#line, c#callee), calls);
+        let sortedCalls = callsFrom |> Map.valuesOf |> List.flatten;
         Facts.Facts({
             defs = defs,
             calls = sortedCalls,
@@ -295,16 +296,16 @@ pub mod Flixlint.Facts {
             typeAliases = typeAliases,
             effects = effects,
             defOf = defs |> List.map(d -> (d#fn, d)) |> List.toMap,
-            callsFrom = grouped(c -> c#caller, sortedCalls),
+            callsFrom = callsFrom,
             effectOf = setsBy(effectRows),
-            argTypesOf = grouped(a -> a#fn, types#argTypes |> List.sortBy(a -> (a#fn, a#index))),
-            argTypesAllOf = grouped(a -> a#fn, types#argTypesAll |> List.sortBy(a -> (a#fn, a#index))),
-            argTypesDeepOf = lazy grouped(a -> a#fn, force types#argTypesDeep |> List.sortBy(a -> (a#fn, a#index))),
+            argTypesOf = groupSorted(a -> a#fn, a -> a#index, types#argTypes),
+            argTypesAllOf = groupSorted(a -> a#fn, a -> a#index, types#argTypesAll),
+            argTypesDeepOf = lazy groupSorted(a -> a#fn, a -> a#index, force types#argTypesDeep),
             retTypeOf = List.toMap(types#retTypes),
             retTypesAllOf = setsBy(types#retTypesAll),
             retTypesDeepOf = lazy setsBy(force types#retTypesDeep),
             aliasTypesAllOf = aliasTypesAll,
-            strLitsOf = grouped(s -> s#fn, strLits |> List.sortBy(s -> (s#fn, s#line))) |> Map.map(List.map(s -> s#text)),
+            strLitsOf = groupSorted(s -> s#fn, s -> s#line, strLits) |> Map.map(List.map(s -> s#text)),
             effAliases = setsBy(aliasRows),
             files = List.foldLeft((acc, f) -> Set.insert(f, acc), Set.empty(), sourceFiles)
                 |> (acc -> List.foldLeft((s, d) -> Set.insert(d#file, s), acc, defs))
@@ -377,7 +378,12 @@ pub mod Flixlint.Facts {
         let stands = src("alias_type_all") |> List.filterMap(c -> forM (a <- typeOf(col(0, c)); t <- typeOf(col(1, c))) yield (a, t));
         (defs, setsBy(stands))
 
-    /// Groups a list that is already sorted by the key, keeping the order inside each group.
+    /// `xs` grouped by `key`, each group sorted by `within` (stable). The groups are short, so this sorts far less than
+    /// sorting the whole list by both keys, and `Map.valuesOf` of it is that sorted list.
+    def groupSorted(key: a -> k, within: a -> j, xs: List[a]): Map[k, List[a]] with Order[k], Order[j] =
+        grouped(key, xs) |> Map.map(g -> g |> List.map(x -> (within(x), x)) |> List.sortBy(fst) |> List.map(snd))
+
+    /// `xs` grouped by `key`, keeping the order inside each group.
     def grouped(key: a -> k, xs: List[a]): Map[k, List[a]] with Order[k] =
         List.foldRight((x, m) -> Map.insertWith((newer, older) -> newer ::: older, key(x), x :: Nil, m), Map.empty(), xs)
 

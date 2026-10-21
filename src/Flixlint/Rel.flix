@@ -123,22 +123,45 @@ pub mod Flixlint.Rel {
     def viewRows(ast: Ast, t: Option[TypeRef], v: TypeView): List[String] = match (v, t) {
         case (TypeView.Head, Some(t1)) => headName(ast, t1) :: Nil
         case (TypeView.Head, None)     => "?" :: Nil
-        case (_, Some(t1))             => typeNames(ast, t1, v) |> List.distinct
+        case (_, Some(t1))             => typeNames(ast, t1, v) |> firstOfEach
         case (_, None)                 => Nil
     }
 
-    def argTypeRows(ast: Ast, v: TypeView): List[List[String]] =
+    /// `viewRows` that names each type once: the type table is shared, so many params and returns have the same type.
+    def viewRowsOnce(rc: Region[r], ast: Ast, v: TypeView): (Option[TypeRef] -> List[String] \ r) \ r =
+        let memo = MutMap.empty(rc);
+        t -> match t {
+            case None => viewRows(ast, None, v)
+            case Some(t1) => match MutMap.get(t1, memo) {
+                case Some(ns) => ns
+                case None =>
+                    let ns = viewRows(ast, t, v);
+                    MutMap.put(t1, ns, memo);
+                    ns
+            }
+        }
+
+    /// The first of each name, in order.
+    def firstOfEach(ns: List[String]): List[String] =
+        let step = (acc, n) -> { let (seen, out) = acc; if (Set.memberOf(n, seen)) acc else (Set.insert(n, seen), n :: out) };
+        List.foldLeft(step, (Set.empty(), Nil), ns) |> snd |> List.reverse
+
+    def argTypeRows(ast: Ast, v: TypeView): List[List[String]] = region rc {
+        let rowsOf = viewRowsOnce(rc, ast, v);
         Flixlint.Flix.defs(ast) |> List.flatMap(d -> {
             let fn = Flixlint.Flix.nameOf(ast, d);
             Flixlint.Flix.params(ast, d) |> List.zipWithIndex |> List.flatMap(match (i, p) ->
-                viewRows(ast, Flixlint.Ast.attrType(ast, p, Attr.Tpe), v) |> List.map(n -> fn :: Int32.toString(i) :: n :: Nil))
+                rowsOf(Flixlint.Ast.attrType(ast, p, Attr.Tpe)) |> List.map(n -> fn :: Int32.toString(i) :: n :: Nil))
         })
+    }
 
-    def retTypeRows(ast: Ast, v: TypeView): List[List[String]] =
+    def retTypeRows(ast: Ast, v: TypeView): List[List[String]] = region rc {
+        let rowsOf = viewRowsOnce(rc, ast, v);
         Flixlint.Flix.defs(ast) |> List.flatMap(d -> {
             let fn = Flixlint.Flix.nameOf(ast, d);
-            viewRows(ast, Flixlint.Flix.returnType(ast, d), v) |> List.map(n -> fn :: n :: Nil)
+            rowsOf(Flixlint.Flix.returnType(ast, d)) |> List.map(n -> fn :: n :: Nil)
         })
+    }
 
     def caseTypeRows(ast: Ast, v: TypeView): List[List[String]] =
         Flixlint.Ast.ofKind(ast, Kind.Enum) |> List.flatMap(e -> {
