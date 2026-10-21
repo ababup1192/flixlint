@@ -171,6 +171,7 @@ Violations are sorted by file, line and rule id, so the report is the same on ev
 The rule engine is a Flix program made of the `src/Flixlint` library, the generated `Names.flix`, your rule file and
 a generated `main`; `bin/flixlint` compiles it into a jar with the same compiler and rebuilds it only when one of those
 or the compiler jar changes (measured on a 227-file project: the engine builds in about 16 s, then a run costs the facts plus 3 s).
+Once built, the engine runs in the JVM that wrote the facts (`flixlint.Lint`), so a run starts one JVM.
 
 ## Writing rules
 
@@ -394,6 +395,7 @@ bin/flixlint                 the command: shim -> facts + Flixlint/Names.flix, e
 bin/flix-jar                 where the compiler jar is, when neither --flix-jar nor FLIX_JAR says
 shim/Facts.scala             AST -> TSV facts and Flixlint/Names.flix (typed stage, and the resolved stage that stops before the typer)
 shim/Spans.scala             --spans: AST -> the position of every name (README "Spans"), kept out of the facts
+shim/Lint.scala              the facts, then the built engine jar in the same JVM
 src/Flixlint.flix            what a rule file uses: the family records and builders, transitivelyIn / allowIn / allowInFile / allowUntil, ruleSet
 src/Flixlint/Facts.flix      the facts loaded from the TSV, and the lookups custom rules use
 src/Flixlint/Engine.flix     the judgments, the allows, the report and the exit code
@@ -603,6 +605,7 @@ src/Report.flix:14: clock: Report.title: calls Wall.today
 rule engine は、`src/Flixlint` のライブラリ・生成した `Names.flix`・利用側の rule のファイル・生成した `main`
 から成る Flix のプログラムで、`bin/flixlint` が同じコンパイラで jar に組み、そのどれかかコンパイラの jar が
 変わった時だけ組み直す（227 ファイルのプロジェクトでの実測で、エンジンの build が 16 秒前後、その後の 1 回は facts + 3 秒）。
+組んだ後のエンジンは facts を書いた JVM の中で流す（`flixlint.Lint`）ので、1 回の lint で立ち上げる JVM は 1 つ。
 
 ## 規則の書き方
 
@@ -821,6 +824,7 @@ bin/flixlint                 コマンド本体: shim -> facts + Flixlint/Names.
 bin/flix-jar                 --flix-jar も FLIX_JAR も無い時の、コンパイラの jar の在り処
 shim/Facts.scala             AST -> TSV の facts と Flixlint/Names.flix（typed の段と、typer の手前で止まる resolved の段）
 shim/Spans.scala             --spans: AST -> 名前の位置の索引（「spans（名前の位置）」）。facts には入れない
+shim/Lint.scala              facts を書き、組んであるエンジンの jar を同じ JVM で流す
 src/Flixlint.flix            rule のファイルが使う物: family の record と builder、transitivelyIn / allowIn / allowInFile / allowUntil、ruleSet
 src/Flixlint/Facts.flix      TSV から読んだ facts と、custom rule が使う引く関数
 src/Flixlint/Engine.flix     判定・allow・報告・exit code

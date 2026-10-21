@@ -61,19 +61,26 @@ object Facts {
   // Exit codes: 0 facts written, 3 the sources do not compile, 4 the caller or the environment is wrong.
   // WhyNot: a crash must not leave exit 1. bin/flixlint reserves 1 for "there are violations", so an
   // uncaught exception here would read to CI as a report of new violations.
-  def main(argv: Array[String]): Unit =
+  def main(argv: Array[String]): Unit = {
+    val code = guarded(argv)
+    if (code != 0) sys.exit(code)
+  }
+
+  /** `run` with the spans option split off, and a usage error or a crash turned into exit code 4. */
+  def guarded(argv: Array[String]): Int =
     try { val (spans, rest) = Spans.split(argv); run(rest, spans) }
     catch {
       case e: UsageError =>
         System.err.println(s"flixlint: ${e.getMessage}")
-        sys.exit(4)
+        4
       case e: Throwable =>
         System.err.println(s"flixlint: the fact walker failed: ${e.getClass.getName}: ${e.getMessage}")
         e.printStackTrace()
-        sys.exit(4)
+        4
     }
 
-  def run(argv: Array[String], spans: Option[Path] = None): Unit = {
+  /** Writes the facts; 0, or 3 when the sources do not compile (the errors are on stderr). */
+  def run(argv: Array[String], spans: Option[Path] = None): Int = {
     val args = parseArgs(argv)
     val t0 = System.nanoTime()
     val deps =
@@ -117,7 +124,7 @@ object Facts {
     Names.write(args.namesOut.getOrElse(args.out.resolve("Names.flix")), sink)
     val t3 = System.nanoTime()
     System.err.println(f"flixlint facts: stage=${args.stage} files=${files.length} compile=${phaseNs / 1e9}%.1fs walk=${(t3 - t1 - phaseNs) / 1e9}%.2fs total=${(t3 - t0) / 1e9}%.1fs")
-    if (nErrors > 0) sys.exit(3)
+    if (nErrors > 0) 3 else 0
   }
 
   def listFlix(p: Path): List[Path] =

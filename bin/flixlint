@@ -15,7 +15,8 @@
 #
 # Steps: 1) the shim (Scala, on the compiler jar) walks the AST and writes the facts as TSV plus Names.flix
 #        2) the rule engine (Flix: the Flixlint library + Names.flix + rules.flix + a generated main) is built into a
-#           jar, once per distinct set of those sources, and run against the facts.
+#           jar, once per distinct set of those sources, and run against the facts: in the shim's JVM when the jar
+#           is already built (flixlint.Lint), in a JVM of its own right after a rebuild.
 #
 # Environment: FLIX_JAR (the compiler), FLIXLINT_SHIM (a prebuilt shim jar), FLIXLINT_JAVA_OPTS.
 #
@@ -132,32 +133,40 @@ else
 fi
 engine="$build_dir/engine"
 rm -rf "$engine/src"; mkdir -p "$engine/src/Flixlint"
-# shellcheck disable=SC2086
-set +e
 spans_opt=()
 [ -n "$spans" ] && spans_opt=(--spans "$spans")
-java $java_opts -cp "$flix_jar:$shim" flixlint.Facts --out "$facts_out" --names-out "$engine/src/Flixlint/Names.flix" --stage "$stage" "${spans_opt[@]}" "${root_opt[@]}" "${pkgs[@]}" "${jars[@]}" "${srcs[@]}"
-status=$?
-set -e
-if [ "$status" -ne 0 ]; then
+facts_args=(--out "$facts_out" --names-out "$engine/src/Flixlint/Names.flix" --stage "$stage" "${spans_opt[@]}" "${root_opt[@]}" "${pkgs[@]}" "${jars[@]}" "${srcs[@]}")
+
+# Says why the facts could not be written, and leaves with the shim's exit code.
+facts_failed() {
     # WhyNot: the compiler's Resolution Error does not say that a dependency is missing, and sources that
     # `flix check` accepts fail here when the packages are not passed, so exit 3 with no --pkg says it.
-    if [ "$status" -eq 3 ] && [ ${#pkgs[@]} -eq 0 ]; then
+    if [ "$1" -eq 3 ] && [ ${#pkgs[@]} -eq 0 ]; then
         echo "flixlint: the sources do not compile. If they depend on packages that flixlint did not find, name the" >&2
         echo "          project with --project-root DIR, or pass them with --pkg lib/github/.../x.fpkg --jar" >&2
         echo "          lib/cache/.../y.jar (the compiler unpacks them into lib/ once 'flix check' has run)." >&2
     fi
-    exit "$status"
-fi
-# --spans without --rules: the index is what was asked for, and the rule engine has nothing to run.
-[ -n "$rules" ] || exit 0
+    exit "$1"
+}
 
-# ---- 2. the engine: library + Names.flix + rules.flix + main ----
+# --spans without --rules: the index is what was asked for, and the rule engine has nothing to run.
+if [ -z "$rules" ]; then
+    set +e
+    # shellcheck disable=SC2086
+    java $java_opts -cp "$flix_jar:$shim" flixlint.Facts "${facts_args[@]}"
+    status=$?
+    set -e
+    [ "$status" -eq 0 ] || facts_failed "$status"
+    exit 0
+fi
+
+# ---- 2. the engine: library + Names.flix (written by the shim) + rules.flix + main ----
 cp "$here"/src/Flixlint/*.flix "$engine/src/Flixlint/"
 cp "$here"/src/Flixlint.flix "$engine/src/"
 cp "$rules" "$engine/src/Rules.flix"
 printf 'def main(): Unit \\ IO = Flixlint.Engine.lint(%s.rules())\n' "$rules_mod" > "$engine/src/Main.flix"
 
+# The key of engine.jar: the compiler and every engine source but Names.flix, which the shim adds to it once written.
 # WhyNot: the compiler jar is not left out of the key. It is what builds engine.jar, so another FLIX_JAR with the
 # same rule sources would reuse the jar the first compiler built. Path, size and mtime identify it without hashing a
 # hundred megabytes on every run (an mtime it cannot read only makes the key coarser). LC_ALL=C fixes the order the
@@ -167,22 +176,37 @@ printf 'def main(): Unit \\ IO = Flixlint.Engine.lint(%s.rules())\n' "$rules_mod
 # run; BSD `stat -c` is an illegal option that prints nothing, so the GNU spelling is tried first.
 jar_mtime="$(stat -c %Y -- "$flix_jar" 2>/dev/null || stat -f %m -- "$flix_jar" 2>/dev/null || echo unknown)"
 jar_id="$flix_jar $(wc -c < "$flix_jar") $jar_mtime"
-hash="$(export LC_ALL=C; { echo "$jar_id"; cat "$engine"/src/*.flix "$engine"/src/Flixlint/*.flix; } | shasum | cut -c1-16)"
+key="$(export LC_ALL=C; { echo "$jar_id"; cat "$engine"/src/*.flix "$engine"/src/Flixlint/*.flix; } | shasum | cut -c1-40)"
 engine_jar="$engine/artifact/engine.jar"
-if [ ! -f "$engine_jar" ] || [ "$(cat "$engine/built-hash" 2>/dev/null)" != "$hash" ]; then
-    printf '[package]\nversion = "0.0.0"\nflix = "0.0.0"\n' > "$engine/flix.toml"
-    rm -f "$engine/built-hash"
-    # shellcheck disable=SC2086
-    if ! (cd "$engine" && java $java_opts -jar "$flix_jar" build-jar --no-install >build.log 2>&1); then
-        echo "flixlint: the rules do not compile ($rules; the names come from $engine/src/Flixlint/Names.flix):" >&2
-        # The engine compiles the rule file as src/Rules.flix, so the compiler's paths are rewritten back to --rules.
-        # WhyNot: not the last 60 lines. Flix reports the errors in order and the later ones usually follow from the
-        # first, so the end of the log is the derived noise and the head is the one error worth reading.
-        tr '\r' '\n' < "$engine/build.log" | grep -a -vE '^[[:space:]]*$|^[[:space:]]*\[|^(Found|Resolving|Downloading|  Running|Dependency resolution)' | sed "s@src/Rules\.flix@$rules@g" | head -60 >&2
-        echo "flixlint: the whole compiler output is in $engine/build.log" >&2
-        exit 2
-    fi
-    echo "$hash" > "$engine/built-hash"
-fi
+export FLIXLINT_FACTS="$facts_out" FLIXLINT_TODAY="$today" FLIXLINT_LIMITS="$limits" FLIXLINT_LIMITS_BASE="$limits_base"
+
+# The facts, then the engine in the same JVM when engine.jar was built for these sources (flixlint.Lint).
+# WhyNot: not one JVM for the facts and another for the engine. Each start costs the JVM and the class loading of
+# the Flix runtime, on every run; only a rebuild of the engine (exit 10) still takes a JVM of its own.
+rm -f "$engine/wanted-hash"
+set +e
 # shellcheck disable=SC2086
-FLIXLINT_FACTS="$facts_out" FLIXLINT_TODAY="$today" FLIXLINT_LIMITS="$limits" FLIXLINT_LIMITS_BASE="$limits_base" java $java_opts -jar "$engine_jar"
+java $java_opts -cp "$flix_jar:$shim" flixlint.Lint --engine "$engine" --engine-key "$key" "${facts_args[@]}"
+status=$?
+set -e
+case "$status" in
+    10) ;;
+    3|4) facts_failed "$status" ;;
+    *) exit "$status" ;;
+esac
+
+printf '[package]\nversion = "0.0.0"\nflix = "0.0.0"\n' > "$engine/flix.toml"
+rm -f "$engine/built-hash"
+# shellcheck disable=SC2086
+if ! (cd "$engine" && java $java_opts -jar "$flix_jar" build-jar --no-install >build.log 2>&1); then
+    echo "flixlint: the rules do not compile ($rules; the names come from $engine/src/Flixlint/Names.flix):" >&2
+    # The engine compiles the rule file as src/Rules.flix, so the compiler's paths are rewritten back to --rules.
+    # WhyNot: not the last 60 lines. Flix reports the errors in order and the later ones usually follow from the
+    # first, so the end of the log is the derived noise and the head is the one error worth reading.
+    tr '\r' '\n' < "$engine/build.log" | grep -a -vE '^[[:space:]]*$|^[[:space:]]*\[|^(Found|Resolving|Downloading|  Running|Dependency resolution)' | sed "s@src/Rules\.flix@$rules@g" | head -60 >&2
+    echo "flixlint: the whole compiler output is in $engine/build.log" >&2
+    exit 2
+fi
+cp "$engine/wanted-hash" "$engine/built-hash"
+# shellcheck disable=SC2086
+java $java_opts -jar "$engine_jar"
