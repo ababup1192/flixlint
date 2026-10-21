@@ -341,7 +341,7 @@ not pay for them (they are an order of magnitude more rows than all facts togeth
 at the typed stage on a 179-file project).
 
 ```
-# flixlint-spans 1 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra
+# flixlint-spans 2 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra
 def-use	src/Shapes.flix	23	23	23	27	Shapes.area	Shapes.isRound
 label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	recv=Shapes.World via=decl
 ```
@@ -354,18 +354,22 @@ and an emoji 2); `owner` is the top-level def the occurrence is in (lambdas and 
 
 | Kind | Stage | Span | `sym` | `extra` |
 |---|---|---|---|---|
-| `def-decl` | both | the name of a `def` | the def | `pub` when public |
+| `def-decl` | both | the name of a `def` | the def | `pub` when public, `inst` for a def of an instance, `ann=test,...` its annotations, `ext=sl:sc:el:ec` the whole definition (its `///` doc and annotations included) |
 | `def-use` | both | a call or a reference (`World.moveTo`, or `moveTo` brought in by `use`) | the def | `sugar` when syntax stands for it (below) |
 | `enum-decl` | both | the name of an `enum` | the enum | |
-| `case-decl` | both | a case of it (`owner` is the enum) | the case | |
+| `case-decl` | both | a case of it (`owner` is the enum) | the case | `arity=N`, the number of its fields |
 | `case-construct` / `case-pattern` | both | a case built in an expression / matched in a pattern | the case | `sugar` (below) |
 | `match-site` | both | the whole `match` expression | empty | `arms=N wild=N var=N guard=N enum=E`; the typed stage adds `scrut=T` |
+| `match-arm` | both | one arm, `case` to the end of its body | the case of a top-level case pattern, else empty | `match=L:C pat=wild\|var\|tag\|other at=sl:sc:el:ec guard=0\|1`, `full=1` (below), `name=x uses=0\|1` for a variable |
 | `label-select` | typed | `x` in `e#x` | the label | `recv=A via=V` (below) |
 | `label-update` | typed | `x` in `{ x = v \| e }` (a bare `{ +x = v \| e }` is not one) | the label | `recv=A via=V` |
 
 - `match-site`: `wild` and `var` count the arms whose top-level pattern is `_` / a variable, `guard` the arms with an
   `if`; `enum` is the enum of the first top-level case pattern (`-` when there is none, e.g. a match on a tuple);
   `scrut` is the head of the scrutinee's type.
+- `match-arm`: `match` is where the match starts (its `match-site` row), `at` the top-level pattern; `full=1` marks a case
+  pattern whose fields are all `_` or variables, so it takes every value of the case; `uses=1` says the body or the guard
+  reads the variable. A rewrite that spells `case _` out as the remaining cases needs exactly these.
 - `sugar`: the span is not the written name but syntax that stands for it. `a :: b` builds `List.Cons` and its span is
   the whole expression; `a % b` calls `Int32.remainder`; `Vector#{...}` calls `Vector.toList`. A rewrite leaves these alone.
 - `recv=A via=V` names the type alias the receiver `e` is declared with. Inference expands aliases, so it is read where
@@ -764,7 +768,7 @@ JVM のメソッドとして大きすぎてコンパイルできないため。
 プロジェクトで resolved の段 6.5 万行・typed の段 8.5 万行）。
 
 ```
-# flixlint-spans 1 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra
+# flixlint-spans 2 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra
 def-use	src/Shapes.flix	23	23	23	27	Shapes.area	Shapes.isRound
 label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	recv=Shapes.World via=decl
 ```
@@ -776,17 +780,20 @@ UTF-16 の単位なので日本語の字は 1、絵文字は 2）。`owner` は�
 
 | kind | 段 | 範囲 | `sym` | `extra` |
 |---|---|---|---|---|
-| `def-decl` | 両方 | `def` の名前 | その def | 公開なら `pub` |
+| `def-decl` | 両方 | `def` の名前 | その def | 公開なら `pub`、instance の def なら `inst`、注記は `ann=test,...`、`ext=sl:sc:el:ec` は定義全体（前の `///` と注記を含む） |
 | `def-use` | 両方 | 呼び出しか参照（`World.moveTo`、`use` で入れた素の `moveTo`） | その def | 構文が指す時は `sugar`（下） |
 | `enum-decl` | 両方 | `enum` の名前 | その enum | |
-| `case-decl` | 両方 | その case（`owner` は enum） | その case | |
+| `case-decl` | 両方 | その case（`owner` は enum） | その case | `arity=N`（欄の数） |
 | `case-construct` / `case-pattern` | 両方 | 式で作る case / 型で当てる case | その case | `sugar`（下） |
 | `match-site` | 両方 | `match` の式全体 | 空 | `arms=N wild=N var=N guard=N enum=E`。typed の段は `scrut=T` を足す |
+| `match-arm` | 両方 | 腕 1 つ（`case` から本体の終わりまで） | 一番上の型が case ならその case、ほかは空 | `match=L:C pat=wild\|var\|tag\|other at=sl:sc:el:ec guard=0\|1`、`full=1`（下）、変数なら `name=x uses=0\|1` |
 | `label-select` | typed | `e#x` の `x` | 欄の名前 | `recv=A via=V`（下） |
 | `label-update` | typed | `{ x = v \| e }` の `x`（`{ +x = v \| e }` は足すだけなので入らない） | 欄の名前 | `recv=A via=V` |
 
 - `match-site`: `wild`・`var` は一番上の型が `_`・変数の腕の数、`guard` は `if` つきの腕の数。`enum` は一番上の
   型の最初の case の enum（無ければ `-`。tuple への match など）。`scrut` は match する値の型の頭。
+- `match-arm`: `match` はその match の始まり（`match-site` の行）、`at` は一番上の型。`full=1` は欄が全部 `_` か変数の
+  case の型（その case を全部受ける）。`uses=1` は本体か見張りが変数を読む。`case _` を残りの case に書き出す書き換えが要る物。
 - `sugar`: 範囲が書かれた名前でなく、それを指す構文。`a :: b` は `List.Cons` を作り範囲は式全体、`a % b` は
   `Int32.remainder`、`Vector#{...}` は `Vector.toList`。書き換えはこれに触らない。
 - `recv=A via=V` は受け手 `e` を宣言した型 alias。推論は alias を開くので、型を書いた所から読む: `via=decl` は

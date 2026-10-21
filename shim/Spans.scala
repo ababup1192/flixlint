@@ -13,14 +13,20 @@ import java.nio.file.{Files, Path}
   * `ec` one past the last character, counted in UTF-16 code units. The first line is a `#` header with the format
   * version and the stage. Kinds:
   *
-  *  - `def-decl` the name of a `def` (extra `pub` when public); `def-use` a call or a reference to a def
+  *  - `def-decl` the name of a `def`; extra `pub` when public, `inst` for a def of an instance, `ann=a,b` its annotations
+  *    (lower case: `test`, `skip`, ...), `ext=sl:sc:el:ec` the whole definition as the compiler places it;
+  *    `def-use` a call or a reference to a def
   *  - `def-use`, `case-construct`, `case-pattern` have extra `sugar` when the span is not the written name but syntax that
   *    stands for it (`a :: b` is `List.Cons` over the whole expression, `a % b` is `Int32.remainder`)
-  *  - `enum-decl` the name of an `enum`; `case-decl` a case of it (owner: the enum)
+  *  - `enum-decl` the name of an `enum`; `case-decl` a case of it (owner: the enum; extra `arity=N`, the number of its fields)
   *  - `case-construct` a case built in an expression; `case-pattern` a case matched in a pattern
   *  - `match-site` a `match` (the whole expression): extra `arms=N wild=N var=N guard=N enum=E`, where `wild` / `var` count
   *    the arms whose top-level pattern is `_` / a variable and `enum` is the enum of the first top-level case pattern
   *    (`-` when there is none); the typed stage adds `scrut=T`, the head of the scrutinee's type
+  *  - `match-arm` one arm of a match (the span is the arm as the compiler places it; `sym` the case of a top-level case
+  *    pattern): extra `match=L:C` (the match it is in), `pat=wild|var|tag|other`, `at=sl:sc:el:ec` the top-level pattern,
+  *    `guard=0|1`, `full=1` for a case pattern whose fields are all `_` or variables (it takes every value of the case),
+  *    and for `pat=var` `name=x uses=0|1` (whether the body or the guard reads the variable)
   *  - typed stage only: `label-select` (`e#x`, the span is `x`) and `label-update` (`{ x = v | e }`, the span is `x`),
   *    extra `recv=A via=V`: `A` the type alias the receiver `e` is declared with, `via` how it was known: `decl` (the
   *    declared type of a parameter, an ascribed `let`, an ascription or the return type of the def called), `row` (the
@@ -34,7 +40,7 @@ import java.nio.file.{Files, Path}
   */
 object Spans {
   /** Bumped when a column or a kind changes meaning, so that a cached index of an older shim is not reused. */
-  val FormatVersion = 1
+  val FormatVersion = 2
 
   /** Takes `--spans FILE` out of the arguments (the rest goes to the fact walker unchanged). */
   def split(argv: Array[String]): (Option[Path], Array[String]) = {
@@ -110,20 +116,69 @@ object Spans {
   private def sugar(loc: SourceLocation, name: String): String =
     if (loc.startLine == loc.endLine && loc.text.forall(_.endsWith(name))) "" else "sugar" // a name never spans lines
 
-  private def matchRow(out: Out, p: Product, owner: String, more: String): Unit =
-    out.add("match-site", "", field[SourceLocation](p, "loc"), owner, matchShape(field[List[Any]](p, "rules")) + more)
+  private def matchRow(out: Out, p: Product, owner: String, more: String): Unit = {
+    val loc = field[SourceLocation](p, "loc")
+    val rules = field[List[Any]](p, "rules")
+    out.add("match-site", "", loc, owner, matchShape(rules) + more)
+    rules.foreach(r => armRow(out, r, s"${loc.startLine}:${loc.startCol}", owner))
+  }
+
+  private def span(loc: SourceLocation): String = s"${loc.startLine}:${loc.startCol}:${loc.endLine}:${loc.endCol}"
+
+  /** `pub inst ann=test ext=sl:sc:el:ec`. */
+  private def declExtra(pub: Boolean, inst: Boolean, ann: ca.uwaterloo.flix.language.ast.shared.Annotations, loc: SourceLocation): String = {
+    val anns = ann.annotations.map(a => a.getClass.getSimpleName.stripSuffix("$").toLowerCase)
+    (Seq("pub").filter(_ => pub) ++ Seq("inst").filter(_ => inst) ++ (if (anns.isEmpty) Nil else Seq("ann=" + anns.mkString(","))) ++ Seq("ext=" + span(loc))).mkString(" ")
+  }
+
+  private def varSym(pat: Any): Symbol.VarSym =
+    if (pat.getClass.getMethods.exists(_.getName == "bnd")) field[Symbol.VarSym](field[Any](pat, "bnd"), "sym") else field[Symbol.VarSym](pat, "sym")
+
+  /** Whether the expression reads the variable. */
+  private def reads(node: Any, v: Symbol.VarSym): Boolean = node match {
+    case null | _: Type | _: UnkindedType | _: SourceLocation | _: String | _: java.lang.Number | _: java.lang.Boolean | _: Symbol => false
+    case p: Product if p.productPrefix == "Var" && p.getClass.getName.contains("$Expr$") => field[Symbol.VarSym](p, "sym") == v
+    case p: Product => p.productIterator.exists(reads(_, v))
+    case xs: Iterable[_] => xs.exists(reads(_, v))
+    case _ => false
+  }
+
+  private def armRow(out: Out, rule: Any, matchAt: String, owner: String): Unit = {
+    val pat = field[Any](rule, "pat")
+    val cls = pat.getClass.getName
+    val guard = field[Option[Any]](rule, "guard")
+    val body = field[Any](rule, "exp")
+    val g = if (guard.nonEmpty) 1 else 0
+    val patLoc = field[SourceLocation](pat, "loc")
+    def irrefutable(x: Any): Boolean = { val n = x.getClass.getName; n.endsWith("$Pattern$Wild") || n.endsWith("$Pattern$Var") }
+    val (kind, sym, more) =
+      if (cls.endsWith("$Pattern$Wild")) ("wild", "", "")
+      else if (cls.endsWith("$Pattern$Var")) {
+        val v = varSym(pat)
+        val uses = if (reads(body, v) || guard.exists(reads(_, v))) 1 else 0
+        ("var", "", s" name=${v.text} uses=$uses")
+      } else pat match {
+        case t: Product if t.productPrefix == "Tag" =>
+          val full = if (field[List[Any]](t, "pats").forall(irrefutable)) 1 else 0
+          ("tag", symName(field[SymUse.CaseSymUse](t, "symUse").sym), s" full=$full")
+        case _ => ("other", "", "")
+      }
+    out.add("match-arm", sym, field[SourceLocation](rule, "loc"), owner, s"match=$matchAt pat=$kind at=${span(patLoc)} guard=$g$more")
+  }
 
   def resolved(root: ResolvedAst.Root, path: Path): Int = {
     val out = new Out("resolved")
     val allDefs: Iterable[ResolvedAst.Declaration.Def] = root.defs.values ++ root.instances.values.flatMap(_.defs)
+    val instDefs: Set[Any] = root.instances.values.flatMap(_.defs).toSet
+    def insts(d: Any): Boolean = instDefs.contains(d)
     for (d <- allDefs if !synthetic(d)) {
       val fn = symName(d.sym)
-      out.add("def-decl", fn, d.sym.loc, fn, if (d.spec.mod.isPublic) "pub" else "")
+      out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, insts(d), d.spec.ann, d.loc))
       walk(out, d.exp, fn, "", (p, cls) => if (p.productPrefix == "Match" && isExpr(cls)) matchRow(out, p, fn, ""))
     }
     for ((sym, e) <- root.enums) {
       out.add("enum-decl", symName(sym), sym.loc, symName(sym))
-      e.cases.foreach(c => out.add("case-decl", symName(c.sym), c.sym.loc, symName(sym)))
+      e.cases.foreach(c => out.add("case-decl", symName(c.sym), c.sym.loc, symName(sym), s"arity=${c.tpes.length}"))
     }
     out.write(path)
   }
@@ -132,9 +187,10 @@ object Spans {
     val out = new Out("typed")
     val receivers = new Receivers(root)
     val allDefs: Iterable[TypedAst.Def] = root.defs.values ++ root.instances.values.flatMap(_.defs)
+    val instDefs: Set[Any] = root.instances.values.flatMap(_.defs).toSet
     for (d <- allDefs if !synthetic(d)) {
       val fn = symName(d.sym)
-      out.add("def-decl", fn, d.sym.loc, fn, if (d.spec.mod.isPublic) "pub" else "")
+      out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, instDefs.contains(d), d.spec.ann, d.loc))
       d.spec.fparams.toList.foreach(receivers.declare)
       walk(out, d.exp, fn, "", (p, cls) => if (isExpr(cls)) p.productPrefix match {
         case "Match" => matchRow(out, p, fn, " scrut=" + Typed.headName(field[TypedAst.Expr](p, "exp").tpe))
@@ -157,7 +213,7 @@ object Spans {
     }
     for ((sym, e) <- root.enums) {
       out.add("enum-decl", symName(sym), sym.loc, symName(sym))
-      e.cases.keys.foreach(cs => out.add("case-decl", symName(cs), cs.loc, symName(sym)))
+      e.cases.foreach { case (cs, c) => out.add("case-decl", symName(cs), cs.loc, symName(sym), s"arity=${c.tpes.length}") }
     }
     out.write(path)
   }
