@@ -14,7 +14,7 @@
     "pure-rules": 1,
     "silent-parse": 3,
     "raw-alias": 1,
-    "flat-rules": 6,
+    "flat-rules": 6, "bool-arg": 2,
     "clock": {
       "limit": 4,
       "raiseReason": "Report.footer reads the clock through Wall.stamp until the report moves to the runner"

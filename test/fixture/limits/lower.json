@@ -1,4 +1,4 @@
 {
   "note": "clock one over its count: the run fails until the limit is lowered to 4",
-  "limits": { "capability-leak": 1, "capability-site": 1, "capability-target": 1, "clock-alone": 1, "domain-isolation": 6, "find-many": 2, "guarded-write": 1, "handler-site": 2, "io-in-tx": 2, "log-text": 2, "pure-rules": 1, "silent-parse": 3, "raw-alias": 1, "flat-rules": 6, "clock": 5, "wrapped-key": 4 }
+  "limits": { "capability-leak": 1, "capability-site": 1, "capability-target": 1, "clock-alone": 1, "domain-isolation": 6, "find-many": 2, "guarded-write": 1, "handler-site": 2, "io-in-tx": 2, "log-text": 2, "pure-rules": 1, "silent-parse": 3, "raw-alias": 1, "flat-rules": 6, "bool-arg": 2, "clock": 5, "wrapped-key": 4 }
 }

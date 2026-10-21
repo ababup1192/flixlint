@@ -39,6 +39,12 @@ src/api/Endpoints.flix:57: silent-parse: Endpoints.parsedOrZero: defaults the va
 src/api/Endpoints.flix:61: silent-parse: Endpoints.parsedOrOne: defaults the values Ids.parse rejects
     a value that does not parse is rejected, not dropped or replaced by a default
     fix it, or add |> allowIn(Fn.Endpoints_parsedOrOne, "reason") to rule silent-parse
+src/app/Flags.flix:5: bool-arg: Flags.page: passes arg:Flags.send:0
+    a Bool argument is named by an enum case or a record field
+    fix it, or add |> allowIn(Fn.Flags_page, "reason") to rule bool-arg
+src/app/Flags.flix:7: bool-arg: Flags.quiet: passes arg:Flags.send:0
+    a Bool argument is named by an enum case or a record field
+    fix it, or add |> allowIn(Fn.Flags_quiet, "reason") to rule bool-arg
 src/app/Runner.flix:12: handler-site: Runner.bypass: installs a handler for Auth
     the Auth handler is installed by the runner only; use cases receive Permit
     fix it, or add |> allowIn(Fn.Runner_bypass, "reason") to rule handler-site

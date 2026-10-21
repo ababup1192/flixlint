@@ -363,7 +363,8 @@ object Facts {
             go(exps(1), outers, env, inPipe = false)
           case "ApplyDef" | "ApplySig" | "ApplyOp" =>
             val callee = calleeOf(p)
-            val loc = lineOf(p)
+            // The line of the callee's name, not of the call: a call's location starts at a comment written above it.
+            val loc = field[SourceLocation](field[Any](p, "symUse"), "loc").startLine
             sink.calls(fn, callee, loc)
             outers.distinct.foreach(outer => sink.callsInLambdaArgOf(fn, callee, outer, loc))
             val exps = field[List[Any]](p, "exps")
@@ -457,6 +458,54 @@ object Facts {
     }
     go(body, Nil, Map.empty, inPipe = false)
   }
+
+  /** Every `true` / `false` literal in the body of `fn`, with where it is written and the line its parent starts on
+    * (a tuple written over several lines starts on its first): the nearest parents (closest first,
+    * up to three, joined by ` < `), e.g. `field:expected < arg:Assert.assertEq:0` for `assertEq(expected = true, x)`.
+    * A parent is `arg:<callee>:<index>`, `field:<label>`, `tag:<case>`, `tuple`, `vector`, `array`, `let` (the bound
+    * expression) or `op:<operator>`; anything else by its node name. `not` and type ascriptions are seen through, and a
+    * literal in a pattern (`case true =>`) is not one.
+    *
+    * WhyNot: not a branch of `walkBody`. That walker follows let-bound expressions to where they are used, so a
+    * literal there would be filed under the use; the place it is written is what a rule on literals needs.
+    */
+  def walkBools(fn: String, body: Any, sink: Sink): Unit = {
+    def transparent(p: Product): Boolean = p.productPrefix match {
+      case "Unary" | "Ascribe" | "CheckedCast" | "UncheckedCast" => true
+      case _ => false
+    }
+    def parent(p: Product, fieldName: String, index: Int): String = p.productPrefix match {
+      case "ApplyDef" | "ApplySig" | "ApplyOp" if fieldName == "exps" =>
+        s"arg:${symName(field[Any](field[Any](p, "symUse"), "sym"))}:$index"
+      case "RecordExtend" if fieldName == "exp1" => s"field:${field[Any](p, "label").toString}"
+      case "Tag" if p.getClass.getName.contains("Expr") => s"tag:${symName(field[Any](field[Any](p, "symUse"), "sym"))}"
+      case "Tuple" => "tuple"
+      case "VectorLit" => "vector"
+      case "ArrayLit" => "array"
+      case "Let" if fieldName == "exp1" => "let"
+      case "Binary" => s"op:${field[Any](p, "sop")}"
+      case other => other
+    }
+    // The line a parent starts on (a node without a location, such as a match rule, takes its own parent's).
+    def startOf(p: Product, ctx: List[(String, Int)]): Int =
+      if (p.getClass.getMethods.exists(m => m.getName == "loc" && m.getParameterCount == 0)) field[SourceLocation](p, "loc").startLine
+      else ctx.headOption.map(_._2).getOrElse(0)
+    def go(node: Any, ctx: List[(String, Int)]): Unit = node match {
+      case null | _: Type | _: UnkindedType | _: SourceLocation | _: Symbol | _: String | _: java.lang.Number | _: java.lang.Boolean => ()
+      case p: Product if p.productPrefix == "Cst" && !p.getClass.getName.contains("Pattern") && field[Any](p, "cst").isInstanceOf[Product] &&
+          field[Product](p, "cst").productPrefix == "Bool" =>
+        val line = field[SourceLocation](p, "loc").startLine
+        sink.boolLit(fn, field[Any](field[Any](p, "cst"), "lit").toString, ctx.take(3).map(_._1).mkString(" < "), line, ctx.headOption.map(_._2).getOrElse(line))
+      case p: Product =>
+        p.productElementNames.zip(p.productIterator).foreach {
+          case (name, xs: List[_]) => xs.zipWithIndex.foreach { case (x, i) => go(x, if (transparent(p)) ctx else (parent(p, name, i), startOf(p, ctx)) :: ctx) }
+          case (name, x) => go(x, if (transparent(p)) ctx else (parent(p, name, 0), startOf(p, ctx)) :: ctx)
+        }
+      case xs: Iterable[_] => xs.foreach(x => go(x, ctx))
+      case _ => ()
+    }
+    go(body, Nil)
+  }
 }
 
 /** One TSV file per relation. Columns are tab-separated; text columns have tabs and newlines replaced by spaces.
@@ -494,6 +543,7 @@ final class Sink(dir: Path) {
   def argCall(caller: String, callee: String, i: Int, argCallee: String, line: Int): Unit = { fnNames += caller; fnNames += callee; fnNames += argCallee; row("arg_call", caller, callee, i, argCallee, line) }
   def pipedInto(caller: String, from: String, into: String, line: Int): Unit = { fnNames += caller; fnNames += from; fnNames += into; row("piped_into", caller, from, into, line) }
   def strLit(fn: String, text: String, line: Int): Unit = { fnNames += fn; row("str_lit", fn, text, line) }
+  def boolLit(fn: String, value: String, where: String, line: Int, parentLine: Int): Unit = { fnNames += fn; row("bool_lit", fn, value, where, line, parentLine) }
   def branch(fn: String, kind: String, line: Int): Unit = { fnNames += fn; row("branch", fn, kind, line) }
   def argTypeAll(fn: String, i: Int, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("arg_type_all", fn, i, tycon) }
   def retTypeAll(fn: String, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("ret_type_all", fn, tycon) }
@@ -673,6 +723,7 @@ object Typed {
       allNames(d.spec.retTpe).distinct.foreach(n => sink.retTypeAll(fn, n))
       deepNames(d.spec.retTpe).distinct.foreach(n => sink.retTypeDeep(fn, n))
       walkBody(fn, d.exp, sink)
+      walkBools(fn, d.exp, sink)
     }
     for ((sym, e) <- root.enums; file <- sourceFile(e.loc)) {
       sink.enumDef(symName(sym), sym.namespace.mkString("."), file, sym.loc.startLine, e.mod.isPublic)
@@ -800,6 +851,7 @@ object Resolved {
       allNames(d.spec.tpe).distinct.foreach(n => sink.retTypeAll(fn, n))
       deepNames(d.spec.tpe).distinct.foreach(n => sink.retTypeDeep(fn, n))
       walkBody(fn, d.exp, sink)
+      walkBools(fn, d.exp, sink)
     }
     for ((sym, e) <- root.enums; file <- sourceFile(e.loc)) {
       sink.enumDef(symName(sym), sym.namespace.mkString("."), file, sym.loc.startLine, e.mod.isPublic)

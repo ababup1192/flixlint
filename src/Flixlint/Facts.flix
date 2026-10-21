@@ -39,6 +39,12 @@ pub mod Flixlint.Facts {
     /// In a `|>` chain, the result of `source` reaches `target` (through any number of stages); `line` is the line of `target`.
     pub type alias PipedInto = { caller = Fn, source = Fn, target = Fn, line = Int32 }
 
+    /// A `true` / `false` literal in the body of `fn` (not in a pattern): `placement` names its nearest parents, closest first
+    /// and up to three, joined by ` < ` (`field:expected < arg:Assert.assertEq:0` for `assertEq(expected = true, x)`;
+    /// a parent is `arg:<callee>:<index>`, `field:<label>`, `tag:<case>`, `tuple`, `vector`, `array`, `let` or
+    /// `op:<operator>`, `not` and ascriptions seen through). `parentLine` is the line the nearest parent starts on.
+    pub type alias BoolLit = { fn = Fn, value = Bool, placement = String, line = Int32, parentLine = Int32 }
+
     /// A branch in the body of `fn`: `kind` is `if`, `match` (a `match` lambda too), `typematch`, `extmatch` or `guard`
     /// (the `if` of a `case … if …` rule, one row per rule). A `let (a, b) = e` and a `forM` generator are not branches.
     pub type alias Branch = { fn = Fn, kind = String, line = Int32 }
@@ -77,6 +83,7 @@ pub mod Flixlint.Facts {
         pipedInto = List[PipedInto],
         strLits = List[StrLit],
         branches = List[Branch],
+        boolLits = List[BoolLit],
         argTypes = List[ArgType],
         argTypesAll = List[ArgType],
         argTypesDeep = List[ArgType],
@@ -118,6 +125,7 @@ pub mod Flixlint.Facts {
     pub def pipedInto(facts: Facts): List[PipedInto] = data(facts)#pipedInto
     pub def strLits(facts: Facts): List[StrLit] = data(facts)#strLits
     pub def branches(facts: Facts): List[Branch] = data(facts)#branches
+    pub def boolLits(facts: Facts): List[BoolLit] = data(facts)#boolLits
     pub def argTypes(facts: Facts): List[ArgType] = data(facts)#argTypes
     pub def argTypesAll(facts: Facts): List[ArgType] = data(facts)#argTypesAll
     pub def argTypesDeep(facts: Facts): List[ArgType] = data(facts)#argTypesDeep
@@ -251,6 +259,7 @@ pub mod Flixlint.Facts {
         let enums = rows(dir, "enum") |> List.filterMap(c -> forM (e <- enumOf(col(0, c)); m <- modOf(col(1, c))) yield { ofEnum = e, module = m, file = col(2, c), line = int(3, c) });
         let (typeAliases, aliasTypesAll) = loadAliases(dir, typeOf, modOf);
         let branches = loadBranches(dir, fnOf);
+        let boolLits = loadBoolLits(dir, fnOf);
         let effects = rows(dir, "eff") |> List.filterMap(c -> forM (e <- effOf(col(0, c)); m <- modOf(col(1, c))) yield { effect = e, module = m, file = col(2, c), line = int(3, c) });
         let sourceFiles = rows(dir, "source_file") |> List.map(c -> col(0, c));
         let sortedCalls = calls |> List.sortBy(c -> (c#caller, c#line, c#callee));
@@ -265,6 +274,7 @@ pub mod Flixlint.Facts {
             pipedInto = pipedInto,
             strLits = strLits,
             branches = branches,
+            boolLits = boolLits,
             argTypes = types#argTypes,
             argTypesAll = types#argTypesAll,
             argTypesDeep = types#argTypesDeep,
@@ -334,6 +344,12 @@ pub mod Flixlint.Facts {
         { argTypes = argTypes, argTypesAll = argTypesAll, argTypesDeep = argTypesDeep,
           retTypes = retTypes, retTypesAll = retTypesAll, retTypesDeep = retTypesDeep,
           caseTypes = caseTypes, caseTypesAll = caseTypesAll, caseTypesDeep = caseTypesDeep }
+
+    /// The Bool literals. WhyNot: not inline in `load`, for the same reason as `loadTypes`.
+    @DontInline
+    def loadBoolLits(dir: String, fnOf: String -> Option[Fn]): List[BoolLit] \ FileRead =
+        rows(dir, "bool_lit") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)))
+            yield { fn = fn, value = col(1, c) == "true", placement = col(2, c), line = int(3, c), parentLine = int(4, c) })
 
     /// The branches. WhyNot: not inline in `load`, for the same reason as `loadTypes`.
     @DontInline

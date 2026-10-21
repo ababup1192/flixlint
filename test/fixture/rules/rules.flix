@@ -71,7 +71,8 @@ mod FixtureRules {
                 |> allowIn(Fn.Orders_permitsInLambda, "an allow on a custom rule"),
             customRule({ id = "silent-parse", check = silentParse }),
             customRule({ id = "raw-alias", check = rawAlias }),
-            customRule({ id = "flat-rules", check = flatRules })
+            customRule({ id = "flat-rules", check = flatRules }),
+            customRule({ id = "bool-arg", check = boolArg })
         })
     })
 
@@ -100,6 +101,13 @@ mod FixtureRules {
             |> List.filter(c -> Flixlint.Facts.defOf(facts, c#caller)
                 |> Option.exists(d -> Flixlint.Glob.matches("src/domain/**", d#file) and d#file != "src/domain/Auth.flix"))
             |> List.map(c -> Flixlint.Violation.atCall(facts, "capability-site", c, "use cases receive Permit as an argument; only the boundary asks Auth"))
+
+    /// A `true` / `false` passed straight to a function says nothing at the call: name it (BoolLit).
+    def boolArg(facts: Facts): List[Violation] =
+        Flixlint.Facts.boolLits(facts)
+            |> List.filter(b -> String.startsWith(prefix = "arg:", b#placement))
+            |> List.map(b -> Flixlint.Violation.inBody(facts, "bool-arg", b#fn, b#line, "passes ${b#placement}",
+                "a Bool argument is named by an enum case or a record field"))
 
     /// The rules are tables, not decisions: no `if` or `match` in src/domain/rules (Branch).
     def flatRules(facts: Facts): List[Violation] =

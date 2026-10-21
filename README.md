@@ -281,7 +281,7 @@ What the families cannot say is written against the facts, in the same rule set;
 [`examples/rules.flix`](examples/rules.flix) is one.
 
 `Flixlint.Facts` gives the relations as lists of records (`defs`, `calls`, `handles`, `constructs`, `callsInLambda`,
-`argLits`, `argCalls`, `pipedInto`, `strLits`, `branches`, `argTypes`, `argTypesAll`, `argTypesDeep`, `caseTypes`, `caseTypesAll`, `caseTypesDeep`, `enums`, `effects`, `typeAliases`)
+`argLits`, `argCalls`, `pipedInto`, `strLits`, `branches`, `boolLits`, `argTypes`, `argTypesAll`, `argTypesDeep`, `caseTypes`, `caseTypesAll`, `caseTypesDeep`, `enums`, `effects`, `typeAliases`)
 and the lookups (`defOf`, `callsFrom`, `callsTo`, `effectOf`, `argType`, `argTypesAllOf`, `argTypesDeepOf`, `retType`, `retTypesAllOf`, `retTypesDeepOf`,
 `aliasTypesAllOf`, `strLitsIn`, `expandEffects`, `fnName`, `isIn`); `Flixlint.Violation` builds violations (`atCall`, `atDef`, `inBody`,
 `atDeclaration`, `withPath`, `withNote`); `Flixlint.Glob.matches(pattern, path)` is the glob of `files` (`*` stays
@@ -304,7 +304,7 @@ facts directory holds fewer files than the table below has rows.
 |---|---|---|
 | `SourceFile` | `file` | A `.flix` file the walk was given, whether or not it holds a definition. `allowInFile` is checked against these, so a file of nothing but type aliases or a trait counts. |
 | `Def` | `fn, name, mod, file, line, pub` | A top-level or instance definition; `line` is the line of its name (not of its doc comment), `name` is the unqualified name, `pub` is `true`/`false`. Definitions the compiler makes up (derived instances, `Eq.eq$123`) are left out. |
-| `Calls` | `caller, callee, line` | A call inside the body of `caller` (lambdas and local defs count as the enclosing def). Def, trait signature, effect operation and Java calls alike; a function passed by name counts as a call. |
+| `Calls` | `caller, callee, line` | A call inside the body of `caller` (`line` is the line of the callee's name: a call written under a comment starts on the comment) (lambdas and local defs count as the enclosing def). Def, trait signature, effect operation and Java calls alike; a function passed by name counts as a call. |
 | `EffectOf` | `fn, eff` | One effect of the signature, type aliases expanded (`\ Db` with `Db = DbRead + DbWrite` gives two rows). |
 | `EffAlias` | `alias, eff` | The members of an effect type alias (project, packages and stdlib), for expanding the effects named in a rule. |
 | `Handles` | `fn, eff, line` | `run ... with handler Eff` inside the body of `fn`. |
@@ -315,6 +315,7 @@ facts directory holds fewer files than the table below has rows.
 | `PipedInto` | `caller, source, target, line` | In a `\|>` chain, the result of `source` reaches `target` through any number of stages (`a() \|> f \|> g(x)` gives a→f, a→g, f→g); `line` is the line of `target`. A lambda inside a stage is not part of the chain. |
 | `StrLit` | `fn, text, line` | A string literal in the body of `fn` (the pieces of an interpolated string too). |
 | `Branch` | `fn, kind, line` | A branch in the body of `fn`: `kind` is `if`, `match` (a `match` lambda too), `typematch`, `extmatch` or `guard` (the `if` of a `case … if …` rule, one row per rule). A `let (a, b) = e` is not counted, though the compiler makes it a one-rule match; nor is a `forM` generator (`s <- xs`, which the compiler also turns into a match); the guard of a `forM` counts as an `if`. |
+| `BoolLit` | `fn, value, placement, line, parentLine` | A `true` / `false` literal in the body of `fn` (not in a pattern). `placement` names its nearest parents, closest first and up to three, joined by ` < ` (`field:expected < arg:Assert.assertEq:0` for `assertEq(expected = true, x)`): `arg:<callee>:<index>`, `field:<label>`, `tag:<case>`, `tuple`, `vector`, `array`, `let` or `op:<operator>`; `not` and ascriptions are seen through. `parentLine` is the line the nearest parent starts on (a tuple written over several lines starts on its first). |
 | `ArgType` | `fn, index, tycon` | Head type constructor of the `index`-th parameter (`Auth.Permit`, `List`, `Str`, `Arrow(2)`, `?` for a type variable). |
 | `ArgTypeAll` | `fn, index, tycon` | Every type constructor in the `index`-th parameter, nested ones included (`List[ColumnName]` gives `List` and `ColumnName`; an alias is listed by its own name and its arguments; type variables and record rows are left out). |
 | `RetType` / `RetTypeAll` | `fn, tycon` | The head type constructor of the return type / every one in it. |
@@ -710,7 +711,7 @@ family で言えない物は facts に対して書き、同じ rule set に入�
 の `findReadsOnly` がその 1 つ。
 
 `Flixlint.Facts` は関係を record の list で渡し（`defs`、`calls`、`handles`、`constructs`、`callsInLambda`、
-`argLits`、`argCalls`、`pipedInto`、`strLits`、`branches`、`argTypes`、`argTypesAll`、`argTypesDeep`、`caseTypes`、`caseTypesAll`、`caseTypesDeep`、`enums`、`typeAliases`、
+`argLits`、`argCalls`、`pipedInto`、`strLits`、`branches`、`boolLits`、`argTypes`、`argTypesAll`、`argTypesDeep`、`caseTypes`、`caseTypesAll`、`caseTypesDeep`、`enums`、`typeAliases`、
 `effects`）、引く関数（`defOf`、`callsFrom`、`callsTo`、`effectOf`、`argType`、`argTypesAllOf`、`argTypesDeepOf`、`retType`、
 `retTypesAllOf`、`retTypesDeepOf`、`aliasTypesAllOf`、`strLitsIn`、`expandEffects`、`fnName`、`isIn`）も持つ。`Flixlint.Violation` が違反を組み
 （`atCall`、`atDef`、`inBody`、`atDeclaration`、`withPath`、`withNote`）、`Flixlint.Glob.matches(pattern, path)`
@@ -733,7 +734,7 @@ qualify するのと同じ形になる。`Auth.permit`、`Auth.Permit.Permit`（
 |---|---|---|
 | `SourceFile` | `file` | 走査に渡した `.flix` のファイル。定義を持たないファイルも載る。`allowInFile` はこれと突き合わせるので、型エイリアスや trait だけのファイルも数える |
 | `Def` | `fn, name, mod, file, line, pub` | トップレベルか instance の定義。`line` は名前の行（doc コメントの行ではない）、`name` は unqualified な名前、`pub` は `true`/`false`。コンパイラが作る定義（derive した instance、`Eq.eq$123`）は外す |
-| `Calls` | `caller, callee, line` | `caller` の本体の中の呼び出し（ラムダとローカルの def は囲む def に数える）。def・trait の signature・effect の操作・Java の呼び出しを区別しない。名前で渡した関数も呼び出しに数える |
+| `Calls` | `caller, callee, line` | `caller` の本体の中の呼び出し（`line` は呼んだ関数の名前の行。上にコメントのある呼び出しの位置はコメントから始まるため）（ラムダとローカルの def は囲む def に数える）。def・trait の signature・effect の操作・Java の呼び出しを区別しない。名前で渡した関数も呼び出しに数える |
 | `EffectOf` | `fn, eff` | シグネチャの effect 1 つ。型エイリアスは展開する（`Db = DbRead + DbWrite` の `\ Db` は 2 row） |
 | `EffAlias` | `alias, eff` | effect の型エイリアスの中身（プロジェクト・package・stdlib）。rule に書いた effect を展開するために使う |
 | `Handles` | `fn, eff, line` | `fn` の本体の中の `run ... with handler Eff` |
@@ -744,6 +745,7 @@ qualify するのと同じ形になる。`Auth.permit`、`Auth.Permit.Permit`（
 | `PipedInto` | `caller, source, target, line` | `\|>` の連なりの中で、`source` の結果が何段か先の `target` に届く事（`a() \|> f \|> g(x)` は a→f、a→g、f→g）。`line` は `target` の行。段の中のラムダは連なりに入らない |
 | `StrLit` | `fn, text, line` | `fn` の本体の中の文字列リテラル（補間した文字列の断片も） |
 | `Branch` | `fn, kind, line` | `fn` の本体の中の分岐。`kind` は `if`・`match`（`match` のラムダも）・`typematch`・`extmatch`・`guard`（`case … if …` の条件。腕ごとに 1 行）。組を分ける `let (a, b) = e` は、コンパイラが 1 つの腕の match にするが数えない。`forM` の生成元（`s <- xs`。これも match になる）も数えず、`forM` の guard は `if` として数える |
+| `BoolLit` | `fn, value, placement, line, parentLine` | `fn` の本体の中の `true` / `false` の字（パターンの中は除く）。`placement` は近い親から 3 つまでを ` < ` で繋いだ物（`assertEq(expected = true, x)` なら `field:expected < arg:Assert.assertEq:0`）。親は `arg:<呼んだ関数>:<位置>`・`field:<欄>`・`tag:<case>`・`tuple`・`vector`・`array`・`let`・`op:<演算>` で、`not` と型の注記は透かす。`parentLine` は近い親の書き始めの行（複数行の組は 1 行目） |
 | `ArgType` | `fn, index, tycon` | `index` 番目の引数の型の先頭の型コンストラクタ（`Auth.Permit`、`List`、`Str`、`Arrow(2)`、型変数は `?`） |
 | `ArgTypeAll` | `fn, index, tycon` | `index` 番目の引数の型に現れる型コンストラクタを入れ子まで全部（`List[ColumnName]` なら `List` と `ColumnName`。エイリアスは自分の名前とその引数を載せる。型変数と record の row は外す） |
 | `RetType` / `RetTypeAll` | `fn, tycon` | 戻り値の型の先頭の型コンストラクタ / その中の全部 |
