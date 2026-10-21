@@ -67,7 +67,10 @@ object Facts {
   }
 
   /** `run` with the spans option split off, and a usage error or a crash turned into exit code 4. */
-  def guarded(argv: Array[String]): Int =
+  def guarded(argv: Array[String]): Int = guardedWith(argv)(run)
+
+  /** `guarded` over another way of running the walk (the resident server keeps its compiler between runs). */
+  def guardedWith(argv: Array[String])(run: (Array[String], Option[Path]) => Int): Int =
     try { val (spans, rest) = Spans.split(argv); run(rest, spans) }
     catch {
       case e: UsageError =>
@@ -83,17 +86,31 @@ object Facts {
   def run(argv: Array[String], spans: Option[Path] = None): Int = {
     val args = parseArgs(argv)
     val t0 = System.nanoTime()
-    val deps =
-      if (args.pkgs.nonEmpty || args.jars.nonEmpty) Deps.ofPaths(args.pkgs, args.jars, args.projectRoot, args.srcs)
-      else Deps.ofProject(args.projectRoot, args.srcs)
+    val flix = compiler(depsOf(args))
+    val files = args.srcs.flatMap(listFlix)
+    files.foreach(f => flix.addFile(f, SecurityContext.Unrestricted))
+    write(flix, args, files, spans, t0)
+  }
+
+  /** The packages and jars of the run: the ones given by hand, or those of the project's `flix.toml`. */
+  def depsOf(args: Args): Deps =
+    if (args.pkgs.nonEmpty || args.jars.nonEmpty) Deps.ofPaths(args.pkgs, args.jars, args.projectRoot, args.srcs)
+    else Deps.ofProject(args.projectRoot, args.srcs)
+
+  /** A compiler over the dependencies, with no source added yet. */
+  def compiler(deps: Deps): Flix = {
     // The packages, the jars and the mount table are fixed when the compiler is made (Flix 0.78).
     val flix = new Flix(deps.pkgs, deps.jars, deps.mounts)
     // WhyNot: subeffecting is not set here. The sources must type the same way `flix check` types them, and the
     // compiler's default is what `flix check` uses (Flix 0.78 has none; a set the CLI does not use fails sources it accepts).
-    val opts = Options.Default.copy(lib = LibLevel.All, progress = false)
-    flix.setOptions(opts)
-    val files = args.srcs.flatMap(listFlix)
-    files.foreach(f => flix.addFile(f, SecurityContext.Unrestricted))
+    flix.setOptions(Options.Default.copy(lib = LibLevel.All, progress = false))
+    flix
+  }
+
+  /** Compiles `files` (already added to `flix`) to the stage of `args` and writes the facts; 0, or 3 when they do
+    * not compile. `t0` is when the run started, for the timing line.
+    */
+  def write(flix: Flix, args: Args, files: List[Path], spans: Option[Path], t0: Long): Int = {
     val t1 = System.nanoTime()
 
     val sink = new Sink(args.out)

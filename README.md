@@ -140,6 +140,8 @@ bin/flixlint --version
 | `--shim JAR` | A prebuilt shim jar, instead of building one with `scala-cli`. `FLIXLINT_SHIM` works too. |
 | `--java-opts "..."` | The JVM options both java steps get (default `-Xss32m -XX:MaxRAMPercentage=35`). `FLIXLINT_JAVA_OPTS` works too. |
 | `--spans FILE` | Also write the position of every name the sources write (see [Spans](#spans)). Without `--rules`, only that index is written. |
+| `--resident` | Keep a server (one JVM per working directory and build directory) with the compiler and the rule engine loaded, and lint through it: from the second run on, only the files that changed are compiled again (the compiler's own incremental check). `FLIXLINT_RESIDENT=1` works too. A run without it uses the server when one is up and runs on its own when none is. |
+| `--resident-stop` | Stop that server (it also stops after `FLIXLINT_RESIDENT_IDLE` minutes without a run, 30 by default, and when called with another compiler or shim jar). |
 | `--version` | The version in `flix.toml`. |
 | `SRC...` | Source directories or files, relative to the current directory. File paths in violations and in `allowInFile` are relative to that directory too. |
 
@@ -148,6 +150,8 @@ bin/flixlint --version
 | `FLIX_JAR` | The compiler jar, when `--flix-jar` does not say. |
 | `FLIXLINT_SHIM` | A prebuilt shim jar, when `--shim` does not say. |
 | `FLIXLINT_JAVA_OPTS` | The default for `--java-opts`. |
+| `FLIXLINT_RESIDENT` | `1`: as `--resident`. |
+| `FLIXLINT_RESIDENT_IDLE` | Minutes before an idle resident server stops (default 30). |
 | `FLIXLINT_ENGINE_ROOT` | The last place `bin/flix-jar` looks for a compiler jar (default `~/Desktop/flix_game_engine`, the author's devbox). |
 
 Exit codes: `0` no violation, `1` violations, `2` the rules are wrong (the rule file does not compile, an allow that
@@ -574,6 +578,8 @@ bin/flixlint --version
 | `--shim JAR` | `scala-cli` で組む代わりに、組んである shim の jar を渡す。`FLIXLINT_SHIM` でも良い |
 | `--java-opts "..."` | 2 つの java の段に渡す JVM のオプション（既定は `-Xss32m -XX:MaxRAMPercentage=35`）。`FLIXLINT_JAVA_OPTS` でも良い |
 | `--spans FILE` | ソースに書かれた名前の位置も書く（[spans（名前の位置）](#spans名前の位置)）。`--rules` が無ければその索引だけを書く |
+| `--resident` | コンパイラと rule engine を読み込んだままの server（作業ディレクトリと build ディレクトリごとに 1 つの JVM）を立てて、そこを通して流す。2 回目からは変わったファイルだけをコンパイルし直す（コンパイラ自身の増分の check）。`FLIXLINT_RESIDENT=1` でも良い。付けない時も server が立っていれば使い、無ければ 1 回きりで流す |
+| `--resident-stop` | その server を止める（`FLIXLINT_RESIDENT_IDLE` 分（既定 30）流れなければ止まり、別のコンパイラか shim の jar で呼ばれても止まる） |
 | `--version` | `flix.toml` の版 |
 | `SRC...` | ソースのディレクトリかファイル（カレントディレクトリからの相対）。違反と `allowInFile` のパスも同じ起点 |
 
@@ -582,6 +588,8 @@ bin/flixlint --version
 | `FLIX_JAR` | `--flix-jar` が無い時のコンパイラの jar |
 | `FLIXLINT_SHIM` | `--shim` が無い時の、組んである shim の jar |
 | `FLIXLINT_JAVA_OPTS` | `--java-opts` の既定値 |
+| `FLIXLINT_RESIDENT` | `1` で `--resident` と同じ |
+| `FLIXLINT_RESIDENT_IDLE` | 流れない server が止まるまでの分（既定 30） |
 | `FLIXLINT_ENGINE_ROOT` | `bin/flix-jar` が最後に見る場所（既定は `~/Desktop/flix_game_engine`。作者の devbox） |
 
 exit code は、`0` 違反なし、`1` 違反あり、`2` rule が間違っている（rule のファイルがコンパイルできない、

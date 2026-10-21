@@ -3,7 +3,8 @@
 #
 #   flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
 #            [--today YYYY-MM-DD] [--limits FILE.json [--limits-base FILE.json]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
-#            [--java-opts "..."] [--spans FILE] SRC...
+#            [--java-opts "..."] [--spans FILE] [--resident] SRC...
+#   flixlint --resident-stop [--build-dir DIR] [--flix-jar JAR] [--shim JAR]
 #   flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] SRC...
 #   flixlint --version
 #
@@ -18,7 +19,12 @@
 #           jar, once per distinct set of those sources, and run against the facts: in the shim's JVM when the jar
 #           is already built (flixlint.Lint), in a JVM of its own right after a rebuild.
 #
-# Environment: FLIX_JAR (the compiler), FLIXLINT_SHIM (a prebuilt shim jar), FLIXLINT_JAVA_OPTS.
+# Environment: FLIX_JAR (the compiler), FLIXLINT_SHIM (a prebuilt shim jar), FLIXLINT_JAVA_OPTS,
+#              FLIXLINT_RESIDENT=1 (as --resident), FLIXLINT_RESIDENT_IDLE (minutes before an idle resident server stops; 30).
+#
+# --resident keeps one JVM per project and build directory (shim/Resident.scala) with the compiler and the rule engine
+# loaded: after the first run only the files that changed are compiled again. A run without --resident uses that server
+# when one is up, and runs on its own when none is. --resident-stop stops it.
 #
 # WhyNot: the rule engine is not run through `flix run` on loose files every time. Compiling it costs seconds, so the
 # jar is keyed by the hash of its sources and rebuilt only when the rules or the names change.
@@ -49,11 +55,13 @@ spans=""
 build_dir="build/flixlint"
 shim="${FLIXLINT_SHIM:-}"
 java_opts="${FLIXLINT_JAVA_OPTS:--Xss32m -XX:MaxRAMPercentage=35}"
+resident="${FLIXLINT_RESIDENT:-0}"
+resident_stop=0
 srcs=()
 
 # WhyNot: 使い方の断りに 1 も 2 も使わない。1 は「違反が在る」、2 は「規則が間違っている」で、CI からは
 # どちらも lint が仕事をした結果に見える。呼び方と環境の誤りは 4 で分ける。
-usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "flixlint: $1" >&2; exit 4; }
 
 while [ $# -gt 0 ]; do
@@ -72,6 +80,8 @@ while [ $# -gt 0 ]; do
         --shim) shim="$2"; shift 2 ;;
         --java-opts) java_opts="$2"; shift 2 ;;
         --project-root) project_root="$2"; shift 2 ;;
+        --resident) resident=1; shift ;;
+        --resident-stop) resident_stop=1; shift ;;
         --version) echo "flixlint $version"; exit 0 ;;
         -h|--help) usage; exit 0 ;;
         --*) echo "flixlint: unknown option $1" >&2; usage >&2; exit 4 ;;
@@ -81,9 +91,9 @@ done
 # 何も指さなかった時だけ bin/flix-jar の解決に落ちる（FLIX_JAR か --flix-jar が在ればそちらが勝つ）。
 if [ -z "$flix_jar" ] && [ -x "$here/bin/flix-jar" ]; then flix_jar="$("$here/bin/flix-jar" || true)"; fi
 [ -n "$flix_jar" ] && [ -f "$flix_jar" ] || die "--flix-jar JAR (or FLIX_JAR) must point at flix.jar"
-[ -n "$rules" ] || [ -n "$spans" ] || die "--rules PATH/rules.flix is required (or --spans FILE for the index alone)"
+[ "$resident_stop" = 1 ] || [ -n "$rules" ] || [ -n "$spans" ] || die "--rules PATH/rules.flix is required (or --spans FILE for the index alone)"
 [ -z "$rules" ] || [ -f "$rules" ] || die "rules file not found: $rules"
-[ ${#srcs[@]} -gt 0 ] || die "at least one source directory is required"
+[ "$resident_stop" = 1 ] || [ ${#srcs[@]} -gt 0 ] || die "at least one source directory is required"
 case "$stage" in typed|resolved) ;; *) die "unknown --stage $stage (typed or resolved)" ;; esac
 [ -n "$today" ] || today="$(date +%Y-%m-%d)"
 if [ -n "$limits" ] && [ ! -f "$limits" ]; then die "limits file not found: $limits"; fi
@@ -131,6 +141,31 @@ else
             || die "the shim did not build (scala-cli package shim)"
     fi
 fi
+
+# ---- the resident server (--resident, shim/Resident.scala) ----
+# The compiler jar by path, size and mtime (the key of engine.jar below and the identity of the resident server).
+# WhyNot: not the BSD spelling first. GNU `stat -f` means "the file system's status" and prints the free blocks, which
+# change from run to run, so on a Mac with coreutils on PATH the key never matched and the engine was rebuilt every
+# run; BSD `stat -c` is an illegal option that prints nothing, so the GNU spelling is tried first.
+mtime_of() { stat -c %Y -- "$1" 2>/dev/null || stat -f %m -- "$1" 2>/dev/null || echo unknown; }
+jar_id="$flix_jar $(wc -c < "$flix_jar") $(mtime_of "$flix_jar")"
+# One server per working directory and build directory, for that compiler and that shim: the facts' paths are relative
+# to the directory the server started in, and a server with other jars stops when it is called (exit 11 below).
+# WhyNot: the socket is not put under $build_dir. A Unix socket's path is capped near 100 bytes and a build directory
+# can be deep, so it goes to /tmp under a hash.
+mkdir -p "$build_dir"
+build_abs="$(cd "$build_dir" && pwd)"
+identity="$jar_id|$shim $(wc -c < "$shim") $(mtime_of "$shim")|$PWD"
+socket="/tmp/flixlint-$(id -u)-$(printf '%s' "$PWD|$build_abs" | shasum | cut -c1-16).sock"
+# The client is a JVM that only relays bytes, so it skips the optimizing compiler and the parallel collector.
+resident_client() {
+    java -XX:TieredStopAtLevel=1 -XX:+UseSerialGC -cp "$flix_jar:$shim" flixlint.Resident client --socket "$socket" --identity "$@"
+}
+if [ "$resident_stop" = 1 ]; then
+    # A call with another identity stops the server (the identity "stop" is no server's).
+    if [ -S "$socket" ]; then resident_client stop >/dev/null 2>&1 || true; fi
+    exit 0
+fi
 engine="$build_dir/engine"
 rm -rf "$engine/src"; mkdir -p "$engine/src/Flixlint"
 spans_opt=()
@@ -171,11 +206,6 @@ printf 'def main(): Unit \\ IO = Flixlint.Engine.lint(%s.rules())\n' "$rules_mod
 # same rule sources would reuse the jar the first compiler built. Path, size and mtime identify it without hashing a
 # hundred megabytes on every run (an mtime it cannot read only makes the key coarser). LC_ALL=C fixes the order the
 # globs expand in, which is the collation order and so the locale's.
-# WhyNot: not the BSD spelling first. GNU `stat -f` means "the file system's status" and prints the free blocks, which
-# change from run to run, so on a Mac with coreutils on PATH the key never matched and the engine was rebuilt every
-# run; BSD `stat -c` is an illegal option that prints nothing, so the GNU spelling is tried first.
-jar_mtime="$(stat -c %Y -- "$flix_jar" 2>/dev/null || stat -f %m -- "$flix_jar" 2>/dev/null || echo unknown)"
-jar_id="$flix_jar $(wc -c < "$flix_jar") $jar_mtime"
 key="$(export LC_ALL=C; { echo "$jar_id"; cat "$engine"/src/*.flix "$engine"/src/Flixlint/*.flix; } | shasum | cut -c1-40)"
 engine_jar="$engine/artifact/engine.jar"
 export FLIXLINT_FACTS="$facts_out" FLIXLINT_TODAY="$today" FLIXLINT_LIMITS="$limits" FLIXLINT_LIMITS_BASE="$limits_base"
@@ -184,10 +214,24 @@ export FLIXLINT_FACTS="$facts_out" FLIXLINT_TODAY="$today" FLIXLINT_LIMITS="$lim
 # WhyNot: not one JVM for the facts and another for the engine. Each start costs the JVM and the class loading of
 # the Flix runtime, on every run; only a rebuild of the engine (exit 10) still takes a JVM of its own.
 rm -f "$engine/wanted-hash"
+lint_args=(--engine "$engine" --engine-key "$key" "${facts_args[@]}")
+# The resident server when one is up (or --resident starts it), else a JVM of its own. Exit 11: no server served the run.
+status=11
 set +e
-# shellcheck disable=SC2086
-java $java_opts -cp "$flix_jar:$shim" flixlint.Lint --engine "$engine" --engine-key "$key" "${facts_args[@]}"
-status=$?
+if [ -S "$socket" ]; then resident_client "$identity" "${lint_args[@]}"; status=$?; fi
+if [ "$status" -eq 11 ] && [ "$resident" = 1 ]; then
+    echo "flixlint: starting the resident server (log: $build_dir/resident.log)" >&2
+    # shellcheck disable=SC2086
+    java $java_opts -cp "$flix_jar:$shim" flixlint.Resident server --socket "$socket" --identity "$identity" \
+        --idle-minutes "${FLIXLINT_RESIDENT_IDLE:-30}" </dev/null >>"$build_dir/resident.log" 2>&1 &
+    resident_client "$identity" --wait 60 "${lint_args[@]}"
+    status=$?
+fi
+if [ "$status" -eq 11 ]; then
+    # shellcheck disable=SC2086
+    java $java_opts -cp "$flix_jar:$shim" flixlint.Lint "${lint_args[@]}"
+    status=$?
+fi
 set -e
 case "$status" in
     10) ;;

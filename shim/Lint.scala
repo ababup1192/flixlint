@@ -27,16 +27,32 @@ object Lint {
   val NeedsBuild = 10
 
   def main(argv: Array[String]): Unit = {
-    val (engine, key, rest) = split(argv)
-    val code = Facts.guarded(rest)
+    val code = run(argv, Facts.guarded, jar => runEngine(newLoader(jar), jar, Array.empty))
     if (code != 0) sys.exit(code)
-    val names = engine.resolve("src").resolve("Flixlint").resolve("Names.flix")
+  }
+
+  /** The facts by `facts`, then the engine by `engine` when it is built for them; the exit code (see above).
+    * `bin/flixlint` runs it in a JVM of its own (`main`), the resident server (`Resident`) with its warm compiler.
+    */
+  def run(argv: Array[String], facts: Array[String] => Int, engine: Path => Int): Int = {
+    val (dir, key, rest) =
+      try split(argv)
+      catch {
+        case e: Facts.UsageError =>
+          System.err.println(s"flixlint: ${e.getMessage}")
+          return 4
+      }
+    val code = facts(rest)
+    if (code != 0) return code
+    val names = dir.resolve("src").resolve("Flixlint").resolve("Names.flix")
     val hash = hashOf(key, Files.readAllBytes(names))
-    val jar = engine.resolve("artifact").resolve("engine.jar")
-    val built = engine.resolve("built-hash")
-    if (Files.isRegularFile(jar) && Files.isRegularFile(built) && Files.readString(built).trim == hash) sys.exit(runEngine(jar))
-    Files.writeString(engine.resolve("wanted-hash"), hash + "\n")
-    sys.exit(NeedsBuild)
+    val jar = dir.resolve("artifact").resolve("engine.jar")
+    val built = dir.resolve("built-hash")
+    if (Files.isRegularFile(jar) && Files.isRegularFile(built) && Files.readString(built).trim == hash) engine(jar)
+    else {
+      Files.writeString(dir.resolve("wanted-hash"), hash + "\n")
+      NeedsBuild
+    }
   }
 
   private def split(argv: Array[String]): (Path, String, Array[String]) = {
@@ -51,12 +67,8 @@ object Lint {
         case a => rest += a; i += 1
       }
     }
-    (engine.getOrElse(usage("--engine DIR")), key.getOrElse(usage("--engine-key KEY")), rest.result())
-  }
-
-  private def usage(what: String): Nothing = {
-    System.err.println(s"flixlint: Lint needs $what")
-    sys.exit(4)
+    (engine.getOrElse(throw new Facts.UsageError("Lint needs --engine DIR")),
+      key.getOrElse(throw new Facts.UsageError("Lint needs --engine-key KEY")), rest.result())
   }
 
   /** The first 16 hex digits of the SHA-1 of the key, a newline, and the names. */
@@ -67,21 +79,25 @@ object Lint {
     md.digest().map(b => f"${b & 0xff}%02x").mkString.take(16)
   }
 
-  /** Runs the engine's `main` and returns its exit code (the engine leaves through `System.exit` when it is not 0).
+  /** A loader for the engine jar.
     *
     * WhyNot: the engine is not put on this JVM's class path. Its jar carries the Flix runtime it was compiled
     * against, and the compiler jar here has classes of the same names, so it gets a loader of its own over the
     * platform's.
     */
-  private def runEngine(jar: Path): Int = {
-    val loader = new URLClassLoader(Array(jar.toUri.toURL), ClassLoader.getPlatformClassLoader)
+  def newLoader(jar: Path): URLClassLoader = new URLClassLoader(Array(jar.toUri.toURL), ClassLoader.getPlatformClassLoader)
+
+  /** Runs the engine's `main` with `args` and returns its exit code: 0 when `main` returns (the engine leaves through
+    * `System.exit` when it is not 0, unless it was given `--resident`, see `Resident`).
+    */
+  def runEngine(loader: ClassLoader, jar: Path, args: Array[String]): Int = {
     val mainClass = {
       val jf = new java.util.jar.JarFile(jar.toFile)
       try jf.getManifest.getMainAttributes.getValue("Main-Class") finally jf.close()
     }
     Thread.currentThread.setContextClassLoader(loader)
     try {
-      loader.loadClass(mainClass).getMethod("main", classOf[Array[String]]).invoke(null, Array.empty[String])
+      loader.loadClass(mainClass).getMethod("main", classOf[Array[String]]).invoke(null, args)
       0
     } catch {
       // As the JVM does for an exception out of `main`: the trace, and exit code 1.

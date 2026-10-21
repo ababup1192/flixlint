@@ -83,7 +83,8 @@ diff "$root/test/expected-spans-$stage.txt" "$spans_out" || { echo "test/spans: 
 expect4() {
     local code
     set +e
-    (cd "$root/test/fixture" && "$@") >/dev/null 2>&1
+    # No resident server for these: each would be one more server for the default build directory.
+    (cd "$root/test/fixture" && FLIXLINT_RESIDENT=0 "$@") >/dev/null 2>&1
     code=$?
     set -e
     [ "$code" = 4 ] || { echo "expected exit 4, got $code: $*" >&2; exit 1; }
@@ -96,5 +97,12 @@ expect4 "$lint" --rules rules/clean.flix --limits limits/does-not-exist.json src
 expect4 "$lint" --rules rules/clean.flix --limits-base limits/at.json src
 # A --pkg path one segment too deep would read owner and name off by one: it is refused, not misread.
 expect4 "$lint" --rules rules/clean.flix --pkg lib/github/extra/owner/name/1.0.0/name-1.0.0.fpkg src
+
+# Under FLIXLINT_RESIDENT=1 (make test-resident) every run above went through a resident server; they are stopped here.
+if [ "${FLIXLINT_RESIDENT:-0}" = 1 ]; then
+    for dir in test/fixture examples; do
+        (cd "$root/$dir" && "$lint" --resident-stop --build-dir "$root/build/$(basename "$dir")")
+    done
+fi
 
 echo "flixlint test: ok ($(grep -c ': .*: .*: ' "$root/test/expected.txt") violations on the fixture, $(grep -c ': .*: .*: ' "$root/test/expected-examples.txt") on examples)"

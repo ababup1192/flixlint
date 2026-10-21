@@ -1,4 +1,4 @@
-.PHONY: test test-resolved shim clean release
+.PHONY: test test-resolved test-resident shim clean release
 
 # test/fixture と examples に flixlint を掛けて、報告を test/expected*.txt と突き合わせる。
 # 型検査もここで一緒に済む: 規則のエンジン（src/Flixlint*.flix）は生成物の Names.flix が揃って初めて
@@ -9,6 +9,11 @@ test:
 # 名前解決の直後の AST（Java の instance method の呼び出しが見えない代わりに数倍速い）でも同じ報告になる事。
 test-resolved:
 	FLIXLINT_STAGE=resolved test/run.sh
+
+# 同じ報告が常駐の server（bin/flixlint --resident）を通っても出る事。2 回目からは増分の compile になる。
+test-resident:
+	FLIXLINT_RESIDENT=1 test/run.sh
+	FLIXLINT_RESIDENT=1 FLIXLINT_STAGE=resolved test/run.sh
 
 # Scala の shim を build/flixlint-shim.jar に組む（bin/flixlint も初回と shim/*.scala の変更時に同じ事をする）。
 # 出来る jar は flixlint のクラスだけで、コンパイラの内部 AST に対して組むので Flix のバージョンに紐づく。
