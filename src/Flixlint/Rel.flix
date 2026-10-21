@@ -13,30 +13,43 @@ pub mod Flixlint.Rel {
     /// A table: its name (the old TSV's file name without `.tsv`) and its rows, each a list of columns as the old TSV spells them.
     pub type alias Table = { name = String, rows = List[List[String]] }
 
-    /// Every table built so far.
+    /// The names of the tables, in the order `dump` writes them.
+    pub def names(): List[String] = List#{
+        "source_file", "def", "enum", "eff", "type_alias", "alias_type_all", "eff_alias", "effect_of",
+        "arg_type", "arg_type_all", "arg_type_deep", "ret_type", "ret_type_all", "ret_type_deep",
+        "case_type", "case_type_all", "case_type_deep",
+        "calls", "calls_in_lambda", "arg_lit", "arg_call", "piped_into", "str_lit", "handles", "branch", "constructs",
+        "bool_lit", "tag_arg"
+    }
+
+    /// Every table.
     pub def tables(ast: Ast): List[Table] =
-        let bodies = bodyTables(ast);
-        let body = name -> { name = name, rows = Map.getWithDefault(name, Nil, bodies) };
-        List#{
-        { name = "source_file", rows = Flixlint.Ast.files(ast) |> List.map(f -> f :: Nil) },
-        { name = "def", rows = defRows(ast) },
-        { name = "enum", rows = declRows(ast, Kind.Enum) },
-        { name = "eff", rows = declRows(ast, Kind.Effect) },
-        { name = "type_alias", rows = aliasRows(ast) },
-        { name = "alias_type_all", rows = aliasTypeAllRows(ast) },
-        { name = "eff_alias", rows = effAliasRows(ast) },
-        { name = "effect_of", rows = effectOfRows(ast) },
-        { name = "arg_type", rows = argTypeRows(ast, TypeView.Head) },
-        { name = "arg_type_all", rows = argTypeRows(ast, TypeView.All) },
-        { name = "arg_type_deep", rows = argTypeRows(ast, TypeView.Deep) },
-        { name = "ret_type", rows = retTypeRows(ast, TypeView.Head) },
-        { name = "ret_type_all", rows = retTypeRows(ast, TypeView.All) },
-        { name = "ret_type_deep", rows = retTypeRows(ast, TypeView.Deep) },
-        { name = "case_type", rows = caseTypeRows(ast, TypeView.Head) },
-        { name = "case_type_all", rows = caseTypeRows(ast, TypeView.All) },
-        { name = "case_type_deep", rows = caseTypeRows(ast, TypeView.Deep) },
-        body("calls"), body("calls_in_lambda"), body("arg_lit"), body("arg_call"), body("piped_into"), body("str_lit"),
-        body("handles"), body("branch"), body("constructs"), body("bool_lit"), body("tag_arg")
+        let rowsOf = tableOf(ast);
+        names() |> List.map(n -> { name = n, rows = rowsOf(n) })
+
+    /// The rows of a table by its name (no rows for a name that is no table). A table is built when it is asked for; the
+    /// body tables come from one walk of the bodies, made at the first of them.
+    pub def tableOf(ast: Ast): String -> List[List[String]] =
+        let bodies = lazy bodyTables(ast);
+        name -> match name {
+            case "source_file" => Flixlint.Ast.files(ast) |> List.map(f -> f :: Nil)
+            case "def" => defRows(ast)
+            case "enum" => declRows(ast, Kind.Enum)
+            case "eff" => declRows(ast, Kind.Effect)
+            case "type_alias" => aliasRows(ast)
+            case "alias_type_all" => aliasTypeAllRows(ast)
+            case "eff_alias" => effAliasRows(ast)
+            case "effect_of" => effectOfRows(ast)
+            case "arg_type" => argTypeRows(ast, TypeView.Head)
+            case "arg_type_all" => argTypeRows(ast, TypeView.All)
+            case "arg_type_deep" => argTypeRows(ast, TypeView.Deep)
+            case "ret_type" => retTypeRows(ast, TypeView.Head)
+            case "ret_type_all" => retTypeRows(ast, TypeView.All)
+            case "ret_type_deep" => retTypeRows(ast, TypeView.Deep)
+            case "case_type" => caseTypeRows(ast, TypeView.Head)
+            case "case_type_all" => caseTypeRows(ast, TypeView.All)
+            case "case_type_deep" => caseTypeRows(ast, TypeView.Deep)
+            case _ => Map.getWithDefault(name, Nil, force bodies)
         }
 
     // ---- declarations ----
@@ -68,7 +81,7 @@ pub mod Flixlint.Rel {
         Flixlint.Flix.typeAliases(ast) |> List.flatMap(a -> {
             let name = Flixlint.Flix.nameOf(ast, a);
             Flixlint.Flix.aliasType(ast, a) |> Option.toList |> List.flatMap(t -> typeNames(ast, t, TypeView.All))
-                |> List.map(n -> name :: n :: Nil)
+                |> List.distinct |> List.map(n -> name :: n :: Nil)
         })
 
     /// The effects every type alias stands for: the sources' and, from the external declarations, the packages' and the
@@ -406,5 +419,8 @@ pub mod Flixlint.Rel {
         })
 
     /// A column as the old facts write it (a tab or a line break becomes a space).
-    def clean(s: String): String = s |> String.map(c -> if (c == '\t' or c == '\n' or c == '\r') ' ' else c)
+    pub def clean(s: String): String =
+        if (String.exists(isBreak, s)) String.map(c -> if (isBreak(c)) ' ' else c, s) else s
+
+    def isBreak(c: Char): Bool = c == '\t' or c == '\n' or c == '\r'
 }

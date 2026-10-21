@@ -143,9 +143,6 @@ pub mod Flixlint.Facts {
     /// The generic AST of the sources (Flixlint.Ast and Flixlint.Flix read it); empty when the shim did not write it.
     pub def ast(facts: Facts): Flixlint.Ast.Ast = data(facts)#ast
 
-    /// `facts` with the generic AST, which the engine reads on its IO side (the facts are read with `FileRead` only).
-    pub def withAst(ast: Flixlint.Ast.Ast, facts: Facts): Facts = Facts.Facts({ ast = ast | data(facts) })
-
     /// The definition of `fn`, if it is one of the linted sources (package, stdlib and Java callees have none).
     pub def defOf(facts: Facts, fn: Fn): Option[Def] = Map.get(fn, data(facts)#defOf)
 
@@ -224,53 +221,56 @@ pub mod Flixlint.Facts {
 
     // ---- loading ----
 
-    /// Loads the TSV of `dir`. A row whose name is not among the names (`names.tsv`; operators such as `++` are not) is skipped.
-    pub def load(dir: String): Facts \ FileRead =
-        let names = rows(dir, "names");
+    /// The facts of the generic AST `ast` (its relations, `Flixlint.Rel`), with the names of `names.tsv` in `dir`. A row whose
+    /// name is not among the names (operators such as `++` are not) is skipped.
+    pub def load(dir: String, ast: Flixlint.Ast.Ast): Facts \ FileRead =
+        let names = cells(lines(dir, "names"));
+        let tableOf = Flixlint.Rel.tableOf(ast);
+        let src = rel -> tableOf(rel) |> List.map(r -> List.map(Flixlint.Rel.clean, r) |> List.toVector);
         let fnOf = known(names, "Fn", Flixlint.Names.fnOf);
         let effOf = known(names, "Eff", Flixlint.Names.effOf);
         let modOf = known(names, "Mod", Flixlint.Names.modOf);
         let caseOf = known(names, "Case", Flixlint.Names.caseOf);
         let enumOf = known(names, "Enum", Flixlint.Names.enumOf);
         let typeOf = known(names, "Type", Flixlint.Names.typeOf);
-        let defs = rows(dir, "def") |> List.filterMap(c -> forM (
+        let defs = src("def") |> List.filterMap(c -> forM (
                 fn <- fnOf(col(0, c));
                 module <- modOf(col(2, c))
             ) yield { fn = fn, name = col(1, c), module = module, file = col(3, c), line = int(4, c), isPub = col(5, c) == "true" });
-        let calls = rows(dir, "calls") |> List.filterMap(c -> forM (
+        let calls = src("calls") |> List.filterMap(c -> forM (
                 caller <- fnOf(col(0, c));
                 callee <- fnOf(col(1, c))
             ) yield { caller = caller, callee = callee, line = int(2, c) });
-        let effectRows = rows(dir, "effect_of") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); e <- effOf(col(1, c))) yield (fn, e));
-        let handles = rows(dir, "handles") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); e <- effOf(col(1, c))) yield { fn = fn, effect = e, line = int(2, c) });
-        let constructs = rows(dir, "constructs") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); k <- caseOf(col(1, c))) yield { fn = fn, constructor = k, line = int(2, c) });
-        let callsInLambda = rows(dir, "calls_in_lambda") |> List.filterMap(c -> forM (
+        let effectRows = src("effect_of") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); e <- effOf(col(1, c))) yield (fn, e));
+        let handles = src("handles") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); e <- effOf(col(1, c))) yield { fn = fn, effect = e, line = int(2, c) });
+        let constructs = src("constructs") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); k <- caseOf(col(1, c))) yield { fn = fn, constructor = k, line = int(2, c) });
+        let callsInLambda = src("calls_in_lambda") |> List.filterMap(c -> forM (
                 caller <- fnOf(col(0, c));
                 callee <- fnOf(col(1, c));
                 outer <- fnOf(col(2, c))
             ) yield { caller = caller, callee = callee, outer = outer, line = int(3, c) });
-        let argLits = rows(dir, "arg_lit") |> List.filterMap(c -> forM (caller <- fnOf(col(0, c)); callee <- fnOf(col(1, c)))
+        let argLits = src("arg_lit") |> List.filterMap(c -> forM (caller <- fnOf(col(0, c)); callee <- fnOf(col(1, c)))
             yield { caller = caller, callee = callee, index = int(2, c), text = col(3, c), line = int(4, c) });
-        let argCalls = rows(dir, "arg_call") |> List.filterMap(c -> forM (
+        let argCalls = src("arg_call") |> List.filterMap(c -> forM (
                 caller <- fnOf(col(0, c));
                 callee <- fnOf(col(1, c));
                 argCallee <- fnOf(col(3, c))
             ) yield { caller = caller, callee = callee, index = int(2, c), argCallee = argCallee, line = int(4, c) });
-        let pipedInto = rows(dir, "piped_into") |> List.filterMap(c -> forM (
+        let pipedInto = src("piped_into") |> List.filterMap(c -> forM (
                 caller <- fnOf(col(0, c));
                 source <- fnOf(col(1, c));
                 target <- fnOf(col(2, c))
             ) yield { caller = caller, source = source, target = target, line = int(3, c) });
-        let strLits = rows(dir, "str_lit") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c))) yield { fn = fn, text = col(1, c), line = int(2, c) });
-        let types = loadTypes(dir, fnOf, typeOf, enumOf, caseOf);
-        let aliasRows = rows(dir, "eff_alias") |> List.filterMap(c -> forM (a <- effOf(col(0, c)); e <- effOf(col(1, c))) yield (a, e));
-        let enums = rows(dir, "enum") |> List.filterMap(c -> forM (e <- enumOf(col(0, c)); m <- modOf(col(1, c))) yield { ofEnum = e, module = m, file = col(2, c), line = int(3, c) });
-        let (typeAliases, aliasTypesAll) = loadAliases(dir, typeOf, modOf);
-        let branches = loadBranches(dir, fnOf);
-        let boolLits = loadBoolLits(dir, fnOf);
-        let tagArgs = loadTagArgs(dir, fnOf, caseOf);
-        let effects = rows(dir, "eff") |> List.filterMap(c -> forM (e <- effOf(col(0, c)); m <- modOf(col(1, c))) yield { effect = e, module = m, file = col(2, c), line = int(3, c) });
-        let sourceFiles = rows(dir, "source_file") |> List.map(c -> col(0, c));
+        let strLits = src("str_lit") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c))) yield { fn = fn, text = col(1, c), line = int(2, c) });
+        let types = loadTypes(src, fnOf, typeOf, enumOf, caseOf);
+        let aliasRows = src("eff_alias") |> List.filterMap(c -> forM (a <- effOf(col(0, c)); e <- effOf(col(1, c))) yield (a, e));
+        let enums = src("enum") |> List.filterMap(c -> forM (e <- enumOf(col(0, c)); m <- modOf(col(1, c))) yield { ofEnum = e, module = m, file = col(2, c), line = int(3, c) });
+        let (typeAliases, aliasTypesAll) = loadAliases(src, typeOf, modOf);
+        let branches = loadBranches(src, fnOf);
+        let boolLits = loadBoolLits(src, fnOf);
+        let tagArgs = loadTagArgs(src, fnOf, caseOf);
+        let effects = src("eff") |> List.filterMap(c -> forM (e <- effOf(col(0, c)); m <- modOf(col(1, c))) yield { effect = e, module = m, file = col(2, c), line = int(3, c) });
+        let sourceFiles = src("source_file") |> List.map(c -> col(0, c));
         let sortedCalls = calls |> List.sortBy(c -> (c#caller, c#line, c#callee));
         Facts.Facts({
             defs = defs,
@@ -311,7 +311,7 @@ pub mod Flixlint.Facts {
                 |> (acc -> List.foldLeft((s, e) -> Set.insert(e#file, s), acc, enums))
                 |> (acc -> List.foldLeft((s, e) -> Set.insert(e#file, s), acc, effects)),
             fnCases = names |> List.filter(c -> col(0, c) == "Fn") |> List.map(c -> (col(1, c), col(2, c))) |> List.toMap,
-            ast = Flixlint.Ast.empty()
+            ast = ast
         })
 
     /// A lookup from the qualified name to its value, for the names of one kind in `names.tsv` (kind, name, case).
@@ -333,19 +333,17 @@ pub mod Flixlint.Facts {
     /// WhyNot: the Deep rows of parameters and return values are not parsed here. They are most of the facts (every
     /// alias opened at every depth) and only a custom rule reads them, so they are parsed when one first does.
     @DontInline
-    def loadTypes(dir: String, fnOf: String -> Option[Fn], typeOf: String -> Option[Type],
-                  enumOf: String -> Option[Enum], caseOf: String -> Option[Case]): TypeRows \ FileRead =
+    def loadTypes(src: String -> List[Vector[String]], fnOf: String -> Option[Fn], typeOf: String -> Option[Type],
+                  enumOf: String -> Option[Enum], caseOf: String -> Option[Case]): TypeRows =
         let argType = c -> forM (fn <- fnOf(col(0, c)); t <- typeOf(col(2, c))) yield { fn = fn, index = int(1, c), tycon = t };
         let retType = c -> forM (fn <- fnOf(col(0, c)); t <- typeOf(col(1, c))) yield (fn, t);
-        let argTypes = rows(dir, "arg_type") |> List.filterMap(argType);
-        let argTypesAll = rows(dir, "arg_type_all") |> List.filterMap(argType);
-        let argDeepLines = lines(dir, "arg_type_deep");
-        let argTypesDeep = lazy (cells(argDeepLines) |> List.filterMap(argType));
-        let retTypes = rows(dir, "ret_type") |> List.filterMap(retType);
-        let retTypesAll = rows(dir, "ret_type_all") |> List.filterMap(retType);
-        let retDeepLines = lines(dir, "ret_type_deep");
-        let retTypesDeep = lazy (cells(retDeepLines) |> List.filterMap(retType));
-        let caseTypeRows = rel -> rows(dir, rel) |> List.filterMap(c -> forM (e <- enumOf(col(0, c)); k <- caseOf(col(1, c)); t <- typeOf(col(3, c))) yield { ofEnum = e, constructor = k, index = int(2, c), tycon = t });
+        let argTypes = src("arg_type") |> List.filterMap(argType);
+        let argTypesAll = src("arg_type_all") |> List.filterMap(argType);
+        let argTypesDeep = lazy (src("arg_type_deep") |> List.filterMap(argType));
+        let retTypes = src("ret_type") |> List.filterMap(retType);
+        let retTypesAll = src("ret_type_all") |> List.filterMap(retType);
+        let retTypesDeep = lazy (src("ret_type_deep") |> List.filterMap(retType));
+        let caseTypeRows = rel -> src(rel) |> List.filterMap(c -> forM (e <- enumOf(col(0, c)); k <- caseOf(col(1, c)); t <- typeOf(col(3, c))) yield { ofEnum = e, constructor = k, index = int(2, c), tycon = t });
         let caseTypes = caseTypeRows("case_type");
         let caseTypesAll = caseTypeRows("case_type_all");
         let caseTypesDeep = caseTypeRows("case_type_deep");
@@ -355,28 +353,28 @@ pub mod Flixlint.Facts {
 
     /// The case arguments. WhyNot: not inline in `load`, for the same reason as `loadTypes`.
     @DontInline
-    def loadTagArgs(dir: String, fnOf: String -> Option[Fn], caseOf: String -> Option[Case]): List[TagArg] \ FileRead =
-        rows(dir, "tag_arg") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); k <- caseOf(col(1, c)))
+    def loadTagArgs(src: String -> List[Vector[String]], fnOf: String -> Option[Fn], caseOf: String -> Option[Case]): List[TagArg] =
+        src("tag_arg") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)); k <- caseOf(col(1, c)))
             yield { fn = fn, constructor = k, index = int(2, c), shape = col(3, c), tycon = col(4, c), line = int(5, c) })
 
     /// The Bool literals. WhyNot: not inline in `load`, for the same reason as `loadTypes`.
     @DontInline
-    def loadBoolLits(dir: String, fnOf: String -> Option[Fn]): List[BoolLit] \ FileRead =
-        rows(dir, "bool_lit") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)))
+    def loadBoolLits(src: String -> List[Vector[String]], fnOf: String -> Option[Fn]): List[BoolLit] =
+        src("bool_lit") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c)))
             yield { fn = fn, value = col(1, c) == "true", placement = col(2, c), line = int(3, c), parentLine = int(4, c) })
 
     /// The branches. WhyNot: not inline in `load`, for the same reason as `loadTypes`.
     @DontInline
-    def loadBranches(dir: String, fnOf: String -> Option[Fn]): List[Branch] \ FileRead =
-        rows(dir, "branch") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c))) yield { fn = fn, kind = col(1, c), line = int(2, c) })
+    def loadBranches(src: String -> List[Vector[String]], fnOf: String -> Option[Fn]): List[Branch] =
+        src("branch") |> List.filterMap(c -> forM (fn <- fnOf(col(0, c))) yield { fn = fn, kind = col(1, c), line = int(2, c) })
 
     /// The type aliases and what each stands for.
     /// WhyNot: not inline in `load`, for the same reason as `loadTypes`.
     @DontInline
-    def loadAliases(dir: String, typeOf: String -> Option[Type], modOf: String -> Option[Mod]): (List[AliasDef], Map[Type, Set[Type]]) \ FileRead =
-        let defs = rows(dir, "type_alias") |> List.filterMap(c -> forM (a <- typeOf(col(0, c)); m <- modOf(col(1, c)))
+    def loadAliases(src: String -> List[Vector[String]], typeOf: String -> Option[Type], modOf: String -> Option[Mod]): (List[AliasDef], Map[Type, Set[Type]]) =
+        let defs = src("type_alias") |> List.filterMap(c -> forM (a <- typeOf(col(0, c)); m <- modOf(col(1, c)))
             yield { typeAlias = a, module = m, file = col(2, c), line = int(3, c), fields = int(5, c) });
-        let stands = rows(dir, "alias_type_all") |> List.filterMap(c -> forM (a <- typeOf(col(0, c)); t <- typeOf(col(1, c))) yield (a, t));
+        let stands = src("alias_type_all") |> List.filterMap(c -> forM (a <- typeOf(col(0, c)); t <- typeOf(col(1, c))) yield (a, t));
         (defs, setsBy(stands))
 
     /// Groups a list that is already sorted by the key, keeping the order inside each group.
@@ -385,9 +383,6 @@ pub mod Flixlint.Facts {
 
     def setsBy(pairs: List[(k, v)]): Map[k, Set[v]] with Order[k], Order[v] =
         List.foldLeft((m, p) -> Map.insertWith((newer, older) -> Set.union(newer, older), fst(p), Set#{snd(p)}, m), Map.empty(), pairs)
-
-    /// A missing file is an empty relation (the shim writes a file only when the relation has a row).
-    def rows(dir: String, rel: String): List[Vector[String]] \ FileRead = cells(lines(dir, rel))
 
     /// The non-empty lines of a relation's file. A missing file is an empty relation.
     def lines(dir: String, rel: String): List[String] \ FileRead =

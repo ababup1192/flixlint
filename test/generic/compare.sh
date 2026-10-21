@@ -40,10 +40,10 @@ cat > "$build/harness/src/Main.flix" <<FLIX
 import java.lang.System
 
 def main(): Unit \\ IO =
-    let facts = Fs.FileRead.runWithIO(() -> Flixlint.Facts.load(System.getenv("FLIXLINT_FACTS")));
     match Flixlint.Ast.load(System.getenv("FLIXLINT_GENERIC")) {
         case Err(e) => println("compare: \${e}")
         case Ok(ast) =>
+            let facts = Fs.FileRead.runWithIO(() -> Flixlint.Facts.load(System.getenv("FLIXLINT_FACTS"), ast));
             let (vs, errors) = Flixlint.Engine.judgeAll(facts, System.getenv("FLIXLINT_TODAY"), ${mod}.rules(ast));
             List.forEach(e -> println("compare: \${e}"), errors);
             vs |> List.map(v -> "\${v#file}:\${v#line}: \${v#id}: \${v#subject}: \${v#message}") |> List.forEach(println)

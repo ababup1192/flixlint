@@ -60,13 +60,12 @@ pub mod Flixlint.Engine {
     /// 4 the generic AST beside the facts is of another format or schema than this flixlint's).
     def judgeAndReport(rules: RuleSet, settings: Settings): Int32 \ IO + FileRead + DirList =
         let t0 = System.nanoTime();
-        let facts0 = Flixlint.Facts.load(settings#factsDir);
         match loadAst(settings#factsDir) {
             case Err(e) =>
                 System.err.println("flixlint: ${e}");
                 4
             case Ok(ast) =>
-                let facts = Flixlint.Facts.withAst(ast, facts0);
+                let facts = Flixlint.Facts.load(settings#factsDir, ast);
                 settings#dumpRel |> Option.forEach(dir -> Flixlint.Rel.dump(dir, ast));
                 let t1 = System.nanoTime();
                 let code = report(rules, settings, facts);
