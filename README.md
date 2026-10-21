@@ -281,7 +281,7 @@ What the families cannot say is written against the facts, in the same rule set;
 [`examples/rules.flix`](examples/rules.flix) is one.
 
 `Flixlint.Facts` gives the relations as lists of records (`defs`, `calls`, `handles`, `constructs`, `callsInLambda`,
-`argLits`, `argCalls`, `pipedInto`, `strLits`, `branches`, `boolLits`, `argTypes`, `argTypesAll`, `argTypesDeep`, `caseTypes`, `caseTypesAll`, `caseTypesDeep`, `enums`, `effects`, `typeAliases`)
+`argLits`, `argCalls`, `pipedInto`, `strLits`, `branches`, `boolLits`, `tagArgs`, `argTypes`, `argTypesAll`, `argTypesDeep`, `caseTypes`, `caseTypesAll`, `caseTypesDeep`, `enums`, `effects`, `typeAliases`)
 and the lookups (`defOf`, `callsFrom`, `callsTo`, `effectOf`, `argType`, `argTypesAllOf`, `argTypesDeepOf`, `retType`, `retTypesAllOf`, `retTypesDeepOf`,
 `aliasTypesAllOf`, `strLitsIn`, `expandEffects`, `fnName`, `isIn`); `Flixlint.Violation` builds violations (`atCall`, `atDef`, `inBody`,
 `atDeclaration`, `withPath`, `withNote`); `Flixlint.Glob.matches(pattern, path)` is the glob of `files` (`*` stays
@@ -316,6 +316,7 @@ facts directory holds fewer files than the table below has rows.
 | `StrLit` | `fn, text, line` | A string literal in the body of `fn` (the pieces of an interpolated string too). |
 | `Branch` | `fn, kind, line` | A branch in the body of `fn`: `kind` is `if`, `match` (a `match` lambda too), `typematch`, `extmatch` or `guard` (the `if` of a `case … if …` rule, one row per rule). A `let (a, b) = e` is not counted, though the compiler makes it a one-rule match; nor is a `forM` generator (`s <- xs`, which the compiler also turns into a match); the guard of a `forM` counts as an `if`. |
 | `BoolLit` | `fn, value, placement, line, parentLine` | A `true` / `false` literal in the body of `fn` (not in a pattern). `placement` names its nearest parents, closest first and up to three, joined by ` < ` (`field:expected < arg:Assert.assertEq:0` for `assertEq(expected = true, x)`): `arg:<callee>:<index>`, `field:<label>`, `tag:<case>`, `tuple`, `vector`, `array`, `let` or `op:<operator>`; `not` and ascriptions are seen through. `parentLine` is the line the nearest parent starts on (a tuple written over several lines starts on its first). |
+| `TagArg` | `fn, case, index, shape, tycon, line` | An argument of a case built in the body of `fn` (`Some(x)`): its `shape` — `bool` (a literal), `unary:Not`, `op:And` / `op:Or`, `call:Eq.eq` (`a == b`), `var`, or the node's name — and the head of its type `tycon` (`Bool`; `?` at the resolved stage, which has no types yet). A rule can stop a wrapped Bool by its shape at both stages and by its type at the typed stage. |
 | `ArgType` | `fn, index, tycon` | Head type constructor of the `index`-th parameter (`Auth.Permit`, `List`, `Str`, `Arrow(2)`, `?` for a type variable). |
 | `ArgTypeAll` | `fn, index, tycon` | Every type constructor in the `index`-th parameter, nested ones included (`List[ColumnName]` gives `List` and `ColumnName`; an alias is listed by its own name and its arguments; type variables and record rows are left out). |
 | `RetType` / `RetTypeAll` | `fn, tycon` | The head type constructor of the return type / every one in it. |
@@ -711,7 +712,7 @@ family で言えない物は facts に対して書き、同じ rule set に入�
 の `findReadsOnly` がその 1 つ。
 
 `Flixlint.Facts` は関係を record の list で渡し（`defs`、`calls`、`handles`、`constructs`、`callsInLambda`、
-`argLits`、`argCalls`、`pipedInto`、`strLits`、`branches`、`boolLits`、`argTypes`、`argTypesAll`、`argTypesDeep`、`caseTypes`、`caseTypesAll`、`caseTypesDeep`、`enums`、`typeAliases`、
+`argLits`、`argCalls`、`pipedInto`、`strLits`、`branches`、`boolLits`、`tagArgs`、`argTypes`、`argTypesAll`、`argTypesDeep`、`caseTypes`、`caseTypesAll`、`caseTypesDeep`、`enums`、`typeAliases`、
 `effects`）、引く関数（`defOf`、`callsFrom`、`callsTo`、`effectOf`、`argType`、`argTypesAllOf`、`argTypesDeepOf`、`retType`、
 `retTypesAllOf`、`retTypesDeepOf`、`aliasTypesAllOf`、`strLitsIn`、`expandEffects`、`fnName`、`isIn`）も持つ。`Flixlint.Violation` が違反を組み
 （`atCall`、`atDef`、`inBody`、`atDeclaration`、`withPath`、`withNote`）、`Flixlint.Glob.matches(pattern, path)`
@@ -746,6 +747,7 @@ qualify するのと同じ形になる。`Auth.permit`、`Auth.Permit.Permit`（
 | `StrLit` | `fn, text, line` | `fn` の本体の中の文字列リテラル（補間した文字列の断片も） |
 | `Branch` | `fn, kind, line` | `fn` の本体の中の分岐。`kind` は `if`・`match`（`match` のラムダも）・`typematch`・`extmatch`・`guard`（`case … if …` の条件。腕ごとに 1 行）。組を分ける `let (a, b) = e` は、コンパイラが 1 つの腕の match にするが数えない。`forM` の生成元（`s <- xs`。これも match になる）も数えず、`forM` の guard は `if` として数える |
 | `BoolLit` | `fn, value, placement, line, parentLine` | `fn` の本体の中の `true` / `false` の字（パターンの中は除く）。`placement` は近い親から 3 つまでを ` < ` で繋いだ物（`assertEq(expected = true, x)` なら `field:expected < arg:Assert.assertEq:0`）。親は `arg:<呼んだ関数>:<位置>`・`field:<欄>`・`tag:<case>`・`tuple`・`vector`・`array`・`let`・`op:<演算>` で、`not` と型の注記は透かす。`parentLine` は近い親の書き始めの行（複数行の組は 1 行目） |
+| `TagArg` | `fn, case, index, shape, tycon, line` | `fn` の本体で組んだ case の引数（`Some(x)`）。`shape` は形（字の `bool`・`unary:Not`・`op:And` / `op:Or`・`a == b` の `call:Eq.eq`・`var`・それ以外は節の名前）、`tycon` は型の頭（`Bool`。resolved の段は型が無いので `?`）。包んだ Bool を、両方の段では形で、typed の段では型でも止められる |
 | `ArgType` | `fn, index, tycon` | `index` 番目の引数の型の先頭の型コンストラクタ（`Auth.Permit`、`List`、`Str`、`Arrow(2)`、型変数は `?`） |
 | `ArgTypeAll` | `fn, index, tycon` | `index` 番目の引数の型に現れる型コンストラクタを入れ子まで全部（`List[ColumnName]` なら `List` と `ColumnName`。エイリアスは自分の名前とその引数を載せる。型変数と record の row は外す） |
 | `RetType` / `RetTypeAll` | `fn, tycon` | 戻り値の型の先頭の型コンストラクタ / その中の全部 |

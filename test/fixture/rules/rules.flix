@@ -72,7 +72,8 @@ mod FixtureRules {
             customRule({ id = "silent-parse", check = silentParse }),
             customRule({ id = "raw-alias", check = rawAlias }),
             customRule({ id = "flat-rules", check = flatRules }),
-            customRule({ id = "bool-arg", check = boolArg })
+            customRule({ id = "bool-arg", check = boolArg }),
+            customRule({ id = "wrapped-bool", check = wrappedBool })
         })
     })
 
@@ -101,6 +102,17 @@ mod FixtureRules {
             |> List.filter(c -> Flixlint.Facts.defOf(facts, c#caller)
                 |> Option.exists(d -> Flixlint.Glob.matches("src/domain/**", d#file) and d#file != "src/domain/Auth.flix"))
             |> List.map(c -> Flixlint.Violation.atCall(facts, "capability-site", c, "use cases receive Permit as an argument; only the boundary asks Auth"))
+
+    /// A Bool wrapped in Some / Ok / Err (TagArg): by its type at the typed stage, and by its shape at both (a literal,
+    /// `not`, `and` / `or`, a comparison), so the resolved stage stops the same three in this fixture.
+    def wrappedBool(facts: Facts): List[Violation] =
+        let wrappers = Set#{Case.Option_Some, Case.Result_Ok, Case.Result_Err};
+        let boolish = s -> s == "bool" or s == "unary:Not" or s == "op:And" or s == "op:Or"
+            or String.startsWith(prefix = "call:Eq.", s) or String.startsWith(prefix = "call:Order.", s);
+        Flixlint.Facts.tagArgs(facts)
+            |> List.filter(a -> Set.memberOf(a#constructor, wrappers) and (a#tycon == "Bool" or boolish(a#shape)))
+            |> List.map(a -> Flixlint.Violation.inBody(facts, "wrapped-bool", a#fn, a#line, "wraps a Bool (${a#shape})",
+                "a wrapped Bool says nothing; an enum case names the answer"))
 
     /// A `true` / `false` passed straight to a function says nothing at the call: name it (BoolLit).
     def boolArg(facts: Facts): List[Violation] =

@@ -45,6 +45,15 @@ src/app/Flags.flix:5: bool-arg: Flags.page: passes arg:Flags.send:0
 src/app/Flags.flix:7: bool-arg: Flags.quiet: passes arg:Flags.send:0
     a Bool argument is named by an enum case or a record field
     fix it, or add |> allowIn(Fn.Flags_quiet, "reason") to rule bool-arg
+src/app/Flags.flix:12: wrapped-bool: Flags.isOne: wraps a Bool (call:Eq.eq)
+    a wrapped Bool says nothing; an enum case names the answer
+    fix it, or add |> allowIn(Fn.Flags_isOne, "reason") to rule wrapped-bool
+src/app/Flags.flix:14: wrapped-bool: Flags.notOne: wraps a Bool (unary:Not)
+    a wrapped Bool says nothing; an enum case names the answer
+    fix it, or add |> allowIn(Fn.Flags_notOne, "reason") to rule wrapped-bool
+src/app/Flags.flix:16: wrapped-bool: Flags.inRange: wraps a Bool (op:And)
+    a wrapped Bool says nothing; an enum case names the answer
+    fix it, or add |> allowIn(Fn.Flags_inRange, "reason") to rule wrapped-bool
 src/app/Runner.flix:12: handler-site: Runner.bypass: installs a handler for Auth
     the Auth handler is installed by the runner only; use cases receive Permit
     fix it, or add |> allowIn(Fn.Runner_bypass, "reason") to rule handler-site

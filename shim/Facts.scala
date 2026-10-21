@@ -506,6 +506,44 @@ object Facts {
     }
     go(body, Nil)
   }
+
+  /** Every argument of a case built in the body of `fn` (`Some(x)`, `Ok((a, b))`, `Shape.Circle(r)`): its shape — `bool`
+    * (a literal), `unary:<op>` (`not x`), `op:<op>` (`a and b`), `call:<callee>` (`a == b` is `call:Eq.eq`), `var` or the
+    * node's name — and the head of its type (typed stage; `?` at the resolved stage, which has no types yet).
+    * Ascriptions are seen through. WhyNot: not a branch of `walkBody`, for the reason given at `walkBools`.
+    */
+  def walkTagArgs(fn: String, body: Any, sink: Sink): Unit = {
+    def shapeOf(e: Any): String = e match {
+      case p: Product if p.productPrefix == "Ascribe" || p.productPrefix == "CheckedCast" || p.productPrefix == "UncheckedCast" =>
+        shapeOf(field[Any](p, "exp"))
+      case p: Product if p.productPrefix == "Cst" && field[Any](p, "cst").isInstanceOf[Product] &&
+          field[Product](p, "cst").productPrefix == "Bool" => "bool"
+      case p: Product if p.productPrefix == "Unary" => s"unary:${field[Any](p, "sop")}"
+      case p: Product if p.productPrefix == "Binary" => s"op:${field[Any](p, "sop")}"
+      case p: Product if p.productPrefix == "ApplyDef" || p.productPrefix == "ApplySig" || p.productPrefix == "ApplyOp" =>
+        s"call:${symName(field[Any](field[Any](p, "symUse"), "sym"))}"
+      case p: Product if p.productPrefix == "Var" => "var"
+      case p: Product => p.productPrefix
+      case _ => "?"
+    }
+    def typeOf(e: Any): String =
+      if (e.getClass.getMethods.exists(m => m.getName == "tpe" && m.getParameterCount == 0)) field[Any](e, "tpe") match {
+        case t: Type => Typed.headName(t)
+        case _ => "?"
+      } else "?"
+    def go(node: Any): Unit = node match {
+      case null | _: Type | _: UnkindedType | _: SourceLocation | _: Symbol | _: String | _: java.lang.Number | _: java.lang.Boolean => ()
+      case p: Product if p.productPrefix == "Tag" && p.getClass.getName.contains("Expr") =>
+        val kase = symName(field[Any](field[Any](p, "symUse"), "sym"))
+        val line = field[SourceLocation](p, "loc").startLine
+        field[List[Any]](p, "exps").zipWithIndex.foreach { case (e, i) => sink.tagArg(fn, kase, i, shapeOf(e), typeOf(e), line) }
+        p.productIterator.foreach(go)
+      case p: Product => p.productIterator.foreach(go)
+      case xs: Iterable[_] => xs.foreach(go)
+      case _ => ()
+    }
+    go(body)
+  }
 }
 
 /** One TSV file per relation. Columns are tab-separated; text columns have tabs and newlines replaced by spaces.
@@ -544,6 +582,7 @@ final class Sink(dir: Path) {
   def pipedInto(caller: String, from: String, into: String, line: Int): Unit = { fnNames += caller; fnNames += from; fnNames += into; row("piped_into", caller, from, into, line) }
   def strLit(fn: String, text: String, line: Int): Unit = { fnNames += fn; row("str_lit", fn, text, line) }
   def boolLit(fn: String, value: String, where: String, line: Int, parentLine: Int): Unit = { fnNames += fn; row("bool_lit", fn, value, where, line, parentLine) }
+  def tagArg(fn: String, kase: String, index: Int, shape: String, tycon: String, line: Int): Unit = { fnNames += fn; caseNames += kase; row("tag_arg", fn, kase, index, shape, tycon, line) }
   def branch(fn: String, kind: String, line: Int): Unit = { fnNames += fn; row("branch", fn, kind, line) }
   def argTypeAll(fn: String, i: Int, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("arg_type_all", fn, i, tycon) }
   def retTypeAll(fn: String, tycon: String): Unit = { fnNames += fn; typeNames += tycon; modOf(tycon); row("ret_type_all", fn, tycon) }
@@ -724,6 +763,7 @@ object Typed {
       deepNames(d.spec.retTpe).distinct.foreach(n => sink.retTypeDeep(fn, n))
       walkBody(fn, d.exp, sink)
       walkBools(fn, d.exp, sink)
+      walkTagArgs(fn, d.exp, sink)
     }
     for ((sym, e) <- root.enums; file <- sourceFile(e.loc)) {
       sink.enumDef(symName(sym), sym.namespace.mkString("."), file, sym.loc.startLine, e.mod.isPublic)
@@ -852,6 +892,7 @@ object Resolved {
       deepNames(d.spec.tpe).distinct.foreach(n => sink.retTypeDeep(fn, n))
       walkBody(fn, d.exp, sink)
       walkBools(fn, d.exp, sink)
+      walkTagArgs(fn, d.exp, sink)
     }
     for ((sym, e) <- root.enums; file <- sourceFile(e.loc)) {
       sink.enumDef(symName(sym), sym.namespace.mkString("."), file, sym.loc.startLine, e.mod.isPublic)
