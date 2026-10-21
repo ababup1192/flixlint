@@ -409,8 +409,10 @@ bin/flix-jar                 where the compiler jar is, when neither --flix-jar 
 shim/Facts.scala             AST -> TSV facts and Flixlint/Names.flix (typed stage, and the resolved stage that stops before the typer)
 shim/Spans.scala             --spans: AST -> the position of every name (README "Spans"), kept out of the facts
 shim/Lint.scala              the facts, then the built engine jar in the same JVM
-shim/Generic.scala           (v0.7, in progress) AST -> the generic columns (kind, parent), numbered by the ast_schema
-shim/AstSchema.scala         make ast-kinds: the compiler jar -> schema/ast_schema.tsv and src/Flixlint/AstKinds.flix
+shim/Generic.scala           (v0.7, in progress) AST -> the generic relations: nodes, leaves, the shared type table, the
+                             external declarations, meta (binary columns; --facts-tsv for reading); a size limit
+shim/AstSchema.scala         make ast-kinds: the compiler jar -> schema/ast_schema.tsv, src/Flixlint/AstKinds.flix, shim/AstNames.scala
+shim/AstNames.scala          the names and hash of AstKinds for the shim (generated; do not edit)
 schema/ast_schema.tsv        every field of every node class of both stages (stage, kind, slot, field type); generated
 src/Flixlint.flix            what a rule file uses: the family records and builders, transitivelyIn / allowIn / allowInFile / allowUntil, ruleSet
 src/Flixlint/Facts.flix      the facts loaded from the TSV, and the lookups custom rules use
@@ -418,14 +420,19 @@ src/Flixlint/Engine.flix     the judgments, the allows, the report and the exit 
 src/Flixlint/Violation.flix  the violation record and how it is rendered
 src/Flixlint/Glob.flix       the glob of `files`
 src/Flixlint/Ratchet.flix    `--limits`: rules judged by their count against a limits file
-src/Flixlint/Ast.flix        (v0.7, in progress) the generic columns loaded: the nodes of a kind, the parent of a node
+src/Flixlint/Ast.flix        (v0.7, in progress) layer 1: the generic relations loaded (tree, leaves, types, externals)
+src/Flixlint/Flix.flix       (v0.7, in progress) layer 2: the Flix words on layer 1 (defs, calls, tags, placement, branches)
 src/Flixlint/AstKinds.flix   the generated Kind / Slot / Attr enums, their numbers and the schema hash (do not edit)
 examples/                    a six-file project and four rules, small enough to read in a minute
 test/fixture/                a 7-file project that violates every family and three custom rules; test/run.sh checks the report
 test/spans/                  a 2-file project for --spans; test/run.sh compares its index with test/expected-spans-<stage>.txt
 test/expected*.txt           the reports both of them must produce
-test/generic/Main.flix       checks that the kind numbers of the fixture's columns name the same kinds as AstKinds.flix
-spike/                       the spike of the generic AST (32caeb9), kept to check the rewrite against; not compiled
+test/generic/Main.flix       checks that the kind numbers of the fixture's relations name the same kinds as AstKinds.flix
+test/generic/compare.sh      a project's custom rules as written on the old facts and on the generic AST, compared
+test/generic/limit/         a record alias used 100 times: the walk stays inside its size limit
+test/fixture/rules/generic.flix  the fixture's custom rules written on the generic AST
+spike/                       the spike of the generic AST (32caeb9) and the game's custom rules on the generic AST
+                             (spike/game, compared with test/generic/compare.sh on the game); not compiled
 ```
 
 `make test` runs the test (`make test-resolved`, or `FLIXLINT_STAGE=resolved test/run.sh`, runs it at the resolved
@@ -453,6 +460,15 @@ the sources.
   columns of the design (about 8M Int32) would take about 0.17 s, under the 1.0 s bound, so the columns are kept as
   `Vector[Int32]`. Flix specialises `Array.toVector` on `Int32` to `int[]`, so the values are not boxed and the load
   copies once. Measured with `spike/load-bench/run.sh PROJECT typed`.
+- The whole generic AST (v0.7 step 3) of the game (`src` and `test`): typed 325,850 nodes, 535,422 leaves, 72,694 types
+  (140,134 type arguments), 46,263 strings, 5,498 declarations, 916 external declarations, 25MB; resolved 292,018 nodes,
+  304,319 leaves, 11,017 types, 18MB. The types are one shared table, so a record alias used everywhere is written once
+  (the spike wrote its expansion at every use and grew to 5.76M nodes). The full `Flixlint.Ast.load` took 267, 548, 498,
+  433, 613 ms typed (median 498 ms) and 303, 449, 363, 434, 500 ms resolved (median 434 ms) on the Mac mini with a load
+  average near 30 from other jobs. The walk is 4.8 s (typed) and 2.6 s (resolved) of CPU on the same machine, over the
+  design's 1.5 s for the walk and the write; to be measured again on a quiet machine before 0.7.0.
+- Two compiles of the same sources give the same generic relations, byte for byte: the walk numbers variables, regions
+  and labels in the order it meets them (`x#0`) and drops the compiler's counter from the names it made (`arg$63098`).
 
 ## License
 
@@ -863,8 +879,10 @@ bin/flix-jar                 --flix-jar も FLIX_JAR も無い時の、コンパ
 shim/Facts.scala             AST -> TSV の facts と Flixlint/Names.flix（typed の段と、typer の手前で止まる resolved の段）
 shim/Spans.scala             --spans: AST -> 名前の位置の索引（「spans（名前の位置）」）。facts には入れない
 shim/Lint.scala              facts を書き、組んであるエンジンの jar を同じ JVM で流す
-shim/Generic.scala           （v0.7・作りかけ）AST -> 汎用の列（kind・parent）。番号は ast_schema の物
-shim/AstSchema.scala         make ast-kinds: コンパイラの jar -> schema/ast_schema.tsv と src/Flixlint/AstKinds.flix
+shim/Generic.scala           （v0.7・作りかけ）AST -> 汎用の事実: 節・葉・型の共有の表・外の宣言・メタ（列ごとの二進。
+                             読むための --facts-tsv）と量の上限
+shim/AstSchema.scala         make ast-kinds: コンパイラの jar -> schema/ast_schema.tsv・src/Flixlint/AstKinds.flix・shim/AstNames.scala
+shim/AstNames.scala          shim が使う AstKinds の名前と hash（生成物。手で直さない）
 schema/ast_schema.tsv        両段の全部の節のクラスの全部の欄（段・kind・欄・欄の型）。生成物
 src/Flixlint.flix            rule のファイルが使う物: family の record と builder、transitivelyIn / allowIn / allowInFile / allowUntil、ruleSet
 src/Flixlint/Facts.flix      TSV から読んだ facts と、custom rule が使う引く関数
@@ -872,14 +890,19 @@ src/Flixlint/Engine.flix     判定・allow・報告・exit code
 src/Flixlint/Violation.flix  違反の record と、その出し方
 src/Flixlint/Glob.flix       `files` の glob
 src/Flixlint/Ratchet.flix    `--limits`: 上限のファイルと数で判じる rule
-src/Flixlint/Ast.flix        （v0.7・作りかけ）汎用の列の読み込み: kind ごとの節・節の親
+src/Flixlint/Ast.flix        （v0.7・作りかけ）層 1: 汎用の事実の読み込み（木・葉・型・外の宣言）
+src/Flixlint/Flix.flix       （v0.7・作りかけ）層 2: 層 1 の上の Flix の語（def・呼び出し・tag・置き場・分岐）
 src/Flixlint/AstKinds.flix   生成した Kind・Slot・Attr の enum と番号と schema の hash（手で直さない）
 examples/                    6 ファイルのプロジェクトと 4 つの rule。1 分で読める大きさ
 test/fixture/                全 family と 3 つの custom rule に違反する 7 ファイルのプロジェクト。報告を test/run.sh が確かめる
 test/spans/                  --spans の 2 ファイルのプロジェクト。索引を test/run.sh が test/expected-spans-<段>.txt と突き合わせる
 test/expected*.txt           その 2 つが出さなければならない報告
-test/generic/Main.flix       fixture の列の kind の番号が AstKinds.flix と同じ kind を指す事を確かめる
-spike/                       汎用の AST のスパイク（32caeb9）。作り替えの答え合わせに置く。コンパイルしない
+test/generic/Main.flix       fixture の事実の kind の番号が AstKinds.flix と同じ kind を指す事を確かめる
+test/generic/compare.sh      プロジェクトの custom 規則を、旧い事実で書いた物と汎用の AST で書いた物で流して比べる
+test/generic/limit/         record の alias を 100 か所で使うプロジェクト。walk が量の上限に収まる事
+test/fixture/rules/generic.flix  fixture の custom 規則を汎用の AST で書いた物
+spike/                       汎用の AST のスパイク（32caeb9）と、ゲームの custom 規則を汎用の AST で書いた物
+                             （spike/game。ゲームに向けて test/generic/compare.sh で比べる）。コンパイルしない
 ```
 
 テストを回すのは `make test`（`make test-resolved`、または `FLIXLINT_STAGE=resolved test/run.sh` が resolved の
@@ -908,6 +931,14 @@ spike/                       汎用の AST のスパイク（32caeb9）。作り
   15・15・11・14・12 ms、中央値 14 ms。1M 個あたり 0.021 秒（schema の hash の確かめを含む）。設計の全部の列
   （約 8M 個）でも約 0.17 秒で 1.0 秒に届かないので、列は `Vector[Int32]` で持つ。Flix は `Int32` の `Array.toVector`
   を `int[]` に作り分けるので、値は箱詰めされず、読み込みの写しは 1 回。測り方は `spike/load-bench/run.sh PROJECT typed`
+- 汎用の AST 全部（v0.7 の手順 3）をゲーム（`src` と `test`）で: typed は 325,850 節・535,422 葉・72,694 型（型の引数 140,134）・
+  46,263 文字列・5,498 宣言・外の宣言 916・25MB、resolved は 292,018 節・304,319 葉・11,017 型・18MB。型は共有の表 1 つなので、
+  どこでも使う record の alias も 1 回だけ書かれる（スパイクは使う所ごとに展開を書いて 5.76M 節に膨らんだ）。
+  `Flixlint.Ast.load` 全部は typed で 267・548・498・433・613 ms（中央値 498 ms）、resolved で 303・449・363・434・500 ms
+  （中央値 434 ms。Mac mini・ほかの仕事で load average 30 前後）。walk は同じ機械で CPU 4.8 秒（typed）・2.6 秒（resolved）で、
+  設計の「walk と書き出しで 1.5 秒」を超えている。0.7.0 の前に静かな機械で測り直す。
+- 同じソースを 2 回コンパイルしても、汎用の事実はバイトまで同じ。変数・region・label は walk が出会った順の番号（`x#0`）で書き、
+  コンパイラが作った名前の中の通し番号（`arg$63098`）は落とす。
 
 ## ライセンス
 

@@ -10,7 +10,9 @@
 #   fixture, rules/rules.flix --limits limits/*.json -> the ratchet: exit 0 at the count, 1 over or under it, 2 for a limit of no rule
 #   examples/rules.flix        -> exit 1, test/expected-examples.txt (the four rules of examples/README.md)
 #   test/spans, --spans alone  -> exit 0, test/expected-spans-<stage>.txt (the name index: every kind, a receiver known by each way)
-#   test/fixture, flixlint.Generic -> the kind number of every node names the same kind in the shim and in AstKinds.flix
+#   test/fixture, flixlint.Generic -> the kind number of every node names the same kind in the shim and in AstKinds.flix;
+#                                     rules/generic.flix reports what rules.flix reports (test/generic/compare.sh)
+#   test/generic/limit, flixlint.Generic -> inside the size limit; exit 4 with --node-ratio 2
 #
 #   FLIX_JAR=/path/to/flix.jar test/run.sh   （FLIX_JAR を渡さなければ bin/flix-jar が解決する）
 set -eu
@@ -84,10 +86,12 @@ set -e
 diff "$root/test/expected-spans-$stage.txt" "$spans_out" || { echo "test/spans: the index differs from test/expected-spans-$stage.txt (< expected / > actual)" >&2; exit 1; }
 
 # The generic AST on the fixture: every node's kind number names the same kind in the shim and in the checked-in
-# AstKinds.flix, and columns of another schema are refused. The shim jar is the one the runs above built.
+# AstKinds.flix; relations of another schema are refused; the custom rules written on it (rules/generic.flix) report
+# what rules.flix reports; and the size limit stops a walk that grows past it. The shim jar is the one the runs above built.
 gen="$root/build/generic"
+shim_jar="${FLIXLINT_SHIM:-$root/build/flixlint-shim.jar}"
 rm -rf "$gen"; mkdir -p "$gen/engine/src/Flixlint"
-(cd "$root/test/fixture" && java -cp "$FLIX_JAR:$root/build/flixlint-shim.jar" flixlint.Generic --out "$gen/columns" --stage "$stage" src) 2> "$gen/shim.stderr" \
+(cd "$root/test/fixture" && java -cp "$FLIX_JAR:$shim_jar" flixlint.Generic --out "$gen/ast" --stage "$stage" src) 2> "$gen/shim.stderr" \
     || { echo "test/fixture: flixlint.Generic failed" >&2; cat "$gen/shim.stderr" >&2; exit 1; }
 cp "$root/src/Flixlint/Ast.flix" "$root/src/Flixlint/AstKinds.flix" "$gen/engine/src/Flixlint/"
 cp "$root/test/generic/Main.flix" "$gen/engine/src/"
@@ -95,13 +99,25 @@ echo 'mod Flixlint { }' > "$gen/engine/src/Flixlint.flix"
 printf '[package]\nversion = "0.0.0"\nflix = "0.0.0"\n' > "$gen/engine/flix.toml"
 (cd "$gen/engine" && java -jar "$FLIX_JAR" build-jar --no-install > build.log 2>&1) \
     || { echo "test/generic: the check does not compile (src/Flixlint/Ast.flix, AstKinds.flix, test/generic/Main.flix)" >&2; tail -40 "$gen/engine/build.log" >&2; exit 1; }
-generic="$(FLIXLINT_GENERIC="$gen/columns" java -jar "$gen/engine/artifact/engine.jar")"
+generic="$(FLIXLINT_GENERIC="$gen/ast" java -jar "$gen/engine/artifact/engine.jar")"
 case "$generic" in "generic: ok "*) ;; *) echo "test/generic: the kind numbers differ" >&2; echo "$generic" >&2; exit 1 ;; esac
-cp -R "$gen/columns" "$gen/other-schema"; echo 0000000000000000 > "$gen/other-schema/schema_hash.txt"
+cp -R "$gen/ast" "$gen/other-schema"; sed -i.bak 's/^schemaHash=.*/schemaHash=0000000000000000/' "$gen/other-schema/meta.txt"
 case "$(FLIXLINT_GENERIC="$gen/other-schema" java -jar "$gen/engine/artifact/engine.jar")" in
     *"ast_schema 0000000000000000"*) ;;
-    *) echo "test/generic: columns of another ast_schema were not refused" >&2; exit 1 ;;
+    *) echo "test/generic: relations of another ast_schema were not refused" >&2; exit 1 ;;
 esac
+FLIXLINT_SHIM="$shim_jar" "$root/test/generic/compare.sh" "$root/test/fixture" "$root/test/fixture/rules/rules.flix" "$root/test/fixture/rules/generic.flix" "$stage" "$gen/compare" > "$gen/compare.txt" 2>&1 \
+    || { echo "test/generic: the rules written on the generic AST report differently" >&2; cat "$gen/compare.txt" >&2; exit 1; }
+# A record alias of 40 fields used in 100 signatures is one shared type: the walk stays well inside the limit, and a
+# limit of 2 nodes per source line stops it with exit 4 and the declaration that grew most.
+(cd "$root/test/generic/limit" && java -cp "$FLIX_JAR:$shim_jar" flixlint.Generic --out "$gen/limit" --stage "$stage" src) 2> "$gen/limit.stderr" \
+    || { echo "test/generic/limit: the walk did not fit its limit" >&2; cat "$gen/limit.stderr" >&2; exit 1; }
+set +e
+(cd "$root/test/generic/limit" && java -cp "$FLIX_JAR:$shim_jar" flixlint.Generic --out "$gen/limit-low" --node-ratio 2 --stage "$stage" src) 2> "$gen/limit-low.stderr"
+code=$?
+set -e
+[ "$code" = 4 ] && grep -q 'grew past its limit.*The declaration with the most nodes is' "$gen/limit-low.stderr" \
+    || { echo "test/generic/limit: --node-ratio 2 should stop with exit 4 and name the declaration, got exit $code" >&2; cat "$gen/limit-low.stderr" >&2; exit 1; }
 
 # WhyNot: 呼び方と環境の誤りを exit 2 のままにしない。flix.jar が無くても shim が組めなくても --rules の
 # パスが違っても broken.flix の行が緑になり、「規則が壊れている事」を確かめたつもりの検査が何も確かめない。
@@ -130,4 +146,4 @@ if [ "${FLIXLINT_RESIDENT:-0}" = 1 ]; then
     done
 fi
 
-echo "flixlint test: ok ($(grep -c ': .*: .*: ' "$root/test/expected.txt") violations on the fixture, $(grep -c ': .*: .*: ' "$root/test/expected-examples.txt") on examples; ${generic#generic: ok })"
+echo "flixlint test: ok ($(grep -c ': .*: .*: ' "$root/test/expected.txt") violations on the fixture, $(grep -c ': .*: .*: ' "$root/test/expected-examples.txt") on examples; generic AST ${generic#generic: ok }; $(head -1 "$gen/compare.txt" | sed "s/^compare: //; s/ are the same.*//") the same)"

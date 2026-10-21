@@ -1,7 +1,7 @@
 /// このゲームの決まりのうち、型と名前解決が要る物（flixlint の規則）。
 ///
 /// flixlint（submodule の flixlint/）が src/ と test/ の型つき AST から取った事実と突き合わせる。
-/// 流すのは make lint の口（lint-test-only-api・lint-ratchet・lint-flixlint）。数で止める規則の上限は lint/limits.json
+/// 流すのは make lint の口（lint-test-only-api・lint-ratchet・lint-flixlint）。数で止める規則の上限は lint/limits/<規則>.json
 /// （上限ちょうどで通る・増えたら止まる・減ったら上限を下げるまで止まる）。一覧を見るなら make lint-list。
 /// 名前は flixlint が作る Flixlint.Names から取るので、消えた def を指す allowIn はコンパイルで止まる。
 mod GameLint {
@@ -159,7 +159,7 @@ mod GameLint {
     def comparesWithLiteral(parent: String): Bool =
         parent == "field:expected" or parent == "let" or parent == "arg:Assert.assertEq:0" or parent == "arg:Assert.assertEqWithMsg:0"
             or String.startsWith(prefix = "arg:Eq.eq:", parent)
-            or String.startsWith(prefix = "arg:Eq.neq:", parent) or parent == "op:BoolOp.Eq" or parent == "op:BoolOp.Neq"
+            or String.startsWith(prefix = "arg:Eq.neq:", parent)
 
     /// test/ の中で、Bool を Option・Result で包んで比べる形（Some(true)・Ok(a == b)・Some(not x)・Err(a and b)・Some(t: Bool)）。
     /// 包んだ値の形（字の true・false・not・and・or・== などの比べ）で両方の段で数え、Bool の変数は型で数える。型は

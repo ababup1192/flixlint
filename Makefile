@@ -20,10 +20,11 @@ test-resident:
 shim:
 	devbox run -- scala-cli --power package shim --jar "$$(bin/flix-jar)" --library -o build/flixlint-shim.jar -f
 
-# 汎用の AST の語彙（Kind・Slot・Attr）をコンパイラの jar から作る: schema/ast_schema.tsv と src/Flixlint/AstKinds.flix。
-# Flix の版を上げた時に流し、出来た 2 つはリポに置く（実行のたびには作らない）。
+# 汎用の AST の語彙（Kind・Slot・Attr）をコンパイラの jar から作る: schema/ast_schema.tsv・src/Flixlint/AstKinds.flix・shim/AstNames.scala。
+# Flix の版を上げた時に流し、出来た 3 つはリポに置く（実行のたびには作らない）。
 ast-kinds: shim
-	java -cp "$$(bin/flix-jar):build/flixlint-shim.jar" flixlint.AstSchema --schema schema/ast_schema.tsv --kinds src/Flixlint/AstKinds.flix
+	java -cp "$$(bin/flix-jar):build/flixlint-shim.jar" flixlint.AstSchema --schema schema/ast_schema.tsv --kinds src/Flixlint/AstKinds.flix --names shim/AstNames.scala
+	$(MAKE) --no-print-directory shim
 
 clean:
 	rm -rf build shim/.scala-build

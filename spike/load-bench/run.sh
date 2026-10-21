@@ -19,7 +19,7 @@ if [ ! -f "$shim" ] || [ -n "$(find "$here/shim" -newer "$shim" -name '*.scala')
     (cd "$here" && devbox run -- scala-cli --power package shim --jar "$flix_jar" --library -o "$shim" -f >/dev/null)
 fi
 
-(cd "$project" && java -cp "$flix_jar:$shim" flixlint.Generic --out "$out/columns-$stage" --stage "$stage" --project-root "$project" src)
+(cd "$project" && java -cp "$flix_jar:$shim" flixlint.Generic --out "$out/columns-$stage" --stage "$stage" --project-root "$project" ${SRCS:-src})
 ls -l "$out/columns-$stage" >&2
 
 rm -rf "$out/engine"; mkdir -p "$out/engine/src/Flixlint"
