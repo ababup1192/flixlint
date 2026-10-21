@@ -1,0 +1,1 @@
+flixlint: ratchet no-such-rule: no rule has this id (remove it from limits/stale.json)

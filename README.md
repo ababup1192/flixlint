@@ -118,7 +118,7 @@ the shim runs: the shim runs on the compiler jar's classpath inside `bin/flixlin
 
 ```
 bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
-             [--today YYYY-MM-DD] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
+             [--today YYYY-MM-DD] [--limits FILE.json] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
              [--java-opts "..."] SRC...
 bin/flixlint --version
 ```
@@ -132,6 +132,7 @@ bin/flixlint --version
 | `--stage typed` (default) | Facts from the typed AST (`Flix.check()`): everything below, including compile errors. |
 | `--stage resolved` | Facts from the AST right after name resolution, before kinding and typing. Several times faster; the same facts except Java instance-method calls (the receiver's class is not known yet). |
 | `--today YYYY-MM-DD` | The date `allowUntil` is compared with (default: the real date). Tests fix it. |
+| `--limits FILE.json` | Ratchets: `{ "note": "...", "limits": { "<rule id>": <count> } }`. A rule with a limit is judged by its count: at the limit it passes silently; over it, its violations are listed with how many are new (exit 1); under it, the run fails until the limit is lowered to the count (exit 1); a limit for an id no rule has is exit 2. Without the option every violation is listed, which is also how to see the whole list of a ratchet. |
 | `--facts-out DIR` | Where the TSV facts go (default `BUILD/facts`). Keep them: they are the easiest way to look up a qualified name. |
 | `--build-dir DIR` | Working directory for the facts and the rule engine (default `build/flixlint`), relative to the current directory. |
 | `--shim JAR` | A prebuilt shim jar, instead of building one with `scala-cli`. `FLIXLINT_SHIM` works too. |
@@ -340,6 +341,7 @@ src/Flixlint/Facts.flix      the facts loaded from the TSV, and the lookups cust
 src/Flixlint/Engine.flix     the judgments, the allows, the report and the exit code
 src/Flixlint/Violation.flix  the violation record and how it is rendered
 src/Flixlint/Glob.flix       the glob of `files`
+src/Flixlint/Ratchet.flix    `--limits`: rules judged by their count against a limits file
 examples/                    a six-file project and four rules, small enough to read in a minute
 test/fixture/                a 7-file project that violates every family and three custom rules; test/run.sh checks the report
 test/expected*.txt           the reports both of them must produce
@@ -489,7 +491,7 @@ shim は `bin/flixlint` の中で、コンパイラの jar の classpath の上�
 
 ```
 bin/flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
-             [--today YYYY-MM-DD] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
+             [--today YYYY-MM-DD] [--limits FILE.json] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--shim JAR]
              [--java-opts "..."] SRC...
 bin/flixlint --version
 ```
@@ -503,6 +505,7 @@ bin/flixlint --version
 | `--stage typed`（既定） | 型付き AST（`Flix.check()`）の facts。下の全部が出る。コンパイルエラーもここで出る |
 | `--stage resolved` | 名前解決の直後、kinding と typing の前の AST の facts。数倍速い。Java の instance method の呼び出し（受け手のクラスがまだ分からない）以外は同じ |
 | `--today YYYY-MM-DD` | `allowUntil` と比べる日付（既定は実日付）。テストは固定する |
+| `--limits FILE.json` | ラチェット: `{ "note": "...", "limits": { "<rule の id>": <数> } }`。上限を持つ rule は数で判じる。上限ちょうどなら黙って通り、超えたらその rule の違反と増えた数を出し（exit 1）、下回ったら上限をその数に下げるまで止まる（exit 1）。どの rule にも無い id の上限は exit 2。付けなければ全部の違反が出るので、ラチェットの一覧を見る時もそうする |
 | `--facts-out DIR` | TSV の facts の置き先（既定は `BUILD/facts`）。残しておくと、qualified な名前を引くのが一番速い |
 | `--build-dir DIR` | facts と rule engine の作業場所（既定は `build/flixlint`。カレントディレクトリからの相対） |
 | `--shim JAR` | `scala-cli` で組む代わりに、組んである shim の jar を渡す。`FLIXLINT_SHIM` でも良い |
@@ -710,6 +713,7 @@ src/Flixlint/Facts.flix      TSV から読んだ facts と、custom rule が使�
 src/Flixlint/Engine.flix     判定・allow・報告・exit code
 src/Flixlint/Violation.flix  違反の record と、その出し方
 src/Flixlint/Glob.flix       `files` の glob
+src/Flixlint/Ratchet.flix    `--limits`: 上限のファイルと数で判じる rule
 examples/                    6 ファイルのプロジェクトと 4 つの rule。1 分で読める大きさ
 test/fixture/                全 family と 3 つの custom rule に違反する 7 ファイルのプロジェクト。報告を test/run.sh が確かめる
 test/expected*.txt           その 2 つが出さなければならない報告

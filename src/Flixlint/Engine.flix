@@ -23,12 +23,40 @@ pub mod Flixlint.Engine {
         let factsDir = Sys.Env.getVar("FLIXLINT_FACTS") |> Option.getWithDefault("build/flixlint/facts");
         let today = Sys.Env.getVar("FLIXLINT_TODAY") |> Option.getWithDefault("0000-00-00");
         let facts = Flixlint.Facts.load(factsDir);
-        let (violations, errors) = judgeAll(facts, today, rules);
+        let (judged, ruleErrors) = judgeAll(facts, today, rules);
+        let outcome = match Sys.Env.getVar("FLIXLINT_LIMITS") |> Option.filter(p -> not String.isEmpty(p)) {
+            case None => { violations = judged, failures = Nil, errors = Nil }
+            case Some(path) =>
+                let read = Fs.FileRead.read(path) |> Result.mapErr(_ -> "${path}: cannot be read");
+                match Result.flatMap(Flixlint.Ratchet.parse(path), read) {
+                    case Ok(limits) => Flixlint.Ratchet.apply(path, limits, ruleIds(rules), judged)
+                    case Err(e) => { violations = judged, failures = Nil, errors = List#{"flixlint: ${e}"} }
+                }
+        };
+        let violations = outcome#violations;
+        let errors = ruleErrors ::: outcome#errors;
         violations |> List.sortBy(Flixlint.Violation.key) |> List.forEach(v -> println(Flixlint.Violation.render(facts, v)));
+        List.forEach(println, outcome#failures);
         List.forEach(println, errors);
         if (not List.isEmpty(errors)) Sys.Exit.exit(2)
-        else if (not List.isEmpty(violations)) Sys.Exit.exit(1)
+        else if (not List.isEmpty(violations) or not List.isEmpty(outcome#failures)) Sys.Exit.exit(1)
         else ()
+
+    /// The id of every entry of the rule set.
+    def ruleIds(rules: RuleSet): Set[String] =
+        (List.map(r -> r#id, rules#functions)
+            ::: List.map(r -> r#id, rules#callsTogether)
+            ::: List.map(r -> r#id, rules#effectsTogether)
+            ::: List.map(r -> r#id, rules#otherEffectsWith)
+            ::: List.map(r -> r#id, rules#effectsIn)
+            ::: List.map(r -> r#id, rules#handlers)
+            ::: List.map(r -> r#id, rules#constructors)
+            ::: List.map(r -> r#id, rules#callsInLambda)
+            ::: List.map(r -> r#id, rules#callsWithArg)
+            ::: List.map(r -> r#id, rules#caseArgTypes)
+            ::: List.map(r -> r#id, rules#dependencies)
+            ::: List.map(r -> r#id, rules#customs))
+            |> List.toSet
 
     /// Every family's violations after the allows, and the errors of the rules themselves.
     pub def judgeAll(facts: Facts, today: String, rules: RuleSet): (List[Violation], List[String]) =

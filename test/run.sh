@@ -6,6 +6,7 @@
 #   fixture, rules/broken.flix -> exit 2 (a name the sources do not have: the rules do not compile)
 #   a wrong call or environment -> exit 4, so that the 2 above can only mean "the rules are wrong"
 #   fixture, rules/clean.flix  -> exit 0
+#   fixture, rules/rules.flix --limits limits/*.json -> the ratchet: exit 0 at the count, 1 over or under it, 2 for a limit of no rule
 #   examples/rules.flix        -> exit 1, test/expected-examples.txt (the four rules of examples/README.md)
 #
 #   FLIX_JAR=/path/to/flix.jar test/run.sh   （FLIX_JAR を渡さなければ bin/flix-jar が解決する）
@@ -29,7 +30,7 @@ lint() {
     # report that changed, and the reason is the only thing that says what happened.
     stderr="$(mktemp)"
     set +e
-    (cd "$root/$dir" && "$lint" --rules "$1" --today "$2" --stage "$stage" \
+    (cd "$root/$dir" && "$lint" --rules "$1" --today "$2" --stage "$stage" ${LIMITS:+--limits "$LIMITS"} \
         --build-dir "$root/build/$(basename "$dir")" src) > "$actual" 2> "$stderr"
     code=$?
     set -e
@@ -43,6 +44,13 @@ lint test/fixture rules/stale.flix 2026-09-19 2 expected-stale.txt
 lint test/fixture rules/broken.flix 2026-09-19 2
 lint test/fixture rules/clean.flix 2026-09-19 0
 lint examples rules.flix 2026-09-19 1 expected-examples.txt
+
+# The ratchet: the same rules judged by count against limits/*.json (at the count: silent; over: listed; under:
+# lower the limit; a limit for no rule: the rules are wrong).
+LIMITS=limits/at.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-ratchet-at.txt
+LIMITS=limits/over.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-over.txt
+LIMITS=limits/lower.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-lower.txt
+LIMITS=limits/stale.json lint test/fixture rules/rules.flix 2026-09-19 2 expected-ratchet-stale.txt
 
 # WhyNot: 呼び方と環境の誤りを exit 2 のままにしない。flix.jar が無くても shim が組めなくても --rules の
 # パスが違っても broken.flix の行が緑になり、「規則が壊れている事」を確かめたつもりの検査が何も確かめない。
@@ -58,5 +66,6 @@ expect4 env FLIX_JAR=/nonexistent/flix.jar "$lint" --rules rules/clean.flix src
 expect4 "$lint" --rules rules/clean.flix --stage bogus src
 expect4 "$lint" --rules rules/does-not-exist.flix src
 expect4 "$lint" --rules rules/clean.flix --nonsense src
+expect4 "$lint" --rules rules/clean.flix --limits limits/does-not-exist.json src
 
 echo "flixlint test: ok ($(grep -c ': .*: .*: ' "$root/test/expected.txt") violations on the fixture, $(grep -c ': .*: .*: ' "$root/test/expected-examples.txt") on examples)"
