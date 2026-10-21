@@ -29,7 +29,7 @@ pub mod Flixlint.Engine {
             case Some(path) =>
                 let read = Fs.FileRead.read(path) |> Result.mapErr(_ -> "${path}: cannot be read");
                 match Result.flatMap(Flixlint.Ratchet.parse(path), read) {
-                    case Ok(limits) => Flixlint.Ratchet.apply(path, limits, ruleIds(rules), judged)
+                    case Ok(limits) => Flixlint.Ratchet.apply(path, limits, ruleIds(rules), judged) |> againstBase(path, limits)
                     case Err(e) => { violations = judged, failures = Nil, errors = List#{"flixlint: ${e}"} }
                 }
         };
@@ -41,6 +41,19 @@ pub mod Flixlint.Engine {
         if (not List.isEmpty(errors)) Sys.Exit.exit(2)
         else if (not List.isEmpty(violations) or not List.isEmpty(outcome#failures)) Sys.Exit.exit(1)
         else ()
+
+    /// The ratchet's outcome with the limits checked against the base limits (`FLIXLINT_LIMITS_BASE`, given by
+    /// `--limits-base`): a limit may not go up without a reason. Without a base the outcome is as it was.
+    def againstBase(path: String, limits: List[Flixlint.Ratchet.Limit], outcome: Flixlint.Ratchet.Outcome): Flixlint.Ratchet.Outcome \ Env + FileRead =
+        match Sys.Env.getVar("FLIXLINT_LIMITS_BASE") |> Option.filter(p -> not String.isEmpty(p)) {
+            case None => outcome
+            case Some(basePath) =>
+                let read = Fs.FileRead.read(basePath) |> Result.mapErr(_ -> "${basePath}: cannot be read");
+                match Result.flatMap(Flixlint.Ratchet.parse(basePath), read) {
+                    case Ok(base) => { failures = outcome#failures ::: Flixlint.Ratchet.raised(path, basePath, limits, base) | outcome }
+                    case Err(e) => { errors = outcome#errors ::: List#{"flixlint: ${e}"} | outcome }
+                }
+        }
 
     /// The id of every entry of the rule set.
     def ruleIds(rules: RuleSet): Set[String] =

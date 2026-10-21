@@ -1,0 +1,24 @@
+{
+  "note": "clock raised against base-lower.json, with the reason",
+  "limits": {
+    "capability-leak": 1,
+    "capability-site": 1,
+    "capability-target": 1,
+    "clock-alone": 1,
+    "domain-isolation": 6,
+    "find-many": 2,
+    "guarded-write": 1,
+    "handler-site": 2,
+    "io-in-tx": 2,
+    "log-text": 2,
+    "pure-rules": 1,
+    "silent-parse": 3,
+    "raw-alias": 1,
+    "flat-rules": 6,
+    "clock": {
+      "limit": 4,
+      "raiseReason": "Report.footer reads the clock through Wall.stamp until the report moves to the runner"
+    },
+    "wrapped-key": 4
+  }
+}

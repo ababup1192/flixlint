@@ -31,7 +31,7 @@ lint() {
     # report that changed, and the reason is the only thing that says what happened.
     stderr="$(mktemp)"
     set +e
-    (cd "$root/$dir" && "$lint" --rules "$1" --today "$2" --stage "$stage" ${LIMITS:+--limits "$LIMITS"} \
+    (cd "$root/$dir" && "$lint" --rules "$1" --today "$2" --stage "$stage" ${LIMITS:+--limits "$LIMITS"} ${BASE:+--limits-base "$BASE"} \
         --build-dir "$root/build/$(basename "$dir")" src) > "$actual" 2> "$stderr"
     code=$?
     set -e
@@ -52,6 +52,11 @@ LIMITS=limits/at.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-r
 LIMITS=limits/over.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-over.txt
 LIMITS=limits/lower.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-lower.txt
 LIMITS=limits/stale.json lint test/fixture rules/rules.flix 2026-09-19 2 expected-ratchet-stale.txt
+# Against the base the work goes into (--limits-base): a limit that went up fails unless it gives a raiseReason, and a
+# raiseReason on a limit that did not go up fails too.
+LIMITS=limits/at.json BASE=limits/base-lower.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-raised.txt
+LIMITS=limits/raised-ok.json BASE=limits/base-lower.json lint test/fixture rules/rules.flix 2026-09-19 0 expected-ratchet-at.txt
+LIMITS=limits/raised-ok.json BASE=limits/at.json lint test/fixture rules/rules.flix 2026-09-19 1 expected-ratchet-stale-reason.txt
 
 # The name index (--spans) alone, without rules: exit 0 and every occurrence where test/expected-spans-<stage>.txt says.
 # WhyNot: the two stages are not compared with each other here. Each run is one stage; the expected files differ only by
@@ -80,6 +85,7 @@ expect4 "$lint" --rules rules/clean.flix --stage bogus src
 expect4 "$lint" --rules rules/does-not-exist.flix src
 expect4 "$lint" --rules rules/clean.flix --nonsense src
 expect4 "$lint" --rules rules/clean.flix --limits limits/does-not-exist.json src
+expect4 "$lint" --rules rules/clean.flix --limits-base limits/at.json src
 # A --pkg path one segment too deep would read owner and name off by one: it is refused, not misread.
 expect4 "$lint" --rules rules/clean.flix --pkg lib/github/extra/owner/name/1.0.0/name-1.0.0.fpkg src
 
