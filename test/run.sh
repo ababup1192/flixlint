@@ -37,7 +37,7 @@ lint() {
     stderr="$(mktemp)"
     set +e
     (cd "$root/$dir" && "$lint" --rules "$1" --today "$2" --stage "$stage" ${LIMITS:+--limits "$LIMITS"} ${BASE:+--limits-base "$BASE"} \
-        --build-dir "$root/build/$(basename "$dir")" src) > "$actual" 2> "$stderr"
+        --build-dir "$root/build/${BUILD:-$(basename "$dir")}" src) > "$actual" 2> "$stderr"
     code=$?
     set -e
     [ "$code" = "$3" ] || { echo "$dir/$1: expected exit $3, got $code" >&2; cat "$actual" "$stderr" >&2; exit 1; }
@@ -156,10 +156,30 @@ expect4 "$lint" --rules rules/clean.flix --limits-base limits/at.json src
 # A --pkg path one segment too deep would read owner and name off by one: it is refused, not misread.
 expect4 "$lint" --rules rules/clean.flix --pkg lib/github/extra/owner/name/1.0.0/name-1.0.0.fpkg src
 
-# Under FLIXLINT_RESIDENT=1 (make test-resident) every run above went through a resident server; they are stopped here.
+# The resident server's wire (protocol 2) and the name of its socket, against the fixtures every client shares.
+shim="${FLIXLINT_SHIM:-$root/build/flixlint-shim.jar}"
+java -cp "$FLIX_JAR:$shim" flixlint.Resident fixture "$root/test/resident" || { echo "test/resident: the wire differs from request.hex / reply.hex" >&2; exit 1; }
+while IFS="$(printf '\t')" read -r r id want; do
+    case "$r" in '#'*|'') continue ;; esac
+    got="$("$lint" --socket-name "$r" "$id")"
+    [ "$got" = "$want" ] || { echo "test/resident/socket-name.txt: $r: $got, not $want" >&2; exit 1; }
+done < "$root/test/resident/socket-name.txt"
+
+# Under FLIXLINT_RESIDENT=1 (make test-resident) every run above went through a resident server: one per project root,
+# whatever the build directory and the stage. Two runs sent at once wait for each other and report as alone.
 if [ "${FLIXLINT_RESIDENT:-0}" = 1 ]; then
+    lint test/fixture rules/rules.flix 2026-09-19 1 expected.txt &
+    first=$!
+    # Each with a build directory of its own: two runs on one build directory overwrite each other's engine sources.
+    BUILD=fixture-deep lint test/fixture rules/deep.flix 2026-09-19 1 expected-deep.txt &
+    second=$!
+    wait "$first" || { echo "test/fixture: the first of two runs sent at once failed" >&2; exit 1; }
+    wait "$second" || { echo "test/fixture: the second of two runs sent at once failed" >&2; exit 1; }
     for dir in test/fixture examples test/spans; do
-        (cd "$root/$dir" && "$lint" --resident-stop --build-dir "$root/build/$(basename "$dir")")
+        real="$(cd "$root/$dir" && pwd -P)"
+        n="$(ps -Ao args= | grep -F "flixlint.Resident server" | grep -cF -- "--root $real --identity" || true)"
+        [ "$n" = 1 ] || { echo "$dir: $n resident servers, not 1" >&2; exit 1; }
+        (cd "$root/$dir" && "$lint" --resident-stop)
     done
 fi
 

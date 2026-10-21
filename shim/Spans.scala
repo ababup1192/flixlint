@@ -31,6 +31,13 @@ import java.nio.file.{Files, Path}
   *    extra `recv=A via=V`: `A` the type alias the receiver `e` is declared with, `via` how it was known: `decl` (the
   *    declared type of a parameter, an ascribed `let`, an ascription or the return type of the def called), `row` (the
   *    receiver's closed record type has exactly the fields of one alias; `recv=A|B via=ambiguous` when several have them), or `recv=? via=open|none`
+  *  - `arg` (both stages; the header says `adds=...,arg`) one argument of a call to a def, of a case built, or one field
+  *    pattern of a case matched: the span is the argument as the compiler places it, `sym` the def or the case, and
+  *    extra `of=def-use|case-construct|case-pattern at=L:C i=N n=M`: the row of the name it belongs to (that kind, at
+  *    that start), the argument's place from 0, and how many the compiler has at the site (a call of a def with no
+  *    parameters has one, the `()`); `sugar` when that name is sugar, `synth` when the argument is not written at the
+  *    site: its span is the whole call or lies outside it (the compiler made it up, as in a partial application
+  *    `List.map(f)` or a def passed as a value)
   *  - resolved stage only (the header says `adds=use,type-use,alias-decl`):
   *    - `use` a `use` declaration (owner: the module it is in; sym: what it brings in): extra `alias=x` the name it
   *      brings in and `what=def|enum|case|alias|module|effect|op|trait|sig|struct|other`
@@ -65,9 +72,9 @@ object Spans {
     /** WhyNot: an occurrence is kept once per (kind, place, symbol). The desugarer walks some expressions twice (a
       * partial application is a lambda around the call), and the second copy carries the same location.
       */
-    def add(kind: String, sym: String, loc: SourceLocation, owner: String, extra: String = ""): Unit =
+    def add(kind: String, sym: String, loc: SourceLocation, owner: String, extra: String = "", which: String = ""): Unit =
       Facts.sourceFile(loc).foreach { f =>
-        val key = (kind, f, loc.startLine, loc.startCol, loc.endLine, loc.endCol, sym)
+        val key = (kind, f, loc.startLine, loc.startCol, loc.endLine, loc.endCol, sym + which)
         if (!rows.contains(key)) rows(key) = Row(kind, f, loc.startLine, loc.startCol, loc.endLine, loc.endCol, sym, owner, extra)
       }
 
@@ -164,6 +171,38 @@ object Spans {
     rules.foreach(r => armRow(out, r, s"${loc.startLine}:${loc.startCol}", owner))
   }
 
+  /** `arg` rows: the arguments of a call to a def (`ApplyDef`), of a case built (`Tag` in an expression) and the field
+    * patterns of a case matched (`Tag` in a pattern). Both stages share these node and field names.
+    */
+  private def argRows(out: Out, p: Product, cls: String, owner: String): Unit = {
+    lazy val call = field[SourceLocation](p, "loc")
+    // WhyNot: not `SourceLocation.isSynthetic`. The compiler marks written arguments synthetic too (both of
+    // `List.map(p -> e, xs)`), while the made-up ones of a partial application carry the span of the whole call.
+    def written(loc: SourceLocation): Boolean =
+      span(loc) != span(call) && notAfter(call.startLine, call.startCol, loc.startLine, loc.startCol) && notAfter(loc.endLine, loc.endCol, call.endLine, call.endCol)
+    def notAfter(l1: Int, c1: Int, l2: Int, c2: Int): Boolean = l1 < l2 || (l1 == l2 && c1 <= c2)
+    def rows(of: String, sym: String, name: String, at: SourceLocation, xs: List[Any]): Unit = {
+      val sugared = if (sugar(at, name).nonEmpty) " sugar" else ""
+      xs.zipWithIndex.foreach { case (x, i) =>
+        val loc = field[SourceLocation](x, "loc")
+        val at1 = s"${at.startLine}:${at.startCol}"
+        out.add("arg", sym, loc, owner, s"of=$of at=$at1 i=$i n=${xs.length}$sugared${if (written(loc)) "" else " synth"}", s" $at1 $i")
+      }
+    }
+    p.productPrefix match {
+      case "ApplyDef" if isExpr(cls) =>
+        val u = field[SymUse.DefSymUse](p, "symUse")
+        rows("def-use", symName(u.sym), u.sym.name, u.loc, field[List[Any]](p, "exps"))
+      case "Tag" if isExpr(cls) =>
+        val u = field[SymUse.CaseSymUse](p, "symUse")
+        rows("case-construct", symName(u.sym), u.sym.name, u.loc, field[List[Any]](p, "exps"))
+      case "Tag" if isPattern(cls) =>
+        val u = field[SymUse.CaseSymUse](p, "symUse")
+        rows("case-pattern", symName(u.sym), u.sym.name, u.loc, field[List[Any]](p, "pats"))
+      case _ => ()
+    }
+  }
+
   private def span(loc: SourceLocation): String = s"${loc.startLine}:${loc.startCol}:${loc.endLine}:${loc.endCol}"
 
   /** `pub inst ann=test ext=sl:sc:el:ec`. */
@@ -208,7 +247,7 @@ object Spans {
   }
 
   def resolved(root: ResolvedAst.Root, path: Path): Int = {
-    val out = new Out("resolved", " adds=use,type-use,alias-decl")
+    val out = new Out("resolved", " adds=use,type-use,alias-decl,arg")
     val allDefs: Iterable[ResolvedAst.Declaration.Def] = root.defs.values ++ root.instances.values.flatMap(_.defs)
     val instDefs: Set[Any] = root.instances.values.flatMap(_.defs).toSet
     def insts(d: Any): Boolean = instDefs.contains(d)
@@ -216,7 +255,7 @@ object Spans {
       val fn = symName(d.sym)
       out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, insts(d), d.spec.ann, d.loc))
       typesIn(out, d.spec, fn)
-      walk(out, d.exp, fn, "", (p, cls) => if (p.productPrefix == "Match" && isExpr(cls)) matchRow(out, p, fn, ""))
+      walk(out, d.exp, fn, "", (p, cls) => { if (p.productPrefix == "Match" && isExpr(cls)) matchRow(out, p, fn, ""); argRows(out, p, cls, fn) })
     }
     for ((sym, e) <- root.enums) {
       out.add("enum-decl", symName(sym), sym.loc, symName(sym))
@@ -242,7 +281,7 @@ object Spans {
   }
 
   def typed(root: TypedAst.Root, path: Path): Int = {
-    val out = new Out("typed")
+    val out = new Out("typed", " adds=arg")
     val receivers = new Receivers(root)
     val allDefs: Iterable[TypedAst.Def] = root.defs.values ++ root.instances.values.flatMap(_.defs)
     val instDefs: Set[Any] = root.instances.values.flatMap(_.defs).toSet
@@ -250,7 +289,7 @@ object Spans {
       val fn = symName(d.sym)
       out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, instDefs.contains(d), d.spec.ann, d.loc))
       d.spec.fparams.toList.foreach(receivers.declare)
-      walk(out, d.exp, fn, "", (p, cls) => if (isExpr(cls)) p.productPrefix match {
+      walk(out, d.exp, fn, "", (p, cls) => { argRows(out, p, cls, fn); if (isExpr(cls)) p.productPrefix match {
         case "Match" => matchRow(out, p, fn, " scrut=" + Typed.headName(field[TypedAst.Expr](p, "exp").tpe))
         case "Let" => receivers.let(p)
         case "Lambda" => receivers.declare(field[TypedAst.FormalParam](p, "fparam"))
@@ -267,7 +306,7 @@ object Spans {
             case _ => ()
           }
         case _ => ()
-      })
+      } })
     }
     for ((sym, e) <- root.enums) {
       out.add("enum-decl", symName(sym), sym.loc, symName(sym))
