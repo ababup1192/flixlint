@@ -320,6 +320,11 @@ inside `mod Net.Http`), `java.lang.System.currentTimeMillis` (Java interop; cons
 `file` is the path as given on the command line. A relation with no rows gets no TSV file, so a small project's
 facts directory holds fewer files than the table below has rows.
 
+From v0.8 the engine does not read these TSV files: it builds the same relations, with the same columns and spelling, from
+the generic AST (`Flixlint.Rel`, layer 3), and the families and `Flixlint.Facts` judge on those. The shim still writes the
+TSV until v0.9, for looking names up and for `test/compare-old.sh`, which compares the two table by table.
+`FLIXLINT_DUMP_REL=DIR` writes the engine's relations into `DIR` as the same TSV.
+
 | Relation | Columns | Meaning |
 |---|---|---|
 | `SourceFile` | `file` | A `.flix` file the walk was given, whether or not it holds a definition. `allowInFile` is checked against these, so a file of nothing but type aliases or a trait counts. |
@@ -490,13 +495,14 @@ shim/AstNames.scala          the names and hash of AstKinds for the shim (genera
 schema/ast_schema.tsv        every field of every node class of both stages (stage, kind, slot, field type); generated
 shim/Resident.scala          --resident: the server, its client and the wire (Resident server)
 src/Flixlint.flix            what a rule file uses: the family records and builders, transitivelyIn / allowIn / allowInFile / allowUntil, ruleSet
-src/Flixlint/Facts.flix      the facts loaded from the TSV, and the lookups custom rules use
+src/Flixlint/Facts.flix      the facts built from the relations of layer 3, and the lookups custom rules use
 src/Flixlint/Engine.flix     the judgments, the allows, the report and the exit code
 src/Flixlint/Violation.flix  the violation record and how it is rendered
 src/Flixlint/Glob.flix       the glob of `files`
 src/Flixlint/Ratchet.flix    `--limits`: rules judged by their count against a limits file
 src/Flixlint/Ast.flix        layer 1: the generic relations loaded (tree, leaves, types, externals)
 src/Flixlint/Flix.flix       layer 2: the Flix words on layer 1 (defs, calls, tags, placement, branches)
+src/Flixlint/Rel.flix        layer 3: the relations of the facts (Def, Calls, ArgType, ...) built from layers 1 and 2
 src/Flixlint/AstKinds.flix   the generated Kind / Slot / Attr enums, their numbers and the schema hash (do not edit)
 examples/                    a six-file project and four rules, small enough to read in a minute
 test/fixture/                a 7-file project that violates every family and three custom rules; test/run.sh checks the report
@@ -886,6 +892,10 @@ qualify するのと同じ形になる。`Auth.permit`、`Auth.Permit.Permit`（
 コンストラクタは `pkg.Class.<init>`）。`file` はコマンドラインに渡したままのパス。row の無い関係は TSV の
 ファイルも出来ないので、小さいプロジェクトの facts のディレクトリは下の表より少ない。
 
+v0.8 から、エンジンはこの TSV を読まない。同じ関係を、同じ列・同じ綴りで汎用の AST から作り（`Flixlint.Rel`・層 3）、
+family と `Flixlint.Facts` はそれで判じる。shim は v0.9 まで TSV を書き続ける（名前を引くためと、2 つを表ごとに比べる
+`test/compare-old.sh` のため）。`FLIXLINT_DUMP_REL=DIR` で、エンジンの関係を同じ TSV の形で `DIR` に書く。
+
 | 関係 | 列 | 意味 |
 |---|---|---|
 | `SourceFile` | `file` | 走査に渡した `.flix` のファイル。定義を持たないファイルも載る。`allowInFile` はこれと突き合わせるので、型エイリアスや trait だけのファイルも数える |
@@ -1045,13 +1055,14 @@ shim/AstNames.scala          shim が使う AstKinds の名前と hash（生成�
 schema/ast_schema.tsv        両段の全部の節のクラスの全部の欄（段・kind・欄・欄の型）。生成物
 shim/Resident.scala          --resident: server・クライアント・口（「常駐の server」）
 src/Flixlint.flix            rule のファイルが使う物: family の record と builder、transitivelyIn / allowIn / allowInFile / allowUntil、ruleSet
-src/Flixlint/Facts.flix      TSV から読んだ facts と、custom rule が使う引く関数
+src/Flixlint/Facts.flix      層 3 の関係から作った facts と、custom rule が使う引く関数
 src/Flixlint/Engine.flix     判定・allow・報告・exit code
 src/Flixlint/Violation.flix  違反の record と、その出し方
 src/Flixlint/Glob.flix       `files` の glob
 src/Flixlint/Ratchet.flix    `--limits`: 上限のファイルと数で判じる rule
 src/Flixlint/Ast.flix        層 1: 汎用の事実の読み込み（木・葉・型・外の宣言）
 src/Flixlint/Flix.flix       層 2: 層 1 の上の Flix の語（def・呼び出し・tag・置き場・分岐）
+src/Flixlint/Rel.flix        層 3: 層 1・2 から作った facts の関係（Def・Calls・ArgType など）
 src/Flixlint/AstKinds.flix   生成した Kind・Slot・Attr の enum と番号と schema の hash（手で直さない）
 examples/                    6 ファイルのプロジェクトと 4 つの rule。1 分で読める大きさ
 test/fixture/                全 family と 3 つの custom rule に違反する 7 ファイルのプロジェクト。報告を test/run.sh が確かめる
