@@ -175,7 +175,7 @@ object Resident {
       val t0 = System.nanoTime()
       var tEngine = 0L
       val code =
-        try Lint.run(argv, rest => Facts.guardedWith(rest)(state.facts), jar => { tEngine = System.nanoTime(); state.engine(jar, settings) })
+        try Lint.run(argv, rest => Facts.guardedWith(rest)(state.facts), state.build, jar => { tEngine = System.nanoTime(); state.engine(jar, settings) })
         catch {
           case e: Throwable =>
             err.println(s"flixlint: the resident run failed: ${e.getClass.getName}: ${e.getMessage}")
@@ -213,6 +213,56 @@ object Resident {
       files.foreach(f => if (!given.get(f).exists(b => Arrays.equals(b, now(f)))) flix.addFile(f, SecurityContext.Unrestricted))
       given = now
       Facts.write(flix, args, files, spans, t0)
+    }
+
+    private var engineFlix: Option[(Path, Flix)] = None
+    private var engineGiven = Map.empty[Path, Array[Byte]]
+
+    /** Builds `artifact/engine.jar` of the engine directory with a compiler kept for it (only the changed sources are
+      * compiled again); false when they do not compile, and `bin/flixlint` builds it and reports the errors as before.
+      *
+      * The jar is what `flix build-jar` writes: the generated classes and a manifest naming `Main`.
+      * WhyNot: not `flix build-jar` in a JVM of its own. Its start and the cold compiler cost most of the build (about
+      * 8 s against 1 s on a warm compiler); a rule changed while the server runs builds in that second.
+      */
+    def build(dir: Path): Boolean = try {
+      val src = dir.resolve("src")
+      val flix = engineFlix match {
+        case Some((d, f)) if d == dir => f
+        case _ =>
+          val f = new Flix()
+          f.setOptions(ca.uwaterloo.flix.util.Options.Default.copy(lib = ca.uwaterloo.flix.util.LibLevel.All, progress = false))
+          engineFlix = Some((dir, f))
+          engineGiven = Map.empty
+          f
+      }
+      val files = Facts.listFlix(src)
+      val now = files.map(f => f -> Files.readAllBytes(f)).toMap
+      engineGiven.keys.filterNot(now.contains).foreach(f => flix.remFile(f))
+      files.foreach(f => if (!engineGiven.get(f).exists(b => Arrays.equals(b, now(f)))) flix.addFile(f, SecurityContext.Unrestricted))
+      engineGiven = now
+      flix.compile() match {
+        case ca.uwaterloo.flix.util.Result.Ok(result) =>
+          val jar = dir.resolve("artifact").resolve("engine.jar")
+          Files.createDirectories(jar.getParent)
+          val part = jar.resolveSibling("engine.jar.part")
+          val manifest = new java.util.jar.Manifest()
+          manifest.getMainAttributes.put(java.util.jar.Attributes.Name.MANIFEST_VERSION, "1.0")
+          manifest.getMainAttributes.put(java.util.jar.Attributes.Name.MAIN_CLASS, "Main")
+          val out = new java.util.jar.JarOutputStream(Files.newOutputStream(part), manifest)
+          try result.getClasses.values.toList.sortBy(_.name.descriptorString).foreach { c =>
+            out.putNextEntry(new java.util.jar.JarEntry(c.name.descriptorString.drop(1).dropRight(1) + ".class"))
+            out.write(c.bytecode)
+            out.closeEntry()
+          } finally out.close()
+          Files.move(part, jar, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+          true
+        case _ => false
+      }
+    } catch {
+      case e: Exception =>
+        System.err.println(s"flixlint resident: the engine did not build here (${e.getClass.getName}: ${e.getMessage}); building it apart")
+        false
     }
 
     /** Runs the engine jar, loaded once per build of it (`built-hash` next to `artifact/`).

@@ -27,14 +27,15 @@ object Lint {
   val NeedsBuild = 10
 
   def main(argv: Array[String]): Unit = {
-    val code = run(argv, Facts.guarded, jar => runEngine(newLoader(jar), jar, Array.empty))
+    val code = run(argv, Facts.guarded, _ => false, jar => runEngine(newLoader(jar), jar, Array.empty))
     if (code != 0) sys.exit(code)
   }
 
-  /** The facts by `facts`, then the engine by `engine` when it is built for them; the exit code (see above).
+  /** The facts by `facts`, then the engine by `engine` when it is built for them, or once `build` built it (given the
+    * engine directory; false when it did not, and `bin/flixlint` builds it); the exit code (see above).
     * `bin/flixlint` runs it in a JVM of its own (`main`), the resident server (`Resident`) with its warm compiler.
     */
-  def run(argv: Array[String], facts: Array[String] => Int, engine: Path => Int): Int = {
+  def run(argv: Array[String], facts: Array[String] => Int, build: Path => Boolean, engine: Path => Int): Int = {
     val (dir, key, rest) =
       try split(argv)
       catch {
@@ -51,7 +52,7 @@ object Lint {
     if (Files.isRegularFile(jar) && Files.isRegularFile(built) && Files.readString(built).trim == hash) engine(jar)
     else {
       Files.writeString(dir.resolve("wanted-hash"), hash + "\n")
-      NeedsBuild
+      if (build(dir)) { Files.writeString(built, hash + "\n"); engine(jar) } else NeedsBuild
     }
   }
 
