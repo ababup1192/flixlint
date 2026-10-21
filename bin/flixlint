@@ -2,7 +2,7 @@
 # flixlint: architecture rules for Flix, checked on the compiler's AST.
 #
 #   flixlint [--flix-jar JAR] --rules PATH/rules.flix [--pkg FPKG]... [--jar JAR]... [--stage typed|resolved]
-#            [--today YYYY-MM-DD] [--limits FILE.json|DIR [--limits-base FILE.json|DIR]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--offline] [--shim JAR]
+#            [--today YYYY-MM-DD] [--limits FILE.json|DIR [--limits-base FILE.json|DIR] [--held]] [--facts-out DIR] [--build-dir DIR] [--project-root DIR] [--offline] [--shim JAR]
 #            [--java-opts "..."] [--spans FILE] [--resident [--heap-mb N] [--idle-minutes N] [--run-limit SECONDS]] [--timeout SECONDS] SRC...
 #   flixlint --resident-stop [--flix-jar JAR] [--shim JAR]
 #   flixlint [--flix-jar JAR] --spans FILE [--stage typed|resolved] [--pkg FPKG]... [--jar JAR]... [--project-root DIR] [--offline] SRC...
@@ -10,6 +10,8 @@
 #   flixlint --version
 #
 # --spans FILE also writes the position of every name (README "Spans"); without --rules only that index is written.
+# --limits: a ratchet at its limit holds its violations; one line on stderr counts them and <build-dir>/held.txt has them
+# all (--held lists them on stdout too).
 #
 # Exit codes: 0 no violation, 1 violations (or a ratchet off its limit), 2 the rules are wrong (rules.flix does not compile, an allow that matches
 #             nothing, an allowInFile of a file that is not among the sources, a limit for no rule), 3 the sources do not compile,
@@ -23,6 +25,7 @@
 # Environment: FLIX_JAR (the compiler), FLIXLINT_SHIM (a prebuilt shim jar), FLIXLINT_JAVA_OPTS,
 #              FLIXLINT_RESIDENT=1 (as --resident), FLIXLINT_RESIDENT_IDLE (as --idle-minutes; 30),
 #              FLIXLINT_TIMING=1 (the rule engine prints how long loading, judging and each custom rule took, on stderr).
+#              FLIXLINT_HELD=1 (as --held: the violations a ratchet holds within its limit are listed too).
 #              FLIXLINT_DUMP_REL=DIR (the rule engine writes the relations it builds from the generic AST into DIR as the old
 #              facts' TSV files, to compare them table by table: test/compare-old.sh).
 #
@@ -71,6 +74,7 @@ run_limit=900
 timeout=""
 timing="${FLIXLINT_TIMING:-}"
 dump_rel="${FLIXLINT_DUMP_REL:-}"
+held="${FLIXLINT_HELD:-}"
 srcs=()
 setting_opts=()
 
@@ -102,6 +106,7 @@ while [ $# -gt 0 ]; do
         --today) today="$2"; shift 2 ;;
         --limits) limits="$2"; shift 2 ;;
         --limits-base) limits_base="$2"; shift 2 ;;
+        --held) held=1; shift ;;
         --facts-out) facts_out="$2"; shift 2 ;;
         --spans) spans="$2"; shift 2 ;;
         --build-dir) build_dir="$2"; shift 2 ;;
@@ -305,7 +310,7 @@ engine_jar="$engine/artifact/engine.jar"
 # of its own (flixlint.Lint, engine.jar), and `--setting` of the request to the resident server.
 # WhyNot: the resident client does not read them from its environment. The server's engine never sees the caller's
 # environment, so a setting the client did not know by name was lost there alone (FLIXLINT_TIMING in 0.7.1).
-settings=("FLIXLINT_FACTS=$facts_out" "FLIXLINT_TODAY=$today" "FLIXLINT_LIMITS=$limits" "FLIXLINT_LIMITS_BASE=$limits_base" "FLIXLINT_TIMING=$timing" "FLIXLINT_DUMP_REL=$dump_rel")
+settings=("FLIXLINT_FACTS=$facts_out" "FLIXLINT_TODAY=$today" "FLIXLINT_LIMITS=$limits" "FLIXLINT_LIMITS_BASE=$limits_base" "FLIXLINT_TIMING=$timing" "FLIXLINT_DUMP_REL=$dump_rel" "FLIXLINT_HELD=$held")
 export "${settings[@]}"
 for s in "${settings[@]}"; do setting_opts+=(--setting "$s"); done
 
