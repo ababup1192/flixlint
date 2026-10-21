@@ -332,3 +332,17 @@ server は 1 本の thread で、1 つ accept してその走行を終えてか�
   - 共有の常駐の最大 RSS（ゲーム・src＋test）: 既定のヒープ（MaxRAMPercentage=35）では check だけ 4.87 GB・check の後に resolved の lint 6.90 GB・
     check の後に typed の索引 7.88 GB（掴んだ量）。`--heap-mb 4096` で 3.92 / 3.34 GB、`--heap-mb 3072` で 3.65 / 3.45 GB（resolved / typed）で、どれも通る。
     **線の案**: 常駐のヒープ 3072 MB（`hooks.json` の `heapMinMB` 3072 のまま）・RSS の上限 4096 MB のままで収まる。C-2 で同じ線のまま秒を見る。
+
+## C-T の記録（2026-10-22・入れないと決めた）
+
+- 作った物（flixlint ababup1192/ct-test の 67596cc・0.8.5 としてはリリースしない）: 常駐の kind `test-jar`（check と同じ道の後に
+  `flix.compile()` の全部のクラスを版の名前の jar に、`JvmLoader` が引くテストの一覧を `.tests` に書く）・別の JVM で流す `flixlint.TestRun`
+  （一覧から LoadedProgram を組んで Flix の `Tester.run`）・`bin/flixlint --test`。小さな fixture では `flix test` と出力が秒とスタックの行
+  のほかは同じ。エンジンの checkd `--test` の server の道も作ったが捨てた（コミットしない）。
+- 測った（Mac mini・ゲーム id-x-checkd-ct・他の担当が動いたまま load average 20〜60）【確】:
+  - ヒープ 3072 MB（C-1 で決めた線）の常駐では、ゲーム全部のコード生成が OutOfMemoryError（9 回とも）。4096 MB で通る。
+  - 素の `flix test`: 全体 96 秒（テストの実行 Elapsed 63.8 秒）。常駐（4096 MB）＋短い JVM: 全体 115 秒（test-jar 19.9 秒・テストの実行 94.5 秒）・
+    常駐の最大 RSS 4.76 GB。6144 MB では全体 118 秒（test-jar 29.5 秒・実行 88.0 秒）・RSS 6.88 GB。結果はどれも 602 通過・0 失敗で同じ。
+- 結論（見回り役の決め）: **test は素の CLI のまま**。このゲームの make test はコンパイル（約 30 秒）よりテストの実行（約 64 秒）が重く、
+  常駐で組んでも縮まない（短い JVM の実行はかえって 88〜95 秒）。コード生成のためにヒープの線を 4096 MB 以上にすると RSS が
+  `rssLimit.maxMB` 4096 を超える。C-3 では check を server の道に、test を素の CLI にして repl を消す。
