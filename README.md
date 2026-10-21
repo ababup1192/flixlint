@@ -549,6 +549,16 @@ the sources.
   7.85 GB typed (it moves by 3 to 5 GB from run to run with the JVM's heap sizing). Reading the facts and the generic AST
   (`FLIXLINT_TIMING=1`, `load=`) took 0.70 s. The generic walk and write (`generic=` of the shim's line) took 1.04 s resolved
   and 2.09 s typed: the typed stage is over the design's 1.5 s, and is the next thing to make faster (0.7.1 or v0.8).
+- 0.7.2 against 0.7.1 the same way (the game with the rules of `id-x-lintrules2`; load average 7 at the start, 9.5 to 15 during
+  the runs), medians: one run 7.91 s -> 7.23 s resolved (-0.68 s) and 14.51 s -> 13.31 s typed (-1.20 s); the second run of a
+  resident server 4.98 s -> 4.26 s resolved (-0.72 s) and 5.75 s -> 4.38 s typed (-1.37 s). From 0.7.2 the generic walk runs on a
+  thread of its own beside the fact walker (both only read the compiler's AST), so what it adds to a run is the part longer than
+  the fact walker: about 1 s typed and close to nothing resolved. The design's bound of 1.5 s for the generic walk is read as
+  that added time from 0.7.2 on. The walk by itself (`generic=`, marked `alongside`) is still 2.00 s typed (1.06 s resolved):
+  1.8 s in a cold JVM of which about 0.7 s is the JIT warming up, 1.1 s once warm. Reading the types through the compiler's
+  classes, the node's location by its field position and each symbol's name once took about 0.1 s off; taking more off is
+  work on the warm-up or on the walk itself. Maximum RSS of one run 4.02 GB -> 5.26 GB resolved (1.31 times, but 3.7 to
+  6.1 GB from run to run in 0.7.2: two walks alive at once) and 7.81 GB -> 7.25 GB typed.
 - Two compiles of the same sources give the same generic relations, byte for byte: the walk numbers variables, regions
   and labels in the order it meets them (`x#0`) and drops the compiler's counter from the names it made (`arg$63098`).
 
@@ -1093,6 +1103,15 @@ spike/                       汎用の AST のスパイク（32caeb9）と、ゲ
   resolved 4.42GB → 3.56GB・typed 8.70GB → 7.85GB（JVM の heap の取り方で回ごとに 3〜5GB 振れる）。事実と汎用の AST の読み込み
   （`FLIXLINT_TIMING=1` の `load=`）は 0.70 秒。汎用の walk と書き出し（shim の行の `generic=`）は resolved 1.04 秒・typed 2.09 秒で、
   typed は設計の 1.5 秒を超えている。次に速くするのはここ（0.7.1 か v0.8）。
+- 0.7.2 と 0.7.1 を同じやり方で（ゲームは id-x-lintrules2 の規則で。load average は始めが 7・流している間は 9.5〜15）。中央値:
+  1 回きりは resolved 7.91 秒 → 7.23 秒（−0.68 秒）・typed 14.51 秒 → 13.31 秒（−1.20 秒）、常駐の 2 回目は resolved 4.98 秒 → 4.26 秒
+  （−0.72 秒）・typed 5.75 秒 → 4.38 秒（−1.37 秒）。0.7.2 から汎用の walk は旧い事実の walk と別のスレッドで並べて走る（どちらも
+  コンパイラの AST を読むだけ）ので、1 回に上乗せになるのは旧い walk より長い分だけ: typed で約 1 秒、resolved でほぼ 0。設計の
+  「汎用の walk は 1.5 秒以下」は、0.7.2 からこの上乗せの秒で見る。walk 単体（`generic=`。`alongside` と付く）は typed 2.00 秒
+  （resolved 1.06 秒）のまま: 冷えた JVM で 1.8 秒、うち JIT が温まるまでが約 0.7 秒、温まった後は 1.1 秒。型をコンパイラのクラスで
+  直に読む・節の位置を欄の番号で読む・シンボルの名前を 1 度だけ作る、で削れたのは約 0.1 秒で、さらに削るなら温まるまでか walk
+  そのものの直しになる。1 回きりの最大 RSS は resolved 4.02GB → 5.26GB（1.31 倍。ただし 0.7.2 は回ごとに 3.7〜6.1GB 振れる: 2 つの
+  walk が同時に生きている）・typed 7.81GB → 7.25GB。
 - 同じソースを 2 回コンパイルしても、汎用の事実はバイトまで同じ。変数・region・label は walk が出会った順の番号（`x#0`）で書き、
   コンパイラが作った名前の中の通し番号（`arg$63098`）は落とす。
 
