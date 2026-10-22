@@ -378,9 +378,9 @@ not pay for them (they are an order of magnitude more rows than all facts togeth
 at the typed stage on a 179-file project).
 
 ```
-# flixlint-spans 2 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl
 def-use	src/Shapes.flix	23	23	23	27	Shapes.area	Shapes.isRound
-label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	recv=Shapes.World via=decl
+label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	owner=alias:Shapes.World why=decl rspan=29:42:29:43 rparam=0
 ```
 
 The first line is a header with the format version (bumped when a column or a kind changes meaning) and the stage.
@@ -398,11 +398,12 @@ and an emoji 2); `owner` is the top-level def the occurrence is in (lambdas and 
 | `case-construct` / `case-pattern` | both | a case built in an expression / matched in a pattern | the case | `sugar` (below) |
 | `match-site` | both | the whole `match` expression | empty | `arms=N wild=N var=N guard=N enum=E`; the typed stage adds `scrut=T` |
 | `match-arm` | both | one arm, `case` to the end of its body | the case of a top-level case pattern, else empty | `match=L:C pat=wild\|var\|tag\|other at=sl:sc:el:ec guard=0\|1`, `full=1` (below), `name=x uses=0\|1` for a variable |
-| `label-select` | typed | `x` in `e#x` | the label | `recv=A via=V` (below) |
-| `label-update` | typed | `x` in `{ x = v \| e }` (a bare `{ +x = v \| e }` is not one) | the label | `recv=A via=V` |
+| `label-select` | typed | `x` in `e#x` | the label | `owner=O why=W rspan=… [rparam=i]` (below) |
+| `label-update` | typed | `x` in `{ x = v \| e }` (a bare `{ +x = v \| e }` is not one) | the label | `owner=O why=W rspan=… [rparam=i]` |
+| `record-literal` | typed | a record written whole, `{ a = 1, b = x }` (not an update) | empty | `labels=a,b owner=O why=row` |
 | `use` | resolved | a `use` declaration (`owner` is the module it is in) | what it brings in | `alias=x` the name it brings in, `what=def\|enum\|case\|alias\|module\|effect\|op\|trait\|sig\|struct\|other` |
 | `type-use` | resolved | an enum, a type alias or a struct named in a type: a signature, an ascription, a case's fields, an alias's body, an instance's type (`owner` is the def, enum, alias, effect or trait it is in) | the type | `what=enum\|alias\|struct` |
-| `alias-decl` | resolved | the name of a `type alias` | the alias | |
+| `alias-decl` | both | the name of a `type alias` | the alias | `syn=A` when it is a synonym of `A` (`type alias B = A`) |
 | `arg` | both | one argument of a call to a def, of a case built, or one field pattern of a case matched | the def or the case | `of=def-use\|case-construct\|case-pattern at=L:C i=N n=M`, `sugar`, `synth` (below) |
 
 - `match-site`: `wild` and `var` count the arms whose top-level pattern is `_` / a variable, `guard` the arms with an
@@ -413,15 +414,22 @@ and an emoji 2); `owner` is the top-level def the occurrence is in (lambdas and 
   reads the variable. A rewrite that spells `case _` out as the remaining cases needs exactly these.
 - `sugar`: the span is not the written name but syntax that stands for it. `a :: b` builds `List.Cons` and its span is
   the whole expression; `a % b` calls `Int32.remainder`; `Vector#{...}` calls `Vector.toList`. A rewrite leaves these alone.
-- `recv=A via=V` names the type alias the receiver `e` is declared with. Inference expands aliases, so it is read where
-  a type was written: `via=decl` a parameter, an ascribed `let`, an ascription, or the return type of the def called;
-  `via=row` the receiver's closed record type has exactly the fields of one alias (`recv=A|B via=ambiguous` when
-  several aliases have them); `recv=? via=open` an open row (row polymorphism); `recv=? via=none` anything else.
+- `owner=O` says what the receiver `e` is. Inference expands aliases, so it is read where a type was written (a
+  parameter, an ascribed `let`, an ascription, the return type of the def called), from the case pattern that bound it,
+  and from the receiver's closed record type. `O` is `alias:A` (proved; `A` is the end of a `type alias B = A` chain,
+  and `chain=B,A` follows when the written name is not `A`), `case:E.C` (the record payload of a case, `#i` after it
+  when the case has more than one place: bound by its pattern, let from such a variable, or a closed row only that
+  payload has), `other` (a closed row that no alias and no case payload has), `ambiguous` (a closed row several of them
+  have), `maybe` (not proved: an open row, a parameter of an open alias) or `none` (not a record; a receiver of `#` always
+  is one). `cands=` lists the candidates of `ambiguous` and `maybe` (for `maybe`, everything with all the labels the row
+  writes; `*N` over 8). What is not proved is never `other`. `why=decl|case|row|open|none` says how it was known.
+  `rspan` is the span of the receiver expression as the compiler places it (without the parentheses around it), and
+  `rparam=i` is there when the receiver is the `i`-th parameter of the top-level def itself.
 - An occurrence is written once per kind, place and symbol (the desugarer walks some expressions twice).
 - The resolved and the typed stage write the same rows for every kind they share (on a 179-file project: 65,443 rows,
-  identical); the typed stage adds the `label-*` rows and `scrut=`. `test/expected-spans-<stage>.txt` holds both.
-- `use`, `type-use` and `alias-decl` are the resolved stage's only, and its header says so with
-  `adds=use,type-use,alias-decl` after the columns (a reader that finds no `adds=` knows the index predates them, not
+  identical); the typed stage adds the `label-*` and `record-literal` rows and `scrut=`. `test/expected-spans-<stage>.txt` holds both.
+- `use` and `type-use` are the resolved stage's only, and its header says so with
+  `adds=use,type-use,alias-decl` after the columns (the typed stage writes `alias-decl` too, from format 3: `adds=arg,alias-decl`) (a reader that finds no `adds=` knows the index predates them, not
   that the sources have none). The typed stage has no `type-use`: its types are inferred, and their places are the
   expressions', not names the sources wrote. A `type-use` of an applied alias does not look inside the alias's body.
 - `arg` is in both stages, and the header says so with `arg` in `adds=`. `of` and `at` name the row the argument
@@ -988,9 +996,9 @@ JVM のメソッドとして大きすぎてコンパイルできないため。
 プロジェクトで resolved の段 6.5 万行・typed の段 8.5 万行）。
 
 ```
-# flixlint-spans 2 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl
 def-use	src/Shapes.flix	23	23	23	27	Shapes.area	Shapes.isRound
-label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	recv=Shapes.World via=decl
+label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	owner=alias:Shapes.World why=decl rspan=29:42:29:43 rparam=0
 ```
 
 1 行目は頭の行で、形の版（列か種類の意味が変わると上がる）と段を持つ。続く行はタブ区切りの
@@ -1007,11 +1015,12 @@ UTF-16 の単位なので日本語の字は 1、絵文字は 2）。`owner` は�
 | `case-construct` / `case-pattern` | 両方 | 式で作る case / 型で当てる case | その case | `sugar`（下） |
 | `match-site` | 両方 | `match` の式全体 | 空 | `arms=N wild=N var=N guard=N enum=E`。typed の段は `scrut=T` を足す |
 | `match-arm` | 両方 | 腕 1 つ（`case` から本体の終わりまで） | 一番上の型が case ならその case、ほかは空 | `match=L:C pat=wild\|var\|tag\|other at=sl:sc:el:ec guard=0\|1`、`full=1`（下）、変数なら `name=x uses=0\|1` |
-| `label-select` | typed | `e#x` の `x` | 欄の名前 | `recv=A via=V`（下） |
-| `label-update` | typed | `{ x = v \| e }` の `x`（`{ +x = v \| e }` は足すだけなので入らない） | 欄の名前 | `recv=A via=V` |
+| `label-select` | typed | `e#x` の `x` | 欄の名前 | `owner=O why=W rspan=… [rparam=i]`（下） |
+| `label-update` | typed | `{ x = v \| e }` の `x`（`{ +x = v \| e }` は足すだけなので入らない） | 欄の名前 | `owner=O why=W rspan=… [rparam=i]` |
+| `record-literal` | typed | 丸ごと書いた record `{ a = 1, b = x }`（更新は入らない） | 空 | `labels=a,b owner=O why=row` |
 | `use` | resolved | `use` の宣言（`owner` はそれを書いた mod） | 入れる物 | `alias=x` 入れる名前、`what=def\|enum\|case\|alias\|module\|effect\|op\|trait\|sig\|struct\|other` |
 | `type-use` | resolved | 型に書いた enum・型 alias・struct の名前（シグネチャ・型の注記・case の欄・alias の本体・instance の型。`owner` は囲む def・enum・alias・effect・trait） | その型 | `what=enum\|alias\|struct` |
-| `alias-decl` | resolved | `type alias` の名前 | その alias | |
+| `alias-decl` | 両方 | `type alias` の名前 | その alias | 別名（`type alias B = A`）なら `syn=A` |
 | `arg` | 両方 | def の呼び出し・作る case の引数 1 つ、または当てる case の欄の型 1 つ | その def か case | `of=def-use\|case-construct\|case-pattern at=L:C i=N n=M`、`sugar`、`synth`（下） |
 
 - `match-site`: `wild`・`var` は一番上の型が `_`・変数の腕の数、`guard` は `if` つきの腕の数。`enum` は一番上の
@@ -1020,14 +1029,18 @@ UTF-16 の単位なので日本語の字は 1、絵文字は 2）。`owner` は�
   case の型（その case を全部受ける）。`uses=1` は本体か見張りが変数を読む。`case _` を残りの case に書き出す書き換えが要る物。
 - `sugar`: 範囲が書かれた名前でなく、それを指す構文。`a :: b` は `List.Cons` を作り範囲は式全体、`a % b` は
   `Int32.remainder`、`Vector#{...}` は `Vector.toList`。書き換えはこれに触らない。
-- `recv=A via=V` は受け手 `e` を宣言した型 alias。推論は alias を開くので、型を書いた所から読む: `via=decl` は
-  引数・型を書いた `let`・型の注記・呼んだ def の戻りの型、`via=row` は受け手の閉じた record の欄の組が 1 つの
-  alias と同じ（同じ組の alias が複数なら `recv=A|B via=ambiguous`）、`recv=? via=open` は開いた row（row 多相）、
-  `recv=? via=none` はそれ以外。
+- `owner=O` は受け手 `e` が何の値か。推論は alias を開くので、型を書いた所（引数・型を書いた `let`・型の注記・呼んだ def の
+  戻りの型）、束ねた case のパターン、受け手の閉じた record の型から読む。`O` は `alias:A`（証明できた。`A` は
+  `type alias B = A` の鎖の終わりで、書いた名前が `A` でなければ `chain=B,A` が付く）、`case:E.C`（case の record の
+  payload。場所が 2 つ以上なら `#i`）、`other`（どの alias・case の payload とも欄の組が違う閉じた record）、`ambiguous`
+  （その組を持つ物が複数）、`maybe`（証明できない: 開いた row・開いた alias の引数）、`none`（record でない。`#` の受け手は
+  いつも record なので出ない）。`cands=` は `ambiguous`・`maybe` の候補（`maybe` は row が書いた欄を全部持つ物。8 を超えたら
+  `*N`）。証明できない物は `other` にしない。`why=decl|case|row|open|none` は決めた訳。`rspan` は受け手の式の範囲（コンパイラの
+  位置のまま。囲む括弧は含まない）、`rparam=i` は受け手が最上位の def の i 番目の引数そのものの時だけ。
 - 1 出現は種類・場所・名前ごとに 1 行（desugar が同じ式を 2 度通る事がある）。
 - resolved と typed の段は、共通の種類で同じ行を書く（179 ファイルのプロジェクトで 65,443 行が一致）。typed の段は
-  `label-*` の行と `scrut=` を足す。両方の期待は `test/expected-spans-<段>.txt`。
-- `use`・`type-use`・`alias-decl` は resolved の段だけが書き、頭の行の列の後に `adds=use,type-use,alias-decl` と書く
+  `label-*`・`record-literal` の行と `scrut=` を足す。両方の期待は `test/expected-spans-<段>.txt`。
+- `use`・`type-use` は resolved の段だけが書き、頭の行の列の後に `adds=use,type-use,alias-decl` と書く（`alias-decl` は形の版 3 から typed も書く: `adds=arg,alias-decl`）
   （`adds=` の無い索引は、ソースに無いのでなく、それより古い shim の物と分かる）。typed の段に `type-use` は無い
   （型は推論の物で、位置は式の位置になり、書かれた名前を指さない）。alias を当てた型の `type-use` は alias の本体の中を見ない。
 - `arg` は両方の段が書き、頭の行の `adds=` に `arg` が入る。`of`・`at` はその引数が属する行（種類と範囲の始まり）、

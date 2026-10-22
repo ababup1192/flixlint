@@ -28,9 +28,16 @@ import java.nio.file.{Files, Path}
   *    `guard=0|1`, `full=1` for a case pattern whose fields are all `_` or variables (it takes every value of the case),
   *    and for `pat=var` `name=x uses=0|1` (whether the body or the guard reads the variable)
   *  - typed stage only: `label-select` (`e#x`, the span is `x`) and `label-update` (`{ x = v | e }`, the span is `x`),
-  *    extra `recv=A via=V`: `A` the type alias the receiver `e` is declared with, `via` how it was known: `decl` (the
-  *    declared type of a parameter, an ascribed `let`, an ascription or the return type of the def called), `row` (the
-  *    receiver's closed record type has exactly the fields of one alias; `recv=A|B via=ambiguous` when several have them), or `recv=? via=open|none`
+  *    extra `owner=O [chain=B,A] [cands=…] why=W rspan=sl:sc:el:ec [rparam=i]`: what the receiver `e` is (`Receivers`).
+  *    `O` is `alias:A` (proved: the declared type, the inferred type or a closed row that only alias `A` has; `A` the
+  *    end of a `type alias B = A` chain, `chain` the chain from the name written), `case:E.C[#i]` (the record payload of a
+  *    case: bound by its pattern, let from such a variable, or a closed row only that payload has; `#i` when the case
+  *    has more than one place), `other` (a closed row no alias and no case payload has), `ambiguous` (a closed row
+  *    several have), `maybe` (not proved: an open row, an open alias) or `none` (not a record). `cands` lists the
+  *    candidates of `ambiguous` / `maybe` (`*N` over 8). `rspan` is the receiver's span; `rparam=i` when the receiver is
+  *    the `i`-th parameter of the top-level def itself
+  *  - typed stage only: `record-literal` a record written whole (`labels=a,b` and `owner=` as for a receiver)
+  *  - `alias-decl` (both stages) the name of a `type alias`; extra `syn=A` when it is a synonym of `A` (`type alias B = A`)
   *  - `arg` (both stages; the header says `adds=...,arg`) one argument of a call to a def, of a case built, or one field
   *    pattern of a case matched: the span is the argument as the compiler places it, `sym` the def or the case, and
   *    extra `of=def-use|case-construct|case-pattern at=L:C i=N n=M`: the row of the name it belongs to (that kind, at
@@ -44,7 +51,6 @@ import java.nio.file.{Files, Path}
   *    - `type-use` an enum, a type alias or a struct named in a type (a signature, an ascription, a case's fields, an
   *      alias's body; owner: the def, enum, alias, effect or trait it is in): extra `what=enum|alias|struct`. The span
   *      is the name as written (`World.Scene` or, after a `use`, `Scene`)
-  *    - `alias-decl` the name of a `type alias`
   *
   * `owner` is the top-level def the occurrence is in (lambdas and local defs count as their enclosing def).
   *
@@ -54,7 +60,7 @@ import java.nio.file.{Files, Path}
   */
 object Spans {
   /** Bumped when a column or a kind changes meaning, so that a cached index of an older shim is not reused. */
-  val FormatVersion = 2
+  val FormatVersion = 3
 
   /** Takes `--spans FILE` out of the arguments (the rest goes to the fact walker unchanged). */
   def split(argv: Array[String]): (Option[Path], Array[String]) = {
@@ -264,8 +270,15 @@ object Spans {
         typesIn(out, c.tpes, symName(sym))
       }
     }
+    // `syn=` the alias at the end of a `type alias B = A` chain, as the typed stage writes it.
+    def synEnd(sym: Symbol.TypeAliasSym, seen: Set[Symbol.TypeAliasSym]): Symbol.TypeAliasSym = root.typeAliases.get(sym).map(_.tpe) match {
+      case Some(t: UnkindedType.Alias) if !seen.contains(t.symUse.sym) => synEnd(t.symUse.sym, seen + sym)
+      case Some(t: UnkindedType.UnappliedAlias) if !seen.contains(t.sym) => synEnd(t.sym, seen + sym)
+      case _ => sym
+    }
     for ((sym, a) <- root.typeAliases) {
-      out.add("alias-decl", symName(sym), sym.loc, symName(sym))
+      val end = synEnd(sym, Set.empty)
+      out.add("alias-decl", symName(sym), sym.loc, symName(sym), if (end == sym) "" else s"syn=${symName(end)}")
       typesIn(out, a.tpe, symName(sym))
     }
     // An instance has no name of its own: its type is owned by `<the module it is in>.<the trait>`.
@@ -281,15 +294,18 @@ object Spans {
   }
 
   def typed(root: TypedAst.Root, path: Path): Int = {
-    val out = new Out("typed", " adds=arg")
+    val out = new Out("typed", " adds=arg,alias-decl")
     val receivers = new Receivers(root)
     val allDefs: Iterable[TypedAst.Def] = root.defs.values ++ root.instances.values.flatMap(_.defs)
     val instDefs: Set[Any] = root.instances.values.flatMap(_.defs).toSet
+    // the extensions inside a record literal already written as part of the literal around them
+    val inner = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap[Any, java.lang.Boolean]())
     for (d <- allDefs if !synthetic(d)) {
       val fn = symName(d.sym)
       out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, instDefs.contains(d), d.spec.ann, d.loc))
       d.spec.fparams.toList.foreach(receivers.declare)
-      walk(out, d.exp, fn, "", (p, cls) => { argRows(out, p, cls, fn); if (isExpr(cls)) p.productPrefix match {
+      receivers.params(d.spec.fparams.toList)
+      walk(out, d.exp, fn, "", (p, cls) => { argRows(out, p, cls, fn); if (cls.endsWith("$Pattern$Tag")) receivers.caseBind(p); if (isExpr(cls)) p.productPrefix match {
         case "Match" => matchRow(out, p, fn, " scrut=" + Typed.headName(field[TypedAst.Expr](p, "exp").tpe))
         case "Let" => receivers.let(p)
         case "Lambda" => receivers.declare(field[TypedAst.FormalParam](p, "fparam"))
@@ -298,6 +314,7 @@ object Spans {
           val label = field[Any](p, "label")
           out.add("label-select", field[String](label, "name"), field[SourceLocation](label, "loc"), fn, receivers.of(field[TypedAst.Expr](p, "exp")))
         case "RecordExtend" =>
+          literalRow(out, p, fn, receivers, inner)
           // `{ x = v | e }` is `RecordExtend(x, v, RecordRestrict(x, e))`; a bare extension `{ +x = v | e }` is not an update.
           val label = field[Any](p, "label")
           field[Any](p, "exp2") match {
@@ -312,28 +329,103 @@ object Spans {
       out.add("enum-decl", symName(sym), sym.loc, symName(sym))
       e.cases.foreach { case (cs, c) => out.add("case-decl", symName(cs), cs.loc, symName(sym), s"arity=${c.tpes.length}") }
     }
+    for ((sym, a) <- root.typeAliases) out.add("alias-decl", symName(sym), sym.loc, symName(sym), receivers.synOf(sym))
     out.write(path)
   }
 
-  /** Which type alias a record receiver is declared with.
+  /** `record-literal` (typed stage): a record written whole, `{ a = 1, b = x }` (the chain of extensions ends in the empty
+    * record; an update `{ a = 1 | r }` is not one). One row for the outermost extension, the span the literal's,
+    * `labels=a,b` sorted, and what a record of exactly those labels is (`owner=`, as a receiver's).
+    */
+  private def literalRow(out: Out, p: Product, owner: String, receivers: Receivers, inner: java.util.Set[Any]): Unit =
+    if (!inner.contains(p)) {
+      var labels = List.empty[String]
+      var node: Any = p
+      while (node.isInstanceOf[Product] && node.asInstanceOf[Product].productPrefix == "RecordExtend") {
+        val n = node.asInstanceOf[Product]
+        if (!n.asInstanceOf[AnyRef].eq(p.asInstanceOf[AnyRef])) inner.add(n)
+        labels = field[String](field[Any](n, "label"), "name") :: labels
+        node = field[Any](n, "exp2")
+      }
+      // the empty record is the constant RecordEmpty (TypedAst.Expr.Cst), not an expression of its own
+      if (node.isInstanceOf[Product] && node.asInstanceOf[Product].productPrefix == "Cst" && field[Any](node, "cst").toString.startsWith("RecordEmpty"))
+        out.add("record-literal", "", field[SourceLocation](p, "loc"), owner,
+          s"labels=${labels.sorted.mkString(",")} ${receivers.ofLabels(labels.toSet)}")
+    }
+
+  /** What a record receiver is: `owner=alias:A` / `case:E.C[#i]` when that is proved, `other` when its closed labels are
+    * those of no alias and no case payload, `maybe` / `ambiguous` with `cands=` when it is not proved, `none` for a
+    * receiver that is not a record. `why=` says how it was known; `rspan=` is the receiver expression's span, and
+    * `rparam=i` says the receiver is the `i`-th parameter of the top-level def itself.
     *
     * WhyNot: the receiver's own type is not enough. Inference expands aliases, so `w#scene` on a `w: World` sees the
     * bare record; the alias survives only where a type was written (a parameter, an ascription, a def's return type),
     * so the declared types of the variables are tracked, and the record's closed field set is the fallback.
+    * WhyNot: what cannot be proved is `maybe`, never `other`. A tool that removes a field counts the `maybe` ones, so
+    * a guess on the side of `other` would drop a read the compiler then rejects.
     */
   private final class Receivers(root: TypedAst.Root) {
     private val declared = scala.collection.mutable.HashMap.empty[Symbol.VarSym, Type]
+    private var top = Map.empty[Symbol.VarSym, Int]
 
-    // An alias of a file under no SRC (test/ when only src is indexed) cannot be what a shown file's record is.
-    private val aliasFields: Map[String, Set[String]] = root.typeAliases.toList.filterNot { case (sym, _) => Facts.hidden(sym.loc) }.flatMap { case (sym, a) =>
-      closedLabels(unalias(a.tpe)).map(ls => symName(sym) -> ls)
-    }.toMap
+    /** The alias at the end of `type alias B = A` chains (`B` gives `B, A`). */
+    private def chain(sym: Symbol.TypeAliasSym, seen: Set[Symbol.TypeAliasSym] = Set.empty): List[Symbol.TypeAliasSym] =
+      root.typeAliases.get(sym).map(_.tpe) match {
+        case Some(Type.Alias(u, _, _, _)) if !seen.contains(u.sym) => sym :: chain(u.sym, seen + sym)
+        case _ => List(sym)
+      }
 
-    private val byFields: Map[Set[String], List[String]] = aliasFields.toList.groupBy(_._2).map { case (k, v) => k -> v.map(_._1).sorted }
+    def synOf(sym: Symbol.TypeAliasSym): String = chain(sym) match {
+      case List(_) => ""
+      case c => s"syn=${symName(c.last)}"
+    }
+
+    // An alias or an enum of a file under no SRC (test/ when only src is indexed) cannot be what a shown file's record is.
+    private val shownAliases = root.typeAliases.toList.filterNot { case (sym, _) => Facts.hidden(sym.loc) }
+
+    /** The candidates of a closed record: aliases (one per chain) and the record payloads of cases, by their labels. */
+    private val closed: List[(String, Set[String])] =
+      shownAliases.flatMap { case (sym, a) => closedLabels(a.tpe).map(ls => "alias:" + symName(chain(sym).last) -> ls) }.distinct ++
+        root.enums.toList.filterNot { case (sym, _) => Facts.hidden(sym.loc) }.flatMap { case (_, e) =>
+          e.cases.toList.flatMap { case (cs, c) =>
+            c.tpes.zipWithIndex.flatMap {
+              case (_: Type.Alias, _) => None
+              case (t, i) => closedLabels(t).map(ls => s"case:${symName(cs)}${if (c.tpes.length > 1) s"#$i" else ""}" -> ls)
+            }
+          }
+        }
+
+    /** The aliases of an open record (`type alias HasPos[r] = { x = Int32 | r }`) and their fixed labels. */
+    private val open: List[(String, Set[String])] =
+      shownAliases.flatMap { case (sym, a) => if (isRecord(a.tpe) && closedLabels(a.tpe).isEmpty) Some("alias:" + symName(sym) -> fixedLabels(a.tpe)) else None }
+
+    private val byFields: Map[Set[String], List[String]] = closed.groupBy(_._2).map { case (k, v) => k -> v.map(_._1).distinct.sorted }
 
     def declare(fp: TypedAst.FormalParam): Unit = declared(fp.bnd.sym) = fp.tpe
 
-    def let(p: Product): Unit = declaredType(field[TypedAst.Expr](p, "exp1")).foreach(t => declared(field[TypedAst.Binder](p, "bnd").sym) = t)
+    def params(fps: List[TypedAst.FormalParam]): Unit = top = fps.zipWithIndex.map { case (fp, i) => fp.bnd.sym -> i }.toMap
+
+    /** The variables a case pattern binds to its payload (`case Scene.Deck(d)`): the case, the place and how many. */
+    private val byCase = scala.collection.mutable.HashMap.empty[Symbol.VarSym, (Symbol.CaseSym, Int, Int)]
+
+    def caseBind(tag: Product): Unit = {
+      val sym = field[SymUse.CaseSymUse](tag, "symUse").sym
+      val pats = field[List[Any]](tag, "pats")
+      pats.zipWithIndex.foreach {
+        case (v: Product, i) if v.productPrefix == "Var" => byCase(field[TypedAst.Binder](v, "bnd").sym) = (sym, i, pats.length)
+        case _ => ()
+      }
+    }
+
+    def let(p: Product): Unit = {
+      val bnd = field[TypedAst.Binder](p, "bnd").sym
+      val e = field[TypedAst.Expr](p, "exp1")
+      declaredType(e).foreach(t => declared(bnd) = t)
+      e match {
+        case TypedAst.Expr.Var(sym, _, _) => byCase.get(sym).foreach(c => byCase(bnd) = c)
+        case _ => ()
+      }
+    }
 
     private def declaredType(e: TypedAst.Expr): Option[Type] = e match {
       case TypedAst.Expr.Var(sym, _, _) => declared.get(sym)
@@ -342,19 +434,61 @@ object Spans {
       case _ => None
     }
 
-    def of(recv: TypedAst.Expr): String = {
-      val fromDecl = declaredType(recv).orElse(Some(recv.tpe)).collect { case Type.Alias(symUse, _, _, _) => symName(symUse.sym) }
-      fromDecl match {
-        case Some(a) => s"recv=$a via=decl"
-        case None => closedLabels(recv.tpe) match {
-          case None => if (isRecord(recv.tpe)) "recv=? via=open" else "recv=? via=none"
-          case Some(ls) => byFields.getOrElse(ls, Nil) match {
-            case List(a) => s"recv=$a via=row"
-            case Nil => "recv=? via=none"
-            case many => s"recv=${many.mkString("|")} via=ambiguous"
-          }
+    /** `owner=alias:A chain=…` for an alias of a closed record; None for an open alias (any record with its labels may be it). */
+    private def ofAlias(t: Option[Type], why: String): Option[String] = t.collect {
+      case Type.Alias(u, _, body, _) if closedLabels(body).nonEmpty =>
+        val c = chain(u.sym)
+        s"owner=alias:${symName(c.last)}${if (c.length > 1) " chain=" + c.map(symName).mkString(",") else ""} why=$why"
+    }
+
+    private def isOpenAlias(t: Option[Type]): Boolean = t.exists { case Type.Alias(_, _, body, _) => closedLabels(body).isEmpty; case _ => false }
+
+    private def fromCase(recv: TypedAst.Expr): Option[String] = recv match {
+      case TypedAst.Expr.Var(sym, _, _) if !declared.contains(sym) => byCase.get(sym).flatMap { case (cs, i, n) =>
+        val written = root.enums.get(cs.enumSym).flatMap(_.cases.get(cs)).flatMap(_.tpes.lift(i))
+        written match {
+          case Some(a: Type.Alias) => ofAlias(Some(a), "case")
+          case Some(t) if closedLabels(t).nonEmpty => Some(s"owner=case:${symName(cs)}${if (n > 1) s"#$i" else ""} why=case")
+          case _ => None
         }
       }
+      case _ => None
+    }
+
+    private def cands(xs: List[String]): String = xs.distinct.sorted match {
+      case many if many.length > MaxCands => s"cands=*${many.length}"
+      case some => s"cands=${some.mkString("|")}"
+    }
+
+    /** What a record of exactly the labels `ls` is. */
+    def ofLabels(ls: Set[String]): String = byFields.getOrElse(ls, Nil) match {
+      case List(o) => s"owner=$o why=row"
+      case Nil => "owner=other why=row"
+      case many => s"owner=ambiguous ${cands(many)} why=row"
+    }
+
+    /** `maybe`: every candidate with all the fixed labels of an open row. */
+    private def maybe(t: Type, why: String): String = {
+      val fixed = fixedLabels(t)
+      val xs = closed.collect { case (o, ls) if fixed.subsetOf(ls) => o } ++ open.collect { case (o, ls) if fixed.subsetOf(ls) || ls.subsetOf(fixed) => o }
+      s"owner=maybe ${cands(xs)} why=$why"
+    }
+
+    def of(recv: TypedAst.Expr): String = {
+      val decl = declaredType(recv)
+      val what =
+        if (isOpenAlias(decl)) maybe(recv.tpe, "open")
+        else ofAlias(decl, "decl").orElse(fromCase(recv)).orElse(if (isOpenAlias(Some(recv.tpe))) None else ofAlias(Some(recv.tpe), "decl")).getOrElse {
+          closedLabels(recv.tpe) match {
+            case Some(ls) => ofLabels(ls)
+            case None => if (isRecord(recv.tpe)) maybe(recv.tpe, "open") else "owner=none why=none"
+          }
+        }
+      val param = recv match {
+        case TypedAst.Expr.Var(sym, _, _) => top.get(sym).map(i => s" rparam=$i").getOrElse("")
+        case _ => ""
+      }
+      s"$what rspan=${span(recv.loc)}$param"
     }
 
     private def unalias(t: Type): Type = t match {
@@ -378,5 +512,19 @@ object Spans {
       case Type.Cst(TypeConstructor.RecordRowEmpty, _) => Some(acc)
       case _ => None
     }
+
+    /** The labels a record type writes before its row variable (all of them for a closed one). */
+    private def fixedLabels(t: Type): Set[String] = unalias(t) match {
+      case Type.Apply(Type.Cst(TypeConstructor.Record, _), row, _) =>
+        def go(r: Type, acc: Set[String]): Set[String] = unalias(r) match {
+          case Type.Apply(Type.Apply(Type.Cst(TypeConstructor.RecordRowExtend(label), _), _, _), rest, _) => go(rest, acc + label.name)
+          case _ => acc
+        }
+        go(row, Set.empty)
+      case _ => Set.empty
+    }
   }
+
+  /** Over this many, `cands=*N`: a reader takes every receiver for one of them. */
+  private val MaxCands = 8
 }

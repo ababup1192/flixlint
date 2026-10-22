@@ -1,4 +1,4 @@
-# flixlint-spans 2 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl
 enum-decl	src/Args.flix	3	14	3	19	Args.Scene	Args.Scene	
 case-decl	src/Args.flix	4	14	4	18	Args.Scene.Deck	Args.Scene	arity=2
 case-decl	src/Args.flix	5	14	5	19	Args.Scene.Empty	Args.Scene	arity=0
@@ -21,10 +21,80 @@ case-pattern	src/Args.flix	15	14	15	25	Args.Scene.Empty	Args.show
 def-use	src/Args.flix	15	29	15	34	Args.label	Args.show	
 arg	src/Args.flix	15	35	15	36	Args.label	Args.show	of=def-use at=15:29 i=0 n=2
 arg	src/Args.flix	15	38	15	40	Args.label	Args.show	of=def-use at=15:29 i=1 n=2
+alias-decl	src/Owners.flix	3	20	3	24	Owners.Game	Owners.Game	
+alias-decl	src/Owners.flix	5	20	5	25	Owners.Model	Owners.Model	syn=Owners.Game
+alias-decl	src/Owners.flix	7	20	7	26	Owners.HasTop	Owners.HasTop	
+enum-decl	src/Owners.flix	9	14	9	19	Owners.Panel	Owners.Panel	
+case-decl	src/Owners.flix	10	14	10	18	Owners.Panel.Open	Owners.Panel	arity=1
+case-decl	src/Owners.flix	11	14	11	20	Owners.Panel.Closed	Owners.Panel	arity=0
+def-decl	src/Owners.flix	14	13	14	24	Owners.fromSynonym	Owners.fromSynonym	pub ext=14:5:14:49
+label-select	src/Owners.flix	14	46	14	49	top	Owners.fromSynonym	owner=alias:Owners.Game chain=Owners.Model,Owners.Game why=decl rspan=14:44:14:45 rparam=0
+def-decl	src/Owners.flix	16	13	16	26	Owners.fromOpenAlias	Owners.fromOpenAlias	pub ext=16:5:16:55
+label-select	src/Owners.flix	16	52	16	55	top	Owners.fromOpenAlias	owner=maybe cands=alias:Owners.Game|alias:Owners.HasTop why=open rspan=16:50:16:51 rparam=0
+def-decl	src/Owners.flix	18	13	18	29	Owners.fromPayloadParam	Owners.fromPayloadParam	pub ext=18:5:18:77
+label-select	src/Owners.flix	18	74	18	77	row	Owners.fromPayloadParam	owner=case:Owners.Panel.Open why=row rspan=18:72:18:73 rparam=0
+def-decl	src/Owners.flix	20	13	20	26	Owners.fromLetOfCase	Owners.fromLetOfCase	pub ext=20:5:25:6
+match-site	src/Owners.flix	20	46	25	6		Owners.fromLetOfCase	arms=2 wild=0 var=0 guard=0 enum=Owners.Panel scrut=Owners.Panel
+match-arm	src/Owners.flix	21	9	23	18	Owners.Panel.Open	Owners.fromLetOfCase	match=20:46 pat=tag at=21:14:21:27 guard=0 full=1
+case-pattern	src/Owners.flix	21	14	21	24	Owners.Panel.Open	Owners.fromLetOfCase	
+arg	src/Owners.flix	21	25	21	26	Owners.Panel.Open	Owners.fromLetOfCase	of=case-pattern at=21:14 i=0 n=1
+label-select	src/Owners.flix	23	15	23	18	col	Owners.fromLetOfCase	owner=case:Owners.Panel.Open why=case rspan=23:13:23:14
+match-arm	src/Owners.flix	24	9	24	31	Owners.Panel.Closed	Owners.fromLetOfCase	match=20:46 pat=tag at=24:14:24:26 guard=0 full=1
+case-pattern	src/Owners.flix	24	14	24	26	Owners.Panel.Closed	Owners.fromLetOfCase	
+def-decl	src/Owners.flix	27	13	27	22	Owners.fromOther	Owners.fromOther	pub ext=27:5:27:67
+label-select	src/Owners.flix	27	65	27	67	id	Owners.fromOther	owner=other why=row rspan=27:63:27:64 rparam=0
+def-decl	src/Owners.flix	29	9	29	13	Owners.game	Owners.game	ext=29:5:29:45
+record-literal	src/Owners.flix	29	26	29	45		Owners.game	labels=deck,top owner=alias:Owners.Game why=row
+def-decl	src/Owners.flix	31	13	31	23	Owners.fromParens	Owners.fromParens	pub ext=31:5:31:48
+def-use	src/Owners.flix	31	36	31	40	Owners.game	Owners.fromParens	
+arg	src/Owners.flix	31	40	31	42	Owners.game	Owners.fromParens	of=def-use at=31:36 i=0 n=1
+label-select	src/Owners.flix	31	44	31	48	deck	Owners.fromParens	owner=alias:Owners.Game why=decl rspan=31:36:31:42
+def-decl	src/Owners.flix	33	13	33	19	Owners.nested	Owners.nested	pub ext=33:5:33:61
+label-select	src/Owners.flix	33	52	33	57	inner	Owners.nested	owner=other why=row rspan=33:50:33:51 rparam=0
+label-select	src/Owners.flix	33	58	33	61	top	Owners.nested	owner=alias:Owners.Game why=row rspan=33:50:33:57
+def-decl	src/Owners.flix	35	13	35	19	Owners.inText	Owners.inText	pub ext=35:5:35:53
+label-select	src/Owners.flix	35	48	35	51	top	Owners.inText	owner=alias:Owners.Game why=decl rspan=35:46:35:47 rparam=0
+alias-decl	src/Scenes.flix	3	20	3	26	Scenes.DeckUi	Scenes.DeckUi	
+enum-decl	src/Scenes.flix	5	14	5	19	Scenes.Scene	Scenes.Scene	
+case-decl	src/Scenes.flix	6	14	6	18	Scenes.Scene.Deck	Scenes.Scene	arity=1
+case-decl	src/Scenes.flix	7	14	7	19	Scenes.Scene.Board	Scenes.Scene	arity=1
+case-decl	src/Scenes.flix	8	14	8	18	Scenes.Scene.Pair	Scenes.Scene	arity=2
+case-decl	src/Scenes.flix	9	14	9	19	Scenes.Scene.Title	Scenes.Scene	arity=0
+def-decl	src/Scenes.flix	12	13	12	21	Scenes.cursorOf	Scenes.cursorOf	pub ext=12:5:17:6
+match-site	src/Scenes.flix	12	41	17	6		Scenes.cursorOf	arms=4 wild=0 var=0 guard=0 enum=Scenes.Scene scrut=Scenes.Scene
+match-arm	src/Scenes.flix	13	9	13	39	Scenes.Scene.Deck	Scenes.cursorOf	match=12:41 pat=tag at=13:14:13:27 guard=0 full=1
+case-pattern	src/Scenes.flix	13	14	13	24	Scenes.Scene.Deck	Scenes.cursorOf	
+arg	src/Scenes.flix	13	25	13	26	Scenes.Scene.Deck	Scenes.cursorOf	of=case-pattern at=13:14 i=0 n=1
+label-select	src/Scenes.flix	13	33	13	39	cursor	Scenes.cursorOf	owner=alias:Scenes.DeckUi why=case rspan=13:31:13:32
+match-arm	src/Scenes.flix	14	9	14	38	Scenes.Scene.Board	Scenes.cursorOf	match=12:41 pat=tag at=14:14:14:28 guard=0 full=1
+case-pattern	src/Scenes.flix	14	14	14	25	Scenes.Scene.Board	Scenes.cursorOf	
+arg	src/Scenes.flix	14	26	14	27	Scenes.Scene.Board	Scenes.cursorOf	of=case-pattern at=14:14 i=0 n=1
+label-select	src/Scenes.flix	14	34	14	38	turn	Scenes.cursorOf	owner=case:Scenes.Scene.Board why=case rspan=14:32:14:33
+match-arm	src/Scenes.flix	15	9	15	51	Scenes.Scene.Pair	Scenes.cursorOf	match=12:41 pat=tag at=15:14:15:30 guard=0 full=1
+case-pattern	src/Scenes.flix	15	14	15	24	Scenes.Scene.Pair	Scenes.cursorOf	
+arg	src/Scenes.flix	15	25	15	26	Scenes.Scene.Pair	Scenes.cursorOf	of=case-pattern at=15:14 i=0 n=2
+arg	src/Scenes.flix	15	28	15	29	Scenes.Scene.Pair	Scenes.cursorOf	of=case-pattern at=15:14 i=1 n=2
+label-select	src/Scenes.flix	15	36	15	42	cursor	Scenes.cursorOf	owner=alias:Scenes.DeckUi why=case rspan=15:34:15:35
+label-select	src/Scenes.flix	15	47	15	51	turn	Scenes.cursorOf	owner=case:Scenes.Scene.Pair#1 why=case rspan=15:45:15:46
+match-arm	src/Scenes.flix	16	9	16	30	Scenes.Scene.Title	Scenes.cursorOf	match=12:41 pat=tag at=16:14:16:25 guard=0 full=1
+case-pattern	src/Scenes.flix	16	14	16	25	Scenes.Scene.Title	Scenes.cursorOf	
+def-decl	src/Scenes.flix	19	13	19	18	Scenes.start	Scenes.start	pub ext=19:5:19:70
+case-construct	src/Scenes.flix	19	30	19	40	Scenes.Scene.Deck	Scenes.start	
+arg	src/Scenes.flix	19	43	19	69	Scenes.Scene.Deck	Scenes.start	of=case-construct at=19:30 i=0 n=1
+record-literal	src/Scenes.flix	19	43	19	69		Scenes.start	labels=cursor,open owner=alias:Scenes.DeckUi why=row
+def-decl	src/Scenes.flix	21	13	21	18	Scenes.board	Scenes.board	pub ext=21:5:21:55
+case-construct	src/Scenes.flix	21	30	21	41	Scenes.Scene.Board	Scenes.board	
+arg	src/Scenes.flix	21	44	21	54	Scenes.Scene.Board	Scenes.board	of=case-construct at=21:30 i=0 n=1
+record-literal	src/Scenes.flix	21	44	21	54		Scenes.board	labels=turn owner=ambiguous cands=case:Scenes.Scene.Board|case:Scenes.Scene.Pair#1 why=row
+def-decl	src/Scenes.flix	23	13	23	18	Scenes.moved	Scenes.moved	pub ext=23:5:23:69
+label-update	src/Scenes.flix	23	42	23	48	cursor	Scenes.moved	owner=alias:Scenes.DeckUi why=decl rspan=23:66:23:67 rparam=0
+label-select	src/Scenes.flix	23	53	23	59	cursor	Scenes.moved	owner=alias:Scenes.DeckUi why=decl rspan=23:51:23:52 rparam=0
 enum-decl	src/Shapes.flix	5	14	5	19	Shapes.Shape	Shapes.Shape	
 case-decl	src/Shapes.flix	6	14	6	20	Shapes.Shape.Circle	Shapes.Shape	arity=1
 case-decl	src/Shapes.flix	7	14	7	20	Shapes.Shape.Square	Shapes.Shape	arity=1
 case-decl	src/Shapes.flix	8	14	8	17	Shapes.Shape.Dot	Shapes.Shape	arity=0
+alias-decl	src/Shapes.flix	11	20	11	25	Shapes.World	Shapes.World	
+alias-decl	src/Shapes.flix	13	20	13	24	Shapes.Pair	Shapes.Pair	
 def-decl	src/Shapes.flix	15	13	15	17	Shapes.area	Shapes.area	pub ext=15:5:19:6
 match-site	src/Shapes.flix	15	37	19	6		Shapes.area	arms=3 wild=1 var=0 guard=0 enum=Shapes.Shape scrut=Shapes.Shape
 match-arm	src/Shapes.flix	16	9	16	42	Shapes.Shape.Circle	Shapes.area	match=15:37 pat=tag at=16:14:16:29 guard=0 full=1
@@ -46,37 +116,39 @@ match-arm	src/Shapes.flix	24	9	24	39		Shapes.isRound	match=21:39 pat=var at=24:1
 def-use	src/Shapes.flix	24	23	24	27	Shapes.area	Shapes.isRound	
 arg	src/Shapes.flix	24	28	24	33	Shapes.area	Shapes.isRound	of=def-use at=24:23 i=0 n=1
 def-decl	src/Shapes.flix	27	9	27	13	Shapes.make	Shapes.make	ext=27:5:27:57
+record-literal	src/Shapes.flix	27	27	27	57		Shapes.make	labels=count,shape owner=alias:Shapes.World why=row
 case-construct	src/Shapes.flix	27	35	27	44	Shapes.Shape.Dot	Shapes.make	
 def-decl	src/Shapes.flix	29	13	29	22	Shapes.fromParam	Shapes.fromParam	pub ext=29:5:29:65
-label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	recv=Shapes.World via=decl
+label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	owner=alias:Shapes.World why=decl rspan=29:42:29:43 rparam=0
 def-use	src/Shapes.flix	29	52	29	56	Shapes.area	Shapes.fromParam	
 arg	src/Shapes.flix	29	57	29	64	Shapes.area	Shapes.fromParam	of=def-use at=29:52 i=0 n=1
-label-select	src/Shapes.flix	29	59	29	64	shape	Shapes.fromParam	recv=Shapes.World via=decl
+label-select	src/Shapes.flix	29	59	29	64	shape	Shapes.fromParam	owner=alias:Shapes.World why=decl rspan=29:57:29:58 rparam=0
 def-decl	src/Shapes.flix	31	13	31	20	Shapes.fromLet	Shapes.fromLet	pub ext=31:5:33:16
 def-use	src/Shapes.flix	32	24	32	28	Shapes.make	Shapes.fromLet	
 arg	src/Shapes.flix	32	28	32	30	Shapes.make	Shapes.fromLet	of=def-use at=32:24 i=0 n=1
-label-select	src/Shapes.flix	33	11	33	16	count	Shapes.fromLet	recv=Shapes.World via=decl
+label-select	src/Shapes.flix	33	11	33	16	count	Shapes.fromLet	owner=alias:Shapes.World why=decl rspan=33:9:33:10
 def-decl	src/Shapes.flix	35	13	35	21	Shapes.fromCall	Shapes.fromCall	pub ext=35:5:35:45
 def-use	src/Shapes.flix	35	33	35	37	Shapes.make	Shapes.fromCall	
 arg	src/Shapes.flix	35	37	35	39	Shapes.make	Shapes.fromCall	of=def-use at=35:33 i=0 n=1
-label-select	src/Shapes.flix	35	40	35	45	shape	Shapes.fromCall	recv=Shapes.World via=decl
+label-select	src/Shapes.flix	35	40	35	45	shape	Shapes.fromCall	owner=alias:Shapes.World why=decl rspan=35:33:35:39
 def-decl	src/Shapes.flix	37	13	37	20	Shapes.fromRow	Shapes.fromRow	pub ext=37:5:37:107
 def-use	src/Shapes.flix	37	32	37	40	List.sum	Shapes.fromRow	
 def-use	src/Shapes.flix	37	41	37	49	List.map	Shapes.fromRow	
 arg	src/Shapes.flix	37	41	37	106	List.sum	Shapes.fromRow	of=def-use at=37:32 i=0 n=1
 arg	src/Shapes.flix	37	50	37	71	List.map	Shapes.fromRow	of=def-use at=37:41 i=0 n=2
-label-select	src/Shapes.flix	37	57	37	61	left	Shapes.fromRow	recv=Shapes.Pair via=row
-label-select	src/Shapes.flix	37	66	37	71	right	Shapes.fromRow	recv=Shapes.Pair via=row
+label-select	src/Shapes.flix	37	57	37	61	left	Shapes.fromRow	owner=alias:Shapes.Pair why=row rspan=37:55:37:56
+label-select	src/Shapes.flix	37	66	37	71	right	Shapes.fromRow	owner=alias:Shapes.Pair why=row rspan=37:64:37:65
 arg	src/Shapes.flix	37	74	37	104	List.map	Shapes.fromRow	of=def-use at=37:41 i=1 n=2
 case-construct	src/Shapes.flix	37	74	37	104	List.Cons	Shapes.fromRow	sugar
 arg	src/Shapes.flix	37	76	37	97	List.Cons	Shapes.fromRow	of=case-construct at=37:74 i=0 n=2 sugar
+record-literal	src/Shapes.flix	37	76	37	97		Shapes.fromRow	labels=left,right owner=alias:Shapes.Pair why=row
 arg	src/Shapes.flix	37	101	37	104	List.Cons	Shapes.fromRow	of=case-construct at=37:74 i=1 n=2 sugar
 case-construct	src/Shapes.flix	37	101	37	104	List.Nil	Shapes.fromRow	
 def-decl	src/Shapes.flix	39	13	39	17	Shapes.open	Shapes.open	pub ext=39:5:39:60
-label-select	src/Shapes.flix	39	55	39	60	count	Shapes.open	recv=? via=open
+label-select	src/Shapes.flix	39	55	39	60	count	Shapes.open	owner=maybe cands=alias:Shapes.World why=open rspan=39:53:39:54 rparam=0
 def-decl	src/Shapes.flix	41	13	41	17	Shapes.bump	Shapes.bump	pub ext=41:5:41:64
-label-update	src/Shapes.flix	41	39	41	44	count	Shapes.bump	recv=Shapes.World via=decl
-label-select	src/Shapes.flix	41	49	41	54	count	Shapes.bump	recv=Shapes.World via=decl
+label-update	src/Shapes.flix	41	39	41	44	count	Shapes.bump	owner=alias:Shapes.World why=decl rspan=41:61:41:62 rparam=0
+label-select	src/Shapes.flix	41	49	41	54	count	Shapes.bump	owner=alias:Shapes.World why=decl rspan=41:47:41:48 rparam=0
 def-decl	src/Shapes.flix	43	13	43	18	Shapes.piped	Shapes.piped	pub ext=43:5:43:84
 arg	src/Shapes.flix	43	45	43	47	|>	Shapes.piped	of=def-use at=43:48 i=0 n=2
 arg	src/Shapes.flix	43	45	43	72	|>	Shapes.piped	of=def-use at=43:73 i=0 n=2
@@ -96,15 +168,18 @@ def-use	src/Shapes.flix	45	57	45	61	Shapes.area	Shapes.wide
 case-construct	src/Shapes.flix	45	62	45	74	Shapes.Shape.Circle	Shapes.wide	
 arg	src/Shapes.flix	45	62	45	77	Shapes.area	Shapes.wide	of=def-use at=45:57 i=0 n=1
 arg	src/Shapes.flix	45	75	45	76	Shapes.Shape.Circle	Shapes.wide	of=case-construct at=45:62 i=0 n=1
+alias-decl	src/Shapes.flix	47	20	47	25	Shapes.Point	Shapes.Point	
+alias-decl	src/Shapes.flix	49	20	49	24	Shapes.Size	Shapes.Size	
 def-decl	src/Shapes.flix	51	13	51	19	Shapes.spread	Shapes.spread	pub ext=51:5:51:86
 def-use	src/Shapes.flix	51	31	51	39	List.sum	Shapes.spread	
 def-use	src/Shapes.flix	51	40	51	48	List.map	Shapes.spread	
 arg	src/Shapes.flix	51	40	51	85	List.sum	Shapes.spread	of=def-use at=51:31 i=0 n=1
 arg	src/Shapes.flix	51	49	51	57	List.map	Shapes.spread	of=def-use at=51:40 i=0 n=2
-label-select	src/Shapes.flix	51	56	51	57	x	Shapes.spread	recv=Shapes.Point|Shapes.Size via=ambiguous
+label-select	src/Shapes.flix	51	56	51	57	x	Shapes.spread	owner=ambiguous cands=alias:Shapes.Point|alias:Shapes.Size why=row rspan=51:54:51:55
 arg	src/Shapes.flix	51	60	51	83	List.map	Shapes.spread	of=def-use at=51:40 i=1 n=2
 case-construct	src/Shapes.flix	51	60	51	83	List.Cons	Shapes.spread	sugar
 arg	src/Shapes.flix	51	62	51	76	List.Cons	Shapes.spread	of=case-construct at=51:60 i=0 n=2 sugar
+record-literal	src/Shapes.flix	51	62	51	76		Shapes.spread	labels=x,y owner=ambiguous cands=alias:Shapes.Point|alias:Shapes.Size why=row
 arg	src/Shapes.flix	51	80	51	83	List.Cons	Shapes.spread	of=case-construct at=51:60 i=1 n=2 sugar
 case-construct	src/Shapes.flix	51	80	51	83	List.Nil	Shapes.spread	
 def-decl	src/Uses.flix	8	13	8	16	Uses.dot	Uses.dot	pub ext=8:5:8:37

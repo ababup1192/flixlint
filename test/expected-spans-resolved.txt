@@ -1,4 +1,4 @@
-# flixlint-spans 2 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
 enum-decl	src/Args.flix	3	14	3	19	Args.Scene	Args.Scene	
 case-decl	src/Args.flix	4	14	4	18	Args.Scene.Deck	Args.Scene	arity=2
 case-decl	src/Args.flix	5	14	5	19	Args.Scene.Empty	Args.Scene	arity=0
@@ -23,6 +23,70 @@ case-pattern	src/Args.flix	15	14	15	25	Args.Scene.Empty	Args.show
 def-use	src/Args.flix	15	29	15	34	Args.label	Args.show	
 arg	src/Args.flix	15	35	15	36	Args.label	Args.show	of=def-use at=15:29 i=0 n=2
 arg	src/Args.flix	15	38	15	40	Args.label	Args.show	of=def-use at=15:29 i=1 n=2
+alias-decl	src/Owners.flix	3	20	3	24	Owners.Game	Owners.Game	
+alias-decl	src/Owners.flix	5	20	5	25	Owners.Model	Owners.Model	syn=Owners.Game
+type-use	src/Owners.flix	5	28	5	32	Owners.Game	Owners.Model	what=alias
+alias-decl	src/Owners.flix	7	20	7	26	Owners.HasTop	Owners.HasTop	
+enum-decl	src/Owners.flix	9	14	9	19	Owners.Panel	Owners.Panel	
+case-decl	src/Owners.flix	10	14	10	18	Owners.Panel.Open	Owners.Panel	arity=1
+case-decl	src/Owners.flix	11	14	11	20	Owners.Panel.Closed	Owners.Panel	arity=0
+def-decl	src/Owners.flix	14	13	14	24	Owners.fromSynonym	Owners.fromSynonym	pub ext=14:5:14:49
+type-use	src/Owners.flix	14	28	14	33	Owners.Model	Owners.fromSynonym	what=alias
+def-decl	src/Owners.flix	16	13	16	26	Owners.fromOpenAlias	Owners.fromOpenAlias	pub ext=16:5:16:55
+type-use	src/Owners.flix	16	30	16	36	Owners.HasTop	Owners.fromOpenAlias	what=alias
+def-decl	src/Owners.flix	18	13	18	29	Owners.fromPayloadParam	Owners.fromPayloadParam	pub ext=18:5:18:77
+def-decl	src/Owners.flix	20	13	20	26	Owners.fromLetOfCase	Owners.fromLetOfCase	pub ext=20:5:25:6
+type-use	src/Owners.flix	20	30	20	35	Owners.Panel	Owners.fromLetOfCase	what=enum
+match-site	src/Owners.flix	20	46	25	6		Owners.fromLetOfCase	arms=2 wild=0 var=0 guard=0 enum=Owners.Panel
+match-arm	src/Owners.flix	21	9	23	18	Owners.Panel.Open	Owners.fromLetOfCase	match=20:46 pat=tag at=21:14:21:27 guard=0 full=1
+case-pattern	src/Owners.flix	21	14	21	24	Owners.Panel.Open	Owners.fromLetOfCase	
+arg	src/Owners.flix	21	25	21	26	Owners.Panel.Open	Owners.fromLetOfCase	of=case-pattern at=21:14 i=0 n=1
+match-arm	src/Owners.flix	24	9	24	31	Owners.Panel.Closed	Owners.fromLetOfCase	match=20:46 pat=tag at=24:14:24:26 guard=0 full=1
+case-pattern	src/Owners.flix	24	14	24	26	Owners.Panel.Closed	Owners.fromLetOfCase	
+def-decl	src/Owners.flix	27	13	27	22	Owners.fromOther	Owners.fromOther	pub ext=27:5:27:67
+def-decl	src/Owners.flix	29	9	29	13	Owners.game	Owners.game	ext=29:5:29:45
+type-use	src/Owners.flix	29	17	29	21	Owners.Game	Owners.game	what=alias
+def-decl	src/Owners.flix	31	13	31	23	Owners.fromParens	Owners.fromParens	pub ext=31:5:31:48
+def-use	src/Owners.flix	31	36	31	40	Owners.game	Owners.fromParens	
+arg	src/Owners.flix	31	40	31	42	Owners.game	Owners.fromParens	of=def-use at=31:36 i=0 n=1
+def-decl	src/Owners.flix	33	13	33	19	Owners.nested	Owners.nested	pub ext=33:5:33:61
+type-use	src/Owners.flix	33	33	33	37	Owners.Game	Owners.nested	what=alias
+def-decl	src/Owners.flix	35	13	35	19	Owners.inText	Owners.inText	pub ext=35:5:35:53
+type-use	src/Owners.flix	35	23	35	27	Owners.Game	Owners.inText	what=alias
+alias-decl	src/Scenes.flix	3	20	3	26	Scenes.DeckUi	Scenes.DeckUi	
+enum-decl	src/Scenes.flix	5	14	5	19	Scenes.Scene	Scenes.Scene	
+case-decl	src/Scenes.flix	6	14	6	18	Scenes.Scene.Deck	Scenes.Scene	arity=1
+type-use	src/Scenes.flix	6	19	6	25	Scenes.DeckUi	Scenes.Scene	what=alias
+case-decl	src/Scenes.flix	7	14	7	19	Scenes.Scene.Board	Scenes.Scene	arity=1
+case-decl	src/Scenes.flix	8	14	8	18	Scenes.Scene.Pair	Scenes.Scene	arity=2
+type-use	src/Scenes.flix	8	19	8	25	Scenes.DeckUi	Scenes.Scene	what=alias
+case-decl	src/Scenes.flix	9	14	9	19	Scenes.Scene.Title	Scenes.Scene	arity=0
+def-decl	src/Scenes.flix	12	13	12	21	Scenes.cursorOf	Scenes.cursorOf	pub ext=12:5:17:6
+type-use	src/Scenes.flix	12	25	12	30	Scenes.Scene	Scenes.cursorOf	what=enum
+match-site	src/Scenes.flix	12	41	17	6		Scenes.cursorOf	arms=4 wild=0 var=0 guard=0 enum=Scenes.Scene
+match-arm	src/Scenes.flix	13	9	13	39	Scenes.Scene.Deck	Scenes.cursorOf	match=12:41 pat=tag at=13:14:13:27 guard=0 full=1
+case-pattern	src/Scenes.flix	13	14	13	24	Scenes.Scene.Deck	Scenes.cursorOf	
+arg	src/Scenes.flix	13	25	13	26	Scenes.Scene.Deck	Scenes.cursorOf	of=case-pattern at=13:14 i=0 n=1
+match-arm	src/Scenes.flix	14	9	14	38	Scenes.Scene.Board	Scenes.cursorOf	match=12:41 pat=tag at=14:14:14:28 guard=0 full=1
+case-pattern	src/Scenes.flix	14	14	14	25	Scenes.Scene.Board	Scenes.cursorOf	
+arg	src/Scenes.flix	14	26	14	27	Scenes.Scene.Board	Scenes.cursorOf	of=case-pattern at=14:14 i=0 n=1
+match-arm	src/Scenes.flix	15	9	15	51	Scenes.Scene.Pair	Scenes.cursorOf	match=12:41 pat=tag at=15:14:15:30 guard=0 full=1
+case-pattern	src/Scenes.flix	15	14	15	24	Scenes.Scene.Pair	Scenes.cursorOf	
+arg	src/Scenes.flix	15	25	15	26	Scenes.Scene.Pair	Scenes.cursorOf	of=case-pattern at=15:14 i=0 n=2
+arg	src/Scenes.flix	15	28	15	29	Scenes.Scene.Pair	Scenes.cursorOf	of=case-pattern at=15:14 i=1 n=2
+match-arm	src/Scenes.flix	16	9	16	30	Scenes.Scene.Title	Scenes.cursorOf	match=12:41 pat=tag at=16:14:16:25 guard=0 full=1
+case-pattern	src/Scenes.flix	16	14	16	25	Scenes.Scene.Title	Scenes.cursorOf	
+def-decl	src/Scenes.flix	19	13	19	18	Scenes.start	Scenes.start	pub ext=19:5:19:70
+type-use	src/Scenes.flix	19	22	19	27	Scenes.Scene	Scenes.start	what=enum
+case-construct	src/Scenes.flix	19	30	19	40	Scenes.Scene.Deck	Scenes.start	
+arg	src/Scenes.flix	19	43	19	69	Scenes.Scene.Deck	Scenes.start	of=case-construct at=19:30 i=0 n=1
+def-decl	src/Scenes.flix	21	13	21	18	Scenes.board	Scenes.board	pub ext=21:5:21:55
+type-use	src/Scenes.flix	21	22	21	27	Scenes.Scene	Scenes.board	what=enum
+case-construct	src/Scenes.flix	21	30	21	41	Scenes.Scene.Board	Scenes.board	
+arg	src/Scenes.flix	21	44	21	54	Scenes.Scene.Board	Scenes.board	of=case-construct at=21:30 i=0 n=1
+def-decl	src/Scenes.flix	23	13	23	18	Scenes.moved	Scenes.moved	pub ext=23:5:23:69
+type-use	src/Scenes.flix	23	22	23	28	Scenes.DeckUi	Scenes.moved	what=alias
+type-use	src/Scenes.flix	23	31	23	37	Scenes.DeckUi	Scenes.moved	what=alias
 use	src/Shapes.flix	3	9	3	20	Shapes.area	Shapes	alias=area what=def
 enum-decl	src/Shapes.flix	5	14	5	19	Shapes.Shape	Shapes.Shape	
 case-decl	src/Shapes.flix	6	14	6	20	Shapes.Shape.Circle	Shapes.Shape	arity=1
