@@ -281,15 +281,17 @@ object Spans {
   }
 
   def typed(root: TypedAst.Root, path: Path): Int = {
-    val out = new Out("typed", " adds=arg")
+    val out = new Out("typed", " adds=arg,case-recv,record-literal")
     val receivers = new Receivers(root)
     val allDefs: Iterable[TypedAst.Def] = root.defs.values ++ root.instances.values.flatMap(_.defs)
     val instDefs: Set[Any] = root.instances.values.flatMap(_.defs).toSet
+    // the extensions inside a record literal already written as part of the literal around them
+    val inner = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap[Any, java.lang.Boolean]())
     for (d <- allDefs if !synthetic(d)) {
       val fn = symName(d.sym)
       out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, instDefs.contains(d), d.spec.ann, d.loc))
       d.spec.fparams.toList.foreach(receivers.declare)
-      walk(out, d.exp, fn, "", (p, cls) => { argRows(out, p, cls, fn); if (isExpr(cls)) p.productPrefix match {
+      walk(out, d.exp, fn, "", (p, cls) => { argRows(out, p, cls, fn); if (cls.endsWith("$Pattern$Tag")) receivers.caseBind(p); if (isExpr(cls)) p.productPrefix match {
         case "Match" => matchRow(out, p, fn, " scrut=" + Typed.headName(field[TypedAst.Expr](p, "exp").tpe))
         case "Let" => receivers.let(p)
         case "Lambda" => receivers.declare(field[TypedAst.FormalParam](p, "fparam"))
@@ -298,6 +300,7 @@ object Spans {
           val label = field[Any](p, "label")
           out.add("label-select", field[String](label, "name"), field[SourceLocation](label, "loc"), fn, receivers.of(field[TypedAst.Expr](p, "exp")))
         case "RecordExtend" =>
+          literalRow(out, p, fn, receivers, inner)
           // `{ x = v | e }` is `RecordExtend(x, v, RecordRestrict(x, e))`; a bare extension `{ +x = v | e }` is not an update.
           val label = field[Any](p, "label")
           field[Any](p, "exp2") match {
@@ -314,6 +317,26 @@ object Spans {
     }
     out.write(path)
   }
+
+  /** `record-literal` (typed stage): a record written whole, `{ a = 1, b = x }` (the chain of extensions ends in the empty
+    * record; an update `{ a = 1 | r }` is not one). One row for the outermost extension, the span the literal's,
+    * `labels=a,b` sorted, and the alias of exactly those labels as a receiver is named (`recv=A via=row`).
+    */
+  private def literalRow(out: Out, p: Product, owner: String, receivers: Receivers, inner: java.util.Set[Any]): Unit =
+    if (!inner.contains(p)) {
+      var labels = List.empty[String]
+      var node: Any = p
+      while (node.isInstanceOf[Product] && node.asInstanceOf[Product].productPrefix == "RecordExtend") {
+        val n = node.asInstanceOf[Product]
+        if (!n.asInstanceOf[AnyRef].eq(p.asInstanceOf[AnyRef])) inner.add(n)
+        labels = field[String](field[Any](n, "label"), "name") :: labels
+        node = field[Any](n, "exp2")
+      }
+      // the empty record is the constant RecordEmpty (TypedAst.Expr.Cst), not an expression of its own
+      if (node.isInstanceOf[Product] && node.asInstanceOf[Product].productPrefix == "Cst" && field[Any](node, "cst").toString.startsWith("RecordEmpty"))
+        out.add("record-literal", "", field[SourceLocation](p, "loc"), owner,
+          s"labels=${labels.sorted.mkString(",")} ${receivers.aliasOfLabels(labels.toSet)}")
+    }
 
   /** Which type alias a record receiver is declared with.
     *
@@ -333,6 +356,38 @@ object Spans {
 
     def declare(fp: TypedAst.FormalParam): Unit = declared(fp.bnd.sym) = fp.tpe
 
+    /** The variables a case pattern binds to its payload (`case Scene.Deck(d)`): the case, the place and how many. */
+    private val byCase = scala.collection.mutable.HashMap.empty[Symbol.VarSym, (Symbol.CaseSym, Int, Int)]
+
+    def caseBind(tag: Product): Unit = {
+      val sym = field[SymUse.CaseSymUse](tag, "symUse").sym
+      val pats = field[List[Any]](tag, "pats")
+      pats.zipWithIndex.foreach {
+        case (v: Product, i) if v.productPrefix == "Var" => byCase(field[TypedAst.Binder](v, "bnd").sym) = (sym, i, pats.length)
+        case _ => ()
+      }
+    }
+
+    /** A receiver bound by a case pattern: the alias the case's declaration writes for that place (`via=decl`), or the case
+      * itself (`via=case`; `#i` after it when the case has more than one place).
+      */
+    private def fromCase(recv: TypedAst.Expr): Option[String] = recv match {
+      case TypedAst.Expr.Var(sym, _, _) if !declared.contains(sym) => byCase.get(sym).map { case (cs, i, n) =>
+        root.enums.get(cs.enumSym).flatMap(_.cases.get(cs)).flatMap(_.tpes.lift(i)) match {
+          case Some(Type.Alias(symUse, _, _, _)) => s"recv=${symName(symUse.sym)} via=decl"
+          case _ => s"recv=${symName(cs)}${if (n > 1) s"#$i" else ""} via=case"
+        }
+      }
+      case _ => None
+    }
+
+    /** The alias a record of exactly the labels `ls` is (`row`), the aliases when several have them (`ambiguous`), or none. */
+    def aliasOfLabels(ls: Set[String]): String = byFields.getOrElse(ls, Nil) match {
+      case List(a) => s"recv=$a via=row"
+      case Nil => "recv=? via=none"
+      case many => s"recv=${many.mkString("|")} via=ambiguous"
+    }
+
     def let(p: Product): Unit = declaredType(field[TypedAst.Expr](p, "exp1")).foreach(t => declared(field[TypedAst.Binder](p, "bnd").sym) = t)
 
     private def declaredType(e: TypedAst.Expr): Option[Type] = e match {
@@ -343,16 +398,11 @@ object Spans {
     }
 
     def of(recv: TypedAst.Expr): String = {
-      val fromDecl = declaredType(recv).orElse(Some(recv.tpe)).collect { case Type.Alias(symUse, _, _, _) => symName(symUse.sym) }
-      fromDecl match {
-        case Some(a) => s"recv=$a via=decl"
-        case None => closedLabels(recv.tpe) match {
+      val alias = (t: Option[Type]) => t.collect { case Type.Alias(symUse, _, _, _) => s"recv=${symName(symUse.sym)} via=decl" }
+      alias(declaredType(recv)).orElse(fromCase(recv)).orElse(alias(Some(recv.tpe))).getOrElse {
+        closedLabels(recv.tpe) match {
           case None => if (isRecord(recv.tpe)) "recv=? via=open" else "recv=? via=none"
-          case Some(ls) => byFields.getOrElse(ls, Nil) match {
-            case List(a) => s"recv=$a via=row"
-            case Nil => "recv=? via=none"
-            case many => s"recv=${many.mkString("|")} via=ambiguous"
-          }
+          case Some(ls) => aliasOfLabels(ls)
         }
       }
     }

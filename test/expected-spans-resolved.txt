@@ -23,6 +23,40 @@ case-pattern	src/Args.flix	15	14	15	25	Args.Scene.Empty	Args.show
 def-use	src/Args.flix	15	29	15	34	Args.label	Args.show	
 arg	src/Args.flix	15	35	15	36	Args.label	Args.show	of=def-use at=15:29 i=0 n=2
 arg	src/Args.flix	15	38	15	40	Args.label	Args.show	of=def-use at=15:29 i=1 n=2
+alias-decl	src/Scenes.flix	3	20	3	26	Scenes.DeckUi	Scenes.DeckUi	
+enum-decl	src/Scenes.flix	5	14	5	19	Scenes.Scene	Scenes.Scene	
+case-decl	src/Scenes.flix	6	14	6	18	Scenes.Scene.Deck	Scenes.Scene	arity=1
+type-use	src/Scenes.flix	6	19	6	25	Scenes.DeckUi	Scenes.Scene	what=alias
+case-decl	src/Scenes.flix	7	14	7	19	Scenes.Scene.Board	Scenes.Scene	arity=1
+case-decl	src/Scenes.flix	8	14	8	18	Scenes.Scene.Pair	Scenes.Scene	arity=2
+type-use	src/Scenes.flix	8	19	8	25	Scenes.DeckUi	Scenes.Scene	what=alias
+case-decl	src/Scenes.flix	9	14	9	19	Scenes.Scene.Title	Scenes.Scene	arity=0
+def-decl	src/Scenes.flix	12	13	12	21	Scenes.cursorOf	Scenes.cursorOf	pub ext=12:5:17:6
+type-use	src/Scenes.flix	12	25	12	30	Scenes.Scene	Scenes.cursorOf	what=enum
+match-site	src/Scenes.flix	12	41	17	6		Scenes.cursorOf	arms=4 wild=0 var=0 guard=0 enum=Scenes.Scene
+match-arm	src/Scenes.flix	13	9	13	39	Scenes.Scene.Deck	Scenes.cursorOf	match=12:41 pat=tag at=13:14:13:27 guard=0 full=1
+case-pattern	src/Scenes.flix	13	14	13	24	Scenes.Scene.Deck	Scenes.cursorOf	
+arg	src/Scenes.flix	13	25	13	26	Scenes.Scene.Deck	Scenes.cursorOf	of=case-pattern at=13:14 i=0 n=1
+match-arm	src/Scenes.flix	14	9	14	38	Scenes.Scene.Board	Scenes.cursorOf	match=12:41 pat=tag at=14:14:14:28 guard=0 full=1
+case-pattern	src/Scenes.flix	14	14	14	25	Scenes.Scene.Board	Scenes.cursorOf	
+arg	src/Scenes.flix	14	26	14	27	Scenes.Scene.Board	Scenes.cursorOf	of=case-pattern at=14:14 i=0 n=1
+match-arm	src/Scenes.flix	15	9	15	51	Scenes.Scene.Pair	Scenes.cursorOf	match=12:41 pat=tag at=15:14:15:30 guard=0 full=1
+case-pattern	src/Scenes.flix	15	14	15	24	Scenes.Scene.Pair	Scenes.cursorOf	
+arg	src/Scenes.flix	15	25	15	26	Scenes.Scene.Pair	Scenes.cursorOf	of=case-pattern at=15:14 i=0 n=2
+arg	src/Scenes.flix	15	28	15	29	Scenes.Scene.Pair	Scenes.cursorOf	of=case-pattern at=15:14 i=1 n=2
+match-arm	src/Scenes.flix	16	9	16	30	Scenes.Scene.Title	Scenes.cursorOf	match=12:41 pat=tag at=16:14:16:25 guard=0 full=1
+case-pattern	src/Scenes.flix	16	14	16	25	Scenes.Scene.Title	Scenes.cursorOf	
+def-decl	src/Scenes.flix	19	13	19	18	Scenes.start	Scenes.start	pub ext=19:5:19:70
+type-use	src/Scenes.flix	19	22	19	27	Scenes.Scene	Scenes.start	what=enum
+case-construct	src/Scenes.flix	19	30	19	40	Scenes.Scene.Deck	Scenes.start	
+arg	src/Scenes.flix	19	43	19	69	Scenes.Scene.Deck	Scenes.start	of=case-construct at=19:30 i=0 n=1
+def-decl	src/Scenes.flix	21	13	21	18	Scenes.board	Scenes.board	pub ext=21:5:21:55
+type-use	src/Scenes.flix	21	22	21	27	Scenes.Scene	Scenes.board	what=enum
+case-construct	src/Scenes.flix	21	30	21	41	Scenes.Scene.Board	Scenes.board	
+arg	src/Scenes.flix	21	44	21	54	Scenes.Scene.Board	Scenes.board	of=case-construct at=21:30 i=0 n=1
+def-decl	src/Scenes.flix	23	13	23	18	Scenes.moved	Scenes.moved	pub ext=23:5:23:69
+type-use	src/Scenes.flix	23	22	23	28	Scenes.DeckUi	Scenes.moved	what=alias
+type-use	src/Scenes.flix	23	31	23	37	Scenes.DeckUi	Scenes.moved	what=alias
 use	src/Shapes.flix	3	9	3	20	Shapes.area	Shapes	alias=area what=def
 enum-decl	src/Shapes.flix	5	14	5	19	Shapes.Shape	Shapes.Shape	
 case-decl	src/Shapes.flix	6	14	6	20	Shapes.Shape.Circle	Shapes.Shape	arity=1
