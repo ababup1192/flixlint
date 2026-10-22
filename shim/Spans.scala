@@ -37,14 +37,27 @@ import java.nio.file.{Files, Path}
   *    candidates of `ambiguous` / `maybe` (`*N` over 8). `rspan` is the receiver's span; `rparam=i` when the receiver is
   *    the `i`-th parameter of the top-level def itself
   *  - typed stage only: `record-literal` a record written whole (`labels=a,b` and `owner=` as for a receiver)
-  *  - `alias-decl` (both stages) the name of a `type alias`; extra `syn=A` when it is a synonym of `A` (`type alias B = A`)
+  *  - `alias-decl` (both stages) the name of a `type alias`; extra `syn=A` when it is a synonym of `A` (`type alias B = A`),
+  *    and for an alias of a record (`adds=alias-fields`) `fields=a:T;b:U` its fixed labels sorted with their types (the
+  *    canonical form below), `row=open` when the record has a row variable (`{ x = Int32 | r }`)
+  *  - `param` (both stages; `adds=param`) one parameter of a top-level def or a def of an instance (not of a lambda or a
+  *    local def): the span is its name, `sym` and `owner` the def, extra `i=N n=M name=x type=T tspan=sl:sc:el:ec
+  *    reads=N hidden=0|1 poly=0|1 [fields=a:T;… [row=open]]`: its place from 0 and how many, its declared type in the
+  *    canonical form, the span of that type, how many places of the body read it (`Expr.Var` of its symbol, one per
+  *    place), whether its name starts with `_`, whether its type has a type variable (`?` in the canonical form; such a
+  *    type is not compared), and the fixed labels of a record type (through aliases) as for `alias-decl`
   *  - `arg` (both stages; the header says `adds=...,arg`) one argument of a call to a def, of a case built, or one field
   *    pattern of a case matched: the span is the argument as the compiler places it, `sym` the def or the case, and
   *    extra `of=def-use|case-construct|case-pattern at=L:C i=N n=M`: the row of the name it belongs to (that kind, at
   *    that start), the argument's place from 0, and how many the compiler has at the site (a call of a def with no
   *    parameters has one, the `()`); `sugar` when that name is sugar, `synth` when the argument is not written at the
   *    site: its span is the whole call or lies outside it (the compiler made it up, as in a partial application
-  *    `List.map(f)` or a def passed as a value)
+  *    `List.map(f)` or a def passed as a value); `aparam=j` (`adds=aparam`) when the argument is the `j`-th parameter
+  *    of the top-level def it is in, itself (as `rparam` for a receiver)
+  *
+  * The canonical form of a type has no spaces (the extra is split on them): names in full (`Kit.Res`, an alias by its
+  * own name, not expanded), arguments in `[A,B]`, a record `{a=T,b=U}` with its labels sorted (`{a=T|?}` when open), a
+  * tuple `(A,B)`, a function `(A,B)->C` (`\E` after it when it has an effect), a type variable `?`.
   *  - resolved stage only (the header says `adds=use,type-use,alias-decl`):
   *    - `use` a `use` declaration (owner: the module it is in; sym: what it brings in): extra `alias=x` the name it
   *      brings in and `what=def|enum|case|alias|module|effect|op|trait|sig|struct|other`
@@ -180,19 +193,24 @@ object Spans {
   /** `arg` rows: the arguments of a call to a def (`ApplyDef`), of a case built (`Tag` in an expression) and the field
     * patterns of a case matched (`Tag` in a pattern). Both stages share these node and field names.
     */
-  private def argRows(out: Out, p: Product, cls: String, owner: String): Unit = {
+  private def argRows(out: Out, p: Product, cls: String, owner: String, top: Map[Symbol.VarSym, Int]): Unit = {
     lazy val call = field[SourceLocation](p, "loc")
     // WhyNot: not `SourceLocation.isSynthetic`. The compiler marks written arguments synthetic too (both of
     // `List.map(p -> e, xs)`), while the made-up ones of a partial application carry the span of the whole call.
     def written(loc: SourceLocation): Boolean =
       span(loc) != span(call) && notAfter(call.startLine, call.startCol, loc.startLine, loc.startCol) && notAfter(loc.endLine, loc.endCol, call.endLine, call.endCol)
     def notAfter(l1: Int, c1: Int, l2: Int, c2: Int): Boolean = l1 < l2 || (l1 == l2 && c1 <= c2)
+    // `aparam=j`: the argument is the j-th parameter of the top-level def itself (a pattern binds, it does not read)
+    def aparam(x: Any): String = x match {
+      case v: Product if v.productPrefix == "Var" && isExpr(v.getClass.getName) => top.get(field[Symbol.VarSym](v, "sym")).map(j => s" aparam=$j").getOrElse("")
+      case _ => ""
+    }
     def rows(of: String, sym: String, name: String, at: SourceLocation, xs: List[Any]): Unit = {
       val sugared = if (sugar(at, name).nonEmpty) " sugar" else ""
       xs.zipWithIndex.foreach { case (x, i) =>
         val loc = field[SourceLocation](x, "loc")
         val at1 = s"${at.startLine}:${at.startCol}"
-        out.add("arg", sym, loc, owner, s"of=$of at=$at1 i=$i n=${xs.length}$sugared${if (written(loc)) "" else " synth"}", s" $at1 $i")
+        out.add("arg", sym, loc, owner, s"of=$of at=$at1 i=$i n=${xs.length}$sugared${if (written(loc)) "" else " synth"}${aparam(x)}", s" $at1 $i")
       }
     }
     p.productPrefix match {
@@ -219,6 +237,139 @@ object Spans {
 
   private def varSym(pat: Any): Symbol.VarSym =
     if (hasField(pat, "bnd")) field[Symbol.VarSym](field[Any](pat, "bnd"), "sym") else field[Symbol.VarSym](pat, "sym")
+
+  /** How many places of the expression read the variable (an `Expr.Var` of it; a place the desugarer copies counts once). */
+  private def readCount(node: Any, v: Symbol.VarSym): Int = {
+    val at = scala.collection.mutable.HashSet.empty[String]
+    def go(n: Any): Unit = n match {
+      case null | _: Type | _: UnkindedType | _: SourceLocation | _: String | _: java.lang.Number | _: java.lang.Boolean | _: Symbol => ()
+      case p: Product if p.productPrefix == "Var" && isExpr(p.getClass.getName) =>
+        if (field[Symbol.VarSym](p, "sym") == v) at += span(field[SourceLocation](p, "loc"))
+      case p: Product => p.productIterator.foreach(go)
+      case xs: Iterable[_] => xs.foreach(go)
+      case _ => ()
+    }
+    go(node)
+    at.size
+  }
+
+  /** `param` rows: the parameters of a top-level def (`fps` as (symbol, declared type or None)), read in `body`.
+    * WhyNot: the `()` of a def with no parameters is a parameter to the compiler (of type Unit, its name not written);
+    * it has no row, as the sources have no parameter there.
+    */
+  private def paramRows(out: Out, fn: String, fps: List[(Symbol.VarSym, Option[Any])], body: Any): Unit = {
+    val written = fps.filterNot { case (v, _) => v.loc.isSynthetic || v.loc.startLine == 0 || v.text.startsWith("$") }
+    written.zipWithIndex.foreach { case ((v, tpe), i) =>
+      val (t, poly) = tpe.map(Canon.of).getOrElse(("?", true))
+      val tspan = tpe.flatMap(x => scala.util.Try(field[SourceLocation](x, "loc")).toOption).map(l => s" tspan=${span(l)}").getOrElse("")
+      val fields = tpe.map(Canon.fieldsOf).getOrElse("")
+      out.add("param", fn, v.loc, fn,
+        s"i=$i n=${written.length} name=${v.text} type=$t$tspan reads=${readCount(body, v)} hidden=${if (v.text.startsWith("_")) 1 else 0} poly=${if (poly) 1 else 0}$fields")
+    }
+  }
+
+  /** The canonical form of a type (`Type` of the typed stage or `UnkindedType` of the resolved stage; the two name their
+    * cases alike, so one function reads both by `productPrefix`, as `Generic` does).
+    */
+  private object Canon {
+    /** The form and whether it has a type variable (or a part this function does not know). */
+    def of(t: Any): (String, Boolean) = { val c = new Canon; val s = c.go(t); (s, c.poly) }
+
+    /** ` fields=a:T;b:U [row=open]` for a record type (through aliases), "" for anything else. */
+    def fieldsOf(t: Any): String = recordRow(unalias(t)) match {
+      case Some(row) =>
+        val (fs, open) = new Canon().record(row)
+        s" fields=${fs.map { case (l, v) => s"$l:$v" }.mkString(";")}${if (open) " row=open" else ""}"
+      case None => ""
+    }
+
+    /** The row of a record type (`Record` applied to it), None for anything else. */
+    private def recordRow(t: Any): Option[Any] = t match {
+      case p: Product if p.productPrefix == "Apply" =>
+        field[Any](p, "tpe1") match {
+          case h: Product if h.productPrefix == "Cst" && field[Any](h, "tc") == TypeConstructor.Record => Some(field[Any](p, "tpe2"))
+          case _ => None
+        }
+      case p: Product if p.productPrefix == "Ascribe" => recordRow(field[Any](p, "tpe"))
+      case _ => None
+    }
+
+    /** An alias's body (an applied alias carries it expanded), and so on to what is not an alias. */
+    def unalias(t: Any): Any = t match {
+      case p: Product if p.productPrefix == "Alias" => unalias(field[Any](p, "tpe"))
+      case p: Product if p.productPrefix == "Ascribe" => unalias(field[Any](p, "tpe"))
+      case _ => t
+    }
+
+    /** The head of an application and its arguments, in order. */
+    private def spine(x: Any, args: List[Any]): (Any, List[Any]) = x match {
+      case p: Product if p.productPrefix == "Apply" => spine(field[Any](p, "tpe1"), field[Any](p, "tpe2") :: args)
+      case p: Product if p.productPrefix == "Ascribe" => spine(field[Any](p, "tpe"), args)
+      case _ => (x, args)
+    }
+
+    private def tcName(c: TypeConstructor): String = c match {
+      case TypeConstructor.Str => "String"
+      case TypeConstructor.Enum(s, _) => symName(s)
+      case TypeConstructor.Struct(s, _) => symName(s)
+      case TypeConstructor.Effect(s, _) => symName(s)
+      case TypeConstructor.Region(_) => "Region"
+      case other => other.toString.replace(" ", "")
+    }
+
+    private final class Canon {
+      var poly = false
+
+      /** The labels of a row with their forms (sorted) and whether it ends in a row variable. */
+      def record(row: Any): (List[(String, String)], Boolean) = {
+        var fields = List.empty[(String, String)]
+        var r = row
+        var open = false
+        var done = false
+        while (!done) spine(unalias(r), Nil) match {
+          case (h: Product, List(v, rest)) if h.productPrefix == "Cst" && field[Any](h, "tc").isInstanceOf[TypeConstructor.RecordRowExtend] =>
+            fields = (field[TypeConstructor.RecordRowExtend](h, "tc").label.name, go(v)) :: fields
+            r = rest
+          case (h: Product, Nil) if h.productPrefix == "Cst" && field[Any](h, "tc") == TypeConstructor.RecordRowEmpty => done = true
+          case _ => open = true; poly = true; done = true
+        }
+        (fields.sortBy(_._1), open)
+      }
+
+      def go(x: Any): String = {
+        val (h, args) = spine(x, Nil)
+        def withArgs(s: String): String = if (args.isEmpty) s else s + args.map(go).mkString("[", ",", "]")
+        h match {
+          case p: Product => p.productPrefix match {
+            case "Var" => poly = true; withArgs("?")
+            case "Alias" =>
+              val own = field[List[Any]](p, "args")
+              withArgs(symName(field[Any](field[Any](p, "symUse"), "sym")) + (if (own.isEmpty) "" else own.map(go).mkString("[", ",", "]")))
+            case "UnappliedAlias" => withArgs(symName(field[Any](p, "sym")))
+            case "Enum" | "Struct" | "RestrictableEnum" | "Effect" => withArgs(symName(field[Any](p, "sym")))
+            case "Cst" => field[TypeConstructor](p, "tc") match {
+              case TypeConstructor.Record if args.length == 1 =>
+                val (fs, open) = record(args.head)
+                fs.map { case (l, v) => s"$l=$v" }.mkString("{", ",", if (open) "|?}" else "}")
+              case TypeConstructor.Tuple(_) => args.map(go).mkString("(", ",", ")")
+              // the typed stage applies `Arrow(n)` to the effect, the parameters and the result
+              case TypeConstructor.Arrow(_) if args.length >= 2 => arrow(args.drop(1).init, args.last, Some(args.head))
+              case c => withArgs(tcName(c))
+            }
+            // the resolved stage writes the effect inside the arrow and applies the arrow to the parameters and the result
+            case "Arrow" if args.nonEmpty => arrow(args.init, args.last, field[Option[Any]](p, "eff"))
+            case _ => poly = true; withArgs("?")
+          }
+          case _ => poly = true; "?"
+        }
+      }
+
+      private def arrow(ps: List[Any], ret: Any, eff: Option[Any]): String = {
+        val e = eff.map(go).filterNot(_ == "Pure").map("\\" + _).getOrElse("")
+        ps.map(go).mkString("(", ",", ")") + "->" + go(ret) + e
+      }
+    }
+  }
 
   /** Whether the expression reads the variable. */
   private def reads(node: Any, v: Symbol.VarSym): Boolean = node match {
@@ -253,7 +404,7 @@ object Spans {
   }
 
   def resolved(root: ResolvedAst.Root, path: Path): Int = {
-    val out = new Out("resolved", " adds=use,type-use,alias-decl,arg")
+    val out = new Out("resolved", " adds=use,type-use,alias-decl,arg,param,aparam,alias-fields")
     val allDefs: Iterable[ResolvedAst.Declaration.Def] = root.defs.values ++ root.instances.values.flatMap(_.defs)
     val instDefs: Set[Any] = root.instances.values.flatMap(_.defs).toSet
     def insts(d: Any): Boolean = instDefs.contains(d)
@@ -261,7 +412,10 @@ object Spans {
       val fn = symName(d.sym)
       out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, insts(d), d.spec.ann, d.loc))
       typesIn(out, d.spec, fn)
-      walk(out, d.exp, fn, "", (p, cls) => { if (p.productPrefix == "Match" && isExpr(cls)) matchRow(out, p, fn, ""); argRows(out, p, cls, fn) })
+      val fps = d.spec.fparams.toList
+      paramRows(out, fn, fps.map(fp => (fp.sym, fp.tpe)), d.exp)
+      val top = fps.zipWithIndex.map { case (fp, i) => fp.sym -> i }.toMap
+      walk(out, d.exp, fn, "", (p, cls) => { if (p.productPrefix == "Match" && isExpr(cls)) matchRow(out, p, fn, ""); argRows(out, p, cls, fn, top) })
     }
     for ((sym, e) <- root.enums) {
       out.add("enum-decl", symName(sym), sym.loc, symName(sym))
@@ -278,7 +432,7 @@ object Spans {
     }
     for ((sym, a) <- root.typeAliases) {
       val end = synEnd(sym, Set.empty)
-      out.add("alias-decl", symName(sym), sym.loc, symName(sym), if (end == sym) "" else s"syn=${symName(end)}")
+      out.add("alias-decl", symName(sym), sym.loc, symName(sym), ((if (end == sym) "" else s"syn=${symName(end)}") + Canon.fieldsOf(a.tpe)).trim)
       typesIn(out, a.tpe, symName(sym))
     }
     // An instance has no name of its own: its type is owned by `<the module it is in>.<the trait>`.
@@ -294,7 +448,7 @@ object Spans {
   }
 
   def typed(root: TypedAst.Root, path: Path): Int = {
-    val out = new Out("typed", " adds=arg,alias-decl")
+    val out = new Out("typed", " adds=arg,alias-decl,param,aparam,alias-fields")
     val receivers = new Receivers(root)
     val allDefs: Iterable[TypedAst.Def] = root.defs.values ++ root.instances.values.flatMap(_.defs)
     val instDefs: Set[Any] = root.instances.values.flatMap(_.defs).toSet
@@ -305,7 +459,9 @@ object Spans {
       out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, instDefs.contains(d), d.spec.ann, d.loc))
       d.spec.fparams.toList.foreach(receivers.declare)
       receivers.params(d.spec.fparams.toList)
-      walk(out, d.exp, fn, "", (p, cls) => { argRows(out, p, cls, fn); if (cls.endsWith("$Pattern$Tag")) receivers.caseBind(p); if (isExpr(cls)) p.productPrefix match {
+      paramRows(out, fn, d.spec.fparams.toList.map(fp => (fp.bnd.sym, Some(fp.tpe))), d.exp)
+      val top = d.spec.fparams.toList.zipWithIndex.map { case (fp, i) => fp.bnd.sym -> i }.toMap
+      walk(out, d.exp, fn, "", (p, cls) => { argRows(out, p, cls, fn, top); if (cls.endsWith("$Pattern$Tag")) receivers.caseBind(p); if (isExpr(cls)) p.productPrefix match {
         case "Match" => matchRow(out, p, fn, " scrut=" + Typed.headName(field[TypedAst.Expr](p, "exp").tpe))
         case "Let" => receivers.let(p)
         case "Lambda" => receivers.declare(field[TypedAst.FormalParam](p, "fparam"))
@@ -329,7 +485,7 @@ object Spans {
       out.add("enum-decl", symName(sym), sym.loc, symName(sym))
       e.cases.foreach { case (cs, c) => out.add("case-decl", symName(cs), cs.loc, symName(sym), s"arity=${c.tpes.length}") }
     }
-    for ((sym, a) <- root.typeAliases) out.add("alias-decl", symName(sym), sym.loc, symName(sym), receivers.synOf(sym))
+    for ((sym, a) <- root.typeAliases) out.add("alias-decl", symName(sym), sym.loc, symName(sym), (receivers.synOf(sym) + Canon.fieldsOf(a.tpe)).trim)
     out.write(path)
   }
 

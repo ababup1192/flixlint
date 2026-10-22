@@ -378,7 +378,7 @@ not pay for them (they are an order of magnitude more rows than all facts togeth
 at the typed stage on a 179-file project).
 
 ```
-# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields
 def-use	src/Shapes.flix	23	23	23	27	Shapes.area	Shapes.isRound
 label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	owner=alias:Shapes.World why=decl rspan=29:42:29:43 rparam=0
 ```
@@ -403,8 +403,9 @@ and an emoji 2); `owner` is the top-level def the occurrence is in (lambdas and 
 | `record-literal` | typed | a record written whole, `{ a = 1, b = x }` (not an update) | empty | `labels=a,b owner=O why=row` |
 | `use` | resolved | a `use` declaration (`owner` is the module it is in) | what it brings in | `alias=x` the name it brings in, `what=def\|enum\|case\|alias\|module\|effect\|op\|trait\|sig\|struct\|other` |
 | `type-use` | resolved | an enum, a type alias or a struct named in a type: a signature, an ascription, a case's fields, an alias's body, an instance's type (`owner` is the def, enum, alias, effect or trait it is in) | the type | `what=enum\|alias\|struct` |
-| `alias-decl` | both | the name of a `type alias` | the alias | `syn=A` when it is a synonym of `A` (`type alias B = A`) |
-| `arg` | both | one argument of a call to a def, of a case built, or one field pattern of a case matched | the def or the case | `of=def-use\|case-construct\|case-pattern at=L:C i=N n=M`, `sugar`, `synth` (below) |
+| `alias-decl` | both | the name of a `type alias` | the alias | `syn=A` when it is a synonym of `A` (`type alias B = A`); `fields=a:T;b:U [row=open]` for a record (below) |
+| `param` | both | the name of a parameter of a top-level def or a def of an instance (not of a lambda or a local def) | the def | `i=N n=M name=x type=T tspan=… reads=N hidden=0\|1 poly=0\|1 [fields=… [row=open]]` (below) |
+| `arg` | both | one argument of a call to a def, of a case built, or one field pattern of a case matched | the def or the case | `of=def-use\|case-construct\|case-pattern at=L:C i=N n=M`, `sugar`, `synth`, `aparam=j` (below) |
 
 - `match-site`: `wild` and `var` count the arms whose top-level pattern is `_` / a variable, `guard` the arms with an
   `if`; `enum` is the enum of the first top-level case pattern (`-` when there is none, e.g. a match on a tuple);
@@ -438,7 +439,18 @@ and an emoji 2); `owner` is the top-level def the occurrence is in (lambdas and 
   is not written at that site: its span is the whole call or lies outside it, as for the made-up arguments of a
   partial application (`List.map(f)`) or of a def passed as a value. (Not the compiler's `isSynthetic`: it marks
   written arguments too.) A tool that adds, moves or drops arguments rewrites the sites with no `synth` and leaves the
-  others to a person.
+  others to a person. `aparam=j` is there when the argument is the `j`-th parameter of the top-level def it is in, itself
+  (`adds=aparam`; a tool that drops an argument sees which parameter of the caller loses a read).
+- `param` (`adds=param`): `i` is the parameter's place from 0 and `n` how many the def has (a def written `()` has
+  none: the compiler's Unit parameter is not written). `type` is its declared type in the canonical form below,
+  `tspan` where that type is written, `reads` how many places of the body read it (an `Expr.Var` of it; a place the
+  desugarer copies counts once), `hidden=1` when its name starts with `_`, `poly=1` when its type has a type variable
+  (such a type is not compared). `fields` lists the fixed labels of a record type, through aliases, as for `alias-decl`.
+- `alias-decl` `fields=a:T;b:U` (`adds=alias-fields`): the labels of the alias's record sorted, with their types in the
+  canonical form; `row=open` when the record ends in a row variable (`{ x = Int32 | r }`).
+- The canonical form of a type has no spaces (the extra is split on them): names in full (`Kit.Res`; an alias by its own
+  name, not expanded), arguments in `[A,B]`, a record `{a=T,b=U}` with its labels sorted (`{a=T|?}` when open), a tuple
+  `(A,B)`, a function `(A,B)->C` (`\E` after it when it has an effect), a type variable `?`. Both stages write the same.
 
 ## Resident server
 
@@ -996,7 +1008,7 @@ JVM のメソッドとして大きすぎてコンパイルできないため。
 プロジェクトで resolved の段 6.5 万行・typed の段 8.5 万行）。
 
 ```
-# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields
 def-use	src/Shapes.flix	23	23	23	27	Shapes.area	Shapes.isRound
 label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	owner=alias:Shapes.World why=decl rspan=29:42:29:43 rparam=0
 ```
@@ -1020,8 +1032,9 @@ UTF-16 の単位なので日本語の字は 1、絵文字は 2）。`owner` は�
 | `record-literal` | typed | 丸ごと書いた record `{ a = 1, b = x }`（更新は入らない） | 空 | `labels=a,b owner=O why=row` |
 | `use` | resolved | `use` の宣言（`owner` はそれを書いた mod） | 入れる物 | `alias=x` 入れる名前、`what=def\|enum\|case\|alias\|module\|effect\|op\|trait\|sig\|struct\|other` |
 | `type-use` | resolved | 型に書いた enum・型 alias・struct の名前（シグネチャ・型の注記・case の欄・alias の本体・instance の型。`owner` は囲む def・enum・alias・effect・trait） | その型 | `what=enum\|alias\|struct` |
-| `alias-decl` | 両方 | `type alias` の名前 | その alias | 別名（`type alias B = A`）なら `syn=A` |
-| `arg` | 両方 | def の呼び出し・作る case の引数 1 つ、または当てる case の欄の型 1 つ | その def か case | `of=def-use\|case-construct\|case-pattern at=L:C i=N n=M`、`sugar`、`synth`（下） |
+| `alias-decl` | 両方 | `type alias` の名前 | その alias | 別名（`type alias B = A`）なら `syn=A`。record なら `fields=a:T;b:U [row=open]`（下） |
+| `param` | 両方 | 最上位の def（と instance の def）の引数の名前（lambda・局所の def の引数は入らない） | その def | `i=N n=M name=x type=T tspan=… reads=N hidden=0\|1 poly=0\|1 [fields=… [row=open]]`（下） |
+| `arg` | 両方 | def の呼び出し・作る case の引数 1 つ、または当てる case の欄の型 1 つ | その def か case | `of=def-use\|case-construct\|case-pattern at=L:C i=N n=M`、`sugar`、`synth`、`aparam=j`（下） |
 
 - `match-site`: `wild`・`var` は一番上の型が `_`・変数の腕の数、`guard` は `if` つきの腕の数。`enum` は一番上の
   型の最初の case の enum（無ければ `-`。tuple への match など）。`scrut` は match する値の型の頭。
@@ -1047,7 +1060,17 @@ UTF-16 の単位なので日本語の字は 1、絵文字は 2）。`owner` は�
   `i` は 0 からの順番、`n` はその所でコンパイラが持つ数（引数の無い def の呼び出しは `()` の 1 つ）。`sugar` は
   属する行が sugar の時。`synth` はその所に書かれていない引数（範囲が呼び出し全体か、その外）で、部分適用
   （`List.map(f)`）や def を値で渡した所でコンパイラが作った物（コンパイラの `isSynthetic` ではない。書いた引数にも
-  付くため）。引数を足す・並べ替える・消す道具は `synth` の無い所だけを書き換え、ほかは人へ回す。
+  付くため）。引数を足す・並べ替える・消す道具は `synth` の無い所だけを書き換え、ほかは人へ回す。`aparam=j` は渡す式が
+  囲む最上位の def の j 番目の引数そのものの時だけ（`adds=aparam`。引数を捨てる道具が、呼び手のどの引数の読みが減るかを見る）。
+- `param`（`adds=param`）: `i` は 0 からの順番、`n` はその def の引数の数（`()` と書いた def は 0 で行が無い。コンパイラの Unit の
+  引数は書かれていない）。`type` は宣言の型（下の正規の形）、`tspan` はその型を書いた所、`reads` は本体がその引数を読む所の数
+  （その記号の `Expr.Var`。desugar が写した所は 1 つ）、`hidden=1` は名前が `_` で始まる、`poly=1` は型に型の変数がある（比べない）。
+  `fields` は型が record（alias を通した物も）の時の決まった欄で、`alias-decl` と同じ形。
+- `alias-decl` の `fields=a:T;b:U`（`adds=alias-fields`）: alias の record の欄を名前の順に、型は正規の形で。末尾が row の変数
+  （`{ x = Int32 | r }`）なら `row=open`。
+- 型の正規の形は空白を持たない（extra は空白で切る）: 名前は修飾つき（`Kit.Res`。alias は開かずに名前のまま）、型引数は `[A,B]`、
+  record は欄の名前の順の `{a=T,b=U}`（開いていれば `{a=T|?}`）、tuple は `(A,B)`、関数は `(A,B)->C`（効果があれば後ろに `\E`）、
+  型の変数は `?`。両方の段が同じ字を書く。
 
 ## 常駐の server
 

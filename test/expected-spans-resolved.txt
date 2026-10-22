@@ -1,14 +1,17 @@
-# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields
 enum-decl	src/Args.flix	3	14	3	19	Args.Scene	Args.Scene	
 case-decl	src/Args.flix	4	14	4	18	Args.Scene.Deck	Args.Scene	arity=2
 case-decl	src/Args.flix	5	14	5	19	Args.Scene.Empty	Args.Scene	arity=0
 def-decl	src/Args.flix	8	13	8	18	Args.label	Args.label	pub ext=8:5:8:60
+param	src/Args.flix	8	19	8	20	Args.label	Args.label	i=0 n=2 name=n type=Int32 tspan=8:22:8:27 reads=1 hidden=0 poly=0
+param	src/Args.flix	8	29	8	30	Args.label	Args.label	i=1 n=2 name=s type=String tspan=8:32:8:38 reads=1 hidden=0 poly=0
 def-decl	src/Args.flix	10	13	10	17	Args.deck	Args.deck	pub ext=10:5:10:51
 type-use	src/Args.flix	10	21	10	26	Args.Scene	Args.deck	what=enum
 case-construct	src/Args.flix	10	29	10	39	Args.Scene.Deck	Args.deck	
 arg	src/Args.flix	10	40	10	45	Args.Scene.Deck	Args.deck	of=case-construct at=10:29 i=0 n=2
 arg	src/Args.flix	10	47	10	50	Args.Scene.Deck	Args.deck	of=case-construct at=10:29 i=1 n=2
 def-decl	src/Args.flix	12	13	12	17	Args.show	Args.show	pub ext=12:5:16:6
+param	src/Args.flix	12	18	12	19	Args.show	Args.show	i=0 n=1 name=s type=Args.Scene tspan=12:21:12:26 reads=1 hidden=0 poly=0
 type-use	src/Args.flix	12	21	12	26	Args.Scene	Args.show	what=enum
 match-site	src/Args.flix	12	38	16	6		Args.show	arms=2 wild=0 var=0 guard=0 enum=Args.Scene
 match-arm	src/Args.flix	13	9	14	18	Args.Scene.Deck	Args.show	match=12:38 pat=tag at=13:14:13:33 guard=0 full=1
@@ -23,19 +26,23 @@ case-pattern	src/Args.flix	15	14	15	25	Args.Scene.Empty	Args.show
 def-use	src/Args.flix	15	29	15	34	Args.label	Args.show	
 arg	src/Args.flix	15	35	15	36	Args.label	Args.show	of=def-use at=15:29 i=0 n=2
 arg	src/Args.flix	15	38	15	40	Args.label	Args.show	of=def-use at=15:29 i=1 n=2
-alias-decl	src/Owners.flix	3	20	3	24	Owners.Game	Owners.Game	
-alias-decl	src/Owners.flix	5	20	5	25	Owners.Model	Owners.Model	syn=Owners.Game
+alias-decl	src/Owners.flix	3	20	3	24	Owners.Game	Owners.Game	fields=deck:Int32;top:Int32
+alias-decl	src/Owners.flix	5	20	5	25	Owners.Model	Owners.Model	syn=Owners.Game fields=deck:Int32;top:Int32
 type-use	src/Owners.flix	5	28	5	32	Owners.Game	Owners.Model	what=alias
-alias-decl	src/Owners.flix	7	20	7	26	Owners.HasTop	Owners.HasTop	
+alias-decl	src/Owners.flix	7	20	7	26	Owners.HasTop	Owners.HasTop	fields=top:Int32 row=open
 enum-decl	src/Owners.flix	9	14	9	19	Owners.Panel	Owners.Panel	
 case-decl	src/Owners.flix	10	14	10	18	Owners.Panel.Open	Owners.Panel	arity=1
 case-decl	src/Owners.flix	11	14	11	20	Owners.Panel.Closed	Owners.Panel	arity=0
 def-decl	src/Owners.flix	14	13	14	24	Owners.fromSynonym	Owners.fromSynonym	pub ext=14:5:14:49
+param	src/Owners.flix	14	25	14	26	Owners.fromSynonym	Owners.fromSynonym	i=0 n=1 name=m type=Owners.Model tspan=14:28:14:33 reads=1 hidden=0 poly=0 fields=deck:Int32;top:Int32
 type-use	src/Owners.flix	14	28	14	33	Owners.Model	Owners.fromSynonym	what=alias
 def-decl	src/Owners.flix	16	13	16	26	Owners.fromOpenAlias	Owners.fromOpenAlias	pub ext=16:5:16:55
+param	src/Owners.flix	16	27	16	28	Owners.fromOpenAlias	Owners.fromOpenAlias	i=0 n=1 name=h type=Owners.HasTop[?] tspan=16:30:16:39 reads=1 hidden=0 poly=1 fields=top:Int32 row=open
 type-use	src/Owners.flix	16	30	16	36	Owners.HasTop	Owners.fromOpenAlias	what=alias
 def-decl	src/Owners.flix	18	13	18	29	Owners.fromPayloadParam	Owners.fromPayloadParam	pub ext=18:5:18:77
+param	src/Owners.flix	18	30	18	31	Owners.fromPayloadParam	Owners.fromPayloadParam	i=0 n=1 name=p type={col=Int32,row=Int32} tspan=18:33:18:61 reads=1 hidden=0 poly=0 fields=col:Int32;row:Int32
 def-decl	src/Owners.flix	20	13	20	26	Owners.fromLetOfCase	Owners.fromLetOfCase	pub ext=20:5:25:6
+param	src/Owners.flix	20	27	20	28	Owners.fromLetOfCase	Owners.fromLetOfCase	i=0 n=1 name=x type=Owners.Panel tspan=20:30:20:35 reads=1 hidden=0 poly=0
 type-use	src/Owners.flix	20	30	20	35	Owners.Panel	Owners.fromLetOfCase	what=enum
 match-site	src/Owners.flix	20	46	25	6		Owners.fromLetOfCase	arms=2 wild=0 var=0 guard=0 enum=Owners.Panel
 match-arm	src/Owners.flix	21	9	23	18	Owners.Panel.Open	Owners.fromLetOfCase	match=20:46 pat=tag at=21:14:21:27 guard=0 full=1
@@ -44,16 +51,83 @@ arg	src/Owners.flix	21	25	21	26	Owners.Panel.Open	Owners.fromLetOfCase	of=case-p
 match-arm	src/Owners.flix	24	9	24	31	Owners.Panel.Closed	Owners.fromLetOfCase	match=20:46 pat=tag at=24:14:24:26 guard=0 full=1
 case-pattern	src/Owners.flix	24	14	24	26	Owners.Panel.Closed	Owners.fromLetOfCase	
 def-decl	src/Owners.flix	27	13	27	22	Owners.fromOther	Owners.fromOther	pub ext=27:5:27:67
+param	src/Owners.flix	27	23	27	24	Owners.fromOther	Owners.fromOther	i=0 n=1 name=r type={id=Int32,old=Bool} tspan=27:26:27:52 reads=1 hidden=0 poly=0 fields=id:Int32;old:Bool
 def-decl	src/Owners.flix	29	9	29	13	Owners.game	Owners.game	ext=29:5:29:45
 type-use	src/Owners.flix	29	17	29	21	Owners.Game	Owners.game	what=alias
 def-decl	src/Owners.flix	31	13	31	23	Owners.fromParens	Owners.fromParens	pub ext=31:5:31:48
 def-use	src/Owners.flix	31	36	31	40	Owners.game	Owners.fromParens	
 arg	src/Owners.flix	31	40	31	42	Owners.game	Owners.fromParens	of=def-use at=31:36 i=0 n=1
 def-decl	src/Owners.flix	33	13	33	19	Owners.nested	Owners.nested	pub ext=33:5:33:61
+param	src/Owners.flix	33	20	33	21	Owners.nested	Owners.nested	i=0 n=1 name=n type={inner=Owners.Game} tspan=33:23:33:39 reads=1 hidden=0 poly=0 fields=inner:Owners.Game
 type-use	src/Owners.flix	33	33	33	37	Owners.Game	Owners.nested	what=alias
 def-decl	src/Owners.flix	35	13	35	19	Owners.inText	Owners.inText	pub ext=35:5:35:53
+param	src/Owners.flix	35	20	35	21	Owners.inText	Owners.inText	i=0 n=1 name=g type=Owners.Game tspan=35:23:35:27 reads=1 hidden=0 poly=0 fields=deck:Int32;top:Int32
 type-use	src/Owners.flix	35	23	35	27	Owners.Game	Owners.inText	what=alias
-alias-decl	src/Scenes.flix	3	20	3	26	Scenes.DeckUi	Scenes.DeckUi	
+alias-decl	src/Params.flix	3	20	3	23	Params.Res	Params.Res	fields=name:String;scale:Int32
+alias-decl	src/Params.flix	5	20	5	25	Params.World	Params.World	fields=res:Params.Res;scale:Int32
+type-use	src/Params.flix	5	51	5	54	Params.Res	Params.World	what=alias
+alias-decl	src/Params.flix	7	20	7	23	Params.Env	Params.Env	syn=Params.World fields=res:Params.Res;scale:Int32
+type-use	src/Params.flix	7	26	7	31	Params.World	Params.Env	what=alias
+alias-decl	src/Params.flix	9	20	9	28	Params.HasScale	Params.HasScale	fields=scale:Int32 row=open
+def-decl	src/Params.flix	12	13	12	17	Params.leaf	Params.leaf	pub ext=11:5:12:94
+param	src/Params.flix	12	18	12	19	Params.leaf	Params.leaf	i=0 n=3 name=w type=Params.World tspan=12:21:12:26 reads=2 hidden=0 poly=0 fields=res:Params.Res;scale:Int32
+type-use	src/Params.flix	12	21	12	26	Params.World	Params.leaf	what=alias
+param	src/Params.flix	12	28	12	31	Params.leaf	Params.leaf	i=1 n=3 name=res type=Params.Res tspan=12:33:12:36 reads=1 hidden=0 poly=0 fields=name:String;scale:Int32
+type-use	src/Params.flix	12	33	12	36	Params.Res	Params.leaf	what=alias
+param	src/Params.flix	12	38	12	43	Params.leaf	Params.leaf	i=2 n=3 name=_seed type=Int32 tspan=12:45:12:50 reads=0 hidden=1 poly=0
+def-decl	src/Params.flix	15	13	15	19	Params.shapes	Params.shapes	pub ext=14:5:18:48
+param	src/Params.flix	15	20	15	22	Params.shapes	Params.shapes	i=0 n=4 name=xs type=List[Option[Int32]] tspan=15:24:15:43 reads=1 hidden=0 poly=0
+type-use	src/Params.flix	15	24	15	28	List	Params.shapes	what=enum
+type-use	src/Params.flix	15	29	15	35	Option	Params.shapes	what=enum
+param	src/Params.flix	15	45	15	46	Params.shapes	Params.shapes	i=1 n=4 name=f type=(Int32)->Unit\IO tspan=15:48:15:66 reads=1 hidden=0 poly=0
+param	src/Params.flix	15	68	15	69	Params.shapes	Params.shapes	i=2 n=4 name=p type=(Int32,String) tspan=15:71:15:86 reads=1 hidden=0 poly=0
+param	src/Params.flix	15	88	15	89	Params.shapes	Params.shapes	i=3 n=4 name=x type=? tspan=15:91:15:92 reads=1 hidden=0 poly=1
+match-arm	src/Params.flix	16	9	18	48		Params.shapes	match=16:9 pat=other at=16:13:16:19 guard=0
+match-site	src/Params.flix	16	9	18	48		Params.shapes	arms=1 wild=0 var=0 guard=0 enum=-
+def-use	src/Params.flix	18	9	18	20	List.length	Params.shapes	
+arg	src/Params.flix	18	21	18	23	List.length	Params.shapes	of=def-use at=18:9 i=0 n=1 aparam=0
+def-use	src/Params.flix	18	27	18	38	List.length	Params.shapes	
+arg	src/Params.flix	18	39	18	40	List.Cons	Params.shapes	of=case-construct at=18:39 i=0 n=2 sugar aparam=3
+arg	src/Params.flix	18	39	18	47	List.length	Params.shapes	of=def-use at=18:27 i=0 n=1
+case-construct	src/Params.flix	18	39	18	47	List.Cons	Params.shapes	sugar
+arg	src/Params.flix	18	44	18	47	List.Cons	Params.shapes	of=case-construct at=18:39 i=1 n=2 sugar
+case-construct	src/Params.flix	18	44	18	47	List.Nil	Params.shapes	
+def-decl	src/Params.flix	21	13	21	17	Params.open	Params.open	pub ext=20:5:21:120
+param	src/Params.flix	21	18	21	19	Params.open	Params.open	i=0 n=3 name=e type={res=Params.Res|?} tspan=21:21:21:38 reads=1 hidden=0 poly=1 fields=res:Params.Res row=open
+type-use	src/Params.flix	21	29	21	32	Params.Res	Params.open	what=alias
+param	src/Params.flix	21	40	21	41	Params.open	Params.open	i=1 n=3 name=h type=Params.HasScale[?] tspan=21:43:21:54 reads=1 hidden=0 poly=1 fields=scale:Int32 row=open
+type-use	src/Params.flix	21	43	21	51	Params.HasScale	Params.open	what=alias
+param	src/Params.flix	21	56	21	57	Params.open	Params.open	i=2 n=3 name=c type={a=Int32,b=Bool} tspan=21:59:21:82 reads=1 hidden=0 poly=0 fields=a:Int32;b:Bool
+def-decl	src/Params.flix	25	13	25	20	Params.callers	Params.callers	pub ext=23:5:28:74
+param	src/Params.flix	25	21	25	22	Params.callers	Params.callers	i=0 n=2 name=w type=Params.World tspan=25:24:25:29 reads=4 hidden=0 poly=0 fields=res:Params.Res;scale:Int32
+type-use	src/Params.flix	25	24	25	29	Params.World	Params.callers	what=alias
+param	src/Params.flix	25	31	25	34	Params.callers	Params.callers	i=1 n=2 name=res type=Params.Res tspan=25:36:25:39 reads=2 hidden=0 poly=0 fields=name:String;scale:Int32
+type-use	src/Params.flix	25	36	25	39	Params.Res	Params.callers	what=alias
+def-use	src/Params.flix	26	17	26	21	Params.leaf	Params.callers	
+arg	src/Params.flix	26	22	26	23	Params.leaf	Params.callers	of=def-use at=26:17 i=0 n=3 aparam=0
+arg	src/Params.flix	26	25	26	28	Params.leaf	Params.callers	of=def-use at=26:17 i=1 n=3 aparam=1
+arg	src/Params.flix	26	30	26	37	Params.leaf	Params.callers	of=def-use at=26:17 i=2 n=3
+def-use	src/Params.flix	28	9	28	13	Params.leaf	Params.callers	
+arg	src/Params.flix	28	14	28	16	Params.leaf	Params.callers	of=def-use at=28:9 i=0 n=3
+arg	src/Params.flix	28	18	28	21	Params.leaf	Params.callers	of=def-use at=28:9 i=1 n=3 aparam=1
+arg	src/Params.flix	28	23	28	24	Params.leaf	Params.callers	of=def-use at=28:9 i=2 n=3
+def-use	src/Params.flix	28	29	28	37	List.map	Params.callers	
+arg	src/Params.flix	28	29	28	61	|>	Params.callers	of=def-use at=28:62 i=0 n=2
+arg	src/Params.flix	28	38	28	50	List.map	Params.callers	of=def-use at=28:29 i=0 n=2
+arg	src/Params.flix	28	52	28	53	List.Cons	Params.callers	of=case-construct at=28:52 i=0 n=2 sugar aparam=0
+arg	src/Params.flix	28	52	28	60	List.map	Params.callers	of=def-use at=28:29 i=1 n=2
+case-construct	src/Params.flix	28	52	28	60	List.Cons	Params.callers	sugar
+arg	src/Params.flix	28	57	28	60	List.Cons	Params.callers	of=case-construct at=28:52 i=1 n=2 sugar
+case-construct	src/Params.flix	28	57	28	60	List.Nil	Params.callers	
+def-use	src/Params.flix	28	62	28	64	|>	Params.callers	
+arg	src/Params.flix	28	65	28	73	List.sum	Params.callers	of=def-use at=28:65 i=0 n=1 synth
+arg	src/Params.flix	28	65	28	73	|>	Params.callers	of=def-use at=28:62 i=1 n=2
+def-use	src/Params.flix	28	65	28	73	List.sum	Params.callers	
+def-decl	src/Params.flix	30	13	30	21	Params.noParams	Params.noParams	pub ext=30:5:30:34
+def-decl	src/Params.flix	32	13	32	23	Params.viaSynonym	Params.viaSynonym	pub ext=32:5:32:52
+param	src/Params.flix	32	24	32	27	Params.viaSynonym	Params.viaSynonym	i=0 n=1 name=env type=Params.Env tspan=32:29:32:32 reads=1 hidden=0 poly=0 fields=res:Params.Res;scale:Int32
+type-use	src/Params.flix	32	29	32	32	Params.Env	Params.viaSynonym	what=alias
+alias-decl	src/Scenes.flix	3	20	3	26	Scenes.DeckUi	Scenes.DeckUi	fields=cursor:Int32;open:Bool
 enum-decl	src/Scenes.flix	5	14	5	19	Scenes.Scene	Scenes.Scene	
 case-decl	src/Scenes.flix	6	14	6	18	Scenes.Scene.Deck	Scenes.Scene	arity=1
 type-use	src/Scenes.flix	6	19	6	25	Scenes.DeckUi	Scenes.Scene	what=alias
@@ -62,6 +136,7 @@ case-decl	src/Scenes.flix	8	14	8	18	Scenes.Scene.Pair	Scenes.Scene	arity=2
 type-use	src/Scenes.flix	8	19	8	25	Scenes.DeckUi	Scenes.Scene	what=alias
 case-decl	src/Scenes.flix	9	14	9	19	Scenes.Scene.Title	Scenes.Scene	arity=0
 def-decl	src/Scenes.flix	12	13	12	21	Scenes.cursorOf	Scenes.cursorOf	pub ext=12:5:17:6
+param	src/Scenes.flix	12	22	12	23	Scenes.cursorOf	Scenes.cursorOf	i=0 n=1 name=s type=Scenes.Scene tspan=12:25:12:30 reads=1 hidden=0 poly=0
 type-use	src/Scenes.flix	12	25	12	30	Scenes.Scene	Scenes.cursorOf	what=enum
 match-site	src/Scenes.flix	12	41	17	6		Scenes.cursorOf	arms=4 wild=0 var=0 guard=0 enum=Scenes.Scene
 match-arm	src/Scenes.flix	13	9	13	39	Scenes.Scene.Deck	Scenes.cursorOf	match=12:41 pat=tag at=13:14:13:27 guard=0 full=1
@@ -85,6 +160,7 @@ type-use	src/Scenes.flix	21	22	21	27	Scenes.Scene	Scenes.board	what=enum
 case-construct	src/Scenes.flix	21	30	21	41	Scenes.Scene.Board	Scenes.board	
 arg	src/Scenes.flix	21	44	21	54	Scenes.Scene.Board	Scenes.board	of=case-construct at=21:30 i=0 n=1
 def-decl	src/Scenes.flix	23	13	23	18	Scenes.moved	Scenes.moved	pub ext=23:5:23:69
+param	src/Scenes.flix	23	19	23	20	Scenes.moved	Scenes.moved	i=0 n=1 name=d type=Scenes.DeckUi tspan=23:22:23:28 reads=2 hidden=0 poly=0 fields=cursor:Int32;open:Bool
 type-use	src/Scenes.flix	23	22	23	28	Scenes.DeckUi	Scenes.moved	what=alias
 type-use	src/Scenes.flix	23	31	23	37	Scenes.DeckUi	Scenes.moved	what=alias
 use	src/Shapes.flix	3	9	3	20	Shapes.area	Shapes	alias=area what=def
@@ -92,10 +168,11 @@ enum-decl	src/Shapes.flix	5	14	5	19	Shapes.Shape	Shapes.Shape
 case-decl	src/Shapes.flix	6	14	6	20	Shapes.Shape.Circle	Shapes.Shape	arity=1
 case-decl	src/Shapes.flix	7	14	7	20	Shapes.Shape.Square	Shapes.Shape	arity=1
 case-decl	src/Shapes.flix	8	14	8	17	Shapes.Shape.Dot	Shapes.Shape	arity=0
-alias-decl	src/Shapes.flix	11	20	11	25	Shapes.World	Shapes.World	
+alias-decl	src/Shapes.flix	11	20	11	25	Shapes.World	Shapes.World	fields=count:Int32;shape:Shapes.Shape
 type-use	src/Shapes.flix	11	38	11	43	Shapes.Shape	Shapes.World	what=enum
-alias-decl	src/Shapes.flix	13	20	13	24	Shapes.Pair	Shapes.Pair	
+alias-decl	src/Shapes.flix	13	20	13	24	Shapes.Pair	Shapes.Pair	fields=left:Int32;right:Int32
 def-decl	src/Shapes.flix	15	13	15	17	Shapes.area	Shapes.area	pub ext=15:5:19:6
+param	src/Shapes.flix	15	18	15	19	Shapes.area	Shapes.area	i=0 n=1 name=s type=Shapes.Shape tspan=15:21:15:26 reads=1 hidden=0 poly=0
 type-use	src/Shapes.flix	15	21	15	26	Shapes.Shape	Shapes.area	what=enum
 match-site	src/Shapes.flix	15	37	19	6		Shapes.area	arms=3 wild=1 var=0 guard=0 enum=Shapes.Shape
 match-arm	src/Shapes.flix	16	9	16	42	Shapes.Shape.Circle	Shapes.area	match=15:37 pat=tag at=16:14:16:29 guard=0 full=1
@@ -106,6 +183,7 @@ case-pattern	src/Shapes.flix	17	14	17	26	Shapes.Shape.Square	Shapes.area
 arg	src/Shapes.flix	17	27	17	28	Shapes.Shape.Square	Shapes.area	of=case-pattern at=17:14 i=0 n=1
 match-arm	src/Shapes.flix	18	9	18	20		Shapes.area	match=15:37 pat=wild at=18:14:18:15 guard=0
 def-decl	src/Shapes.flix	21	13	21	20	Shapes.isRound	Shapes.isRound	pub ext=21:5:25:6
+param	src/Shapes.flix	21	21	21	22	Shapes.isRound	Shapes.isRound	i=0 n=1 name=s type=Shapes.Shape tspan=21:24:21:29 reads=1 hidden=0 poly=0
 type-use	src/Shapes.flix	21	24	21	29	Shapes.Shape	Shapes.isRound	what=enum
 match-site	src/Shapes.flix	21	39	25	6		Shapes.isRound	arms=3 wild=0 var=2 guard=1 enum=Shapes.Shape
 match-arm	src/Shapes.flix	22	9	22	37	Shapes.Shape.Circle	Shapes.isRound	match=21:39 pat=tag at=22:14:22:29 guard=0 full=1
@@ -121,6 +199,7 @@ def-decl	src/Shapes.flix	27	9	27	13	Shapes.make	Shapes.make	ext=27:5:27:57
 type-use	src/Shapes.flix	27	17	27	22	Shapes.World	Shapes.make	what=alias
 case-construct	src/Shapes.flix	27	35	27	44	Shapes.Shape.Dot	Shapes.make	
 def-decl	src/Shapes.flix	29	13	29	22	Shapes.fromParam	Shapes.fromParam	pub ext=29:5:29:65
+param	src/Shapes.flix	29	23	29	24	Shapes.fromParam	Shapes.fromParam	i=0 n=1 name=w type=Shapes.World tspan=29:26:29:31 reads=2 hidden=0 poly=0 fields=count:Int32;shape:Shapes.Shape
 type-use	src/Shapes.flix	29	26	29	31	Shapes.World	Shapes.fromParam	what=alias
 def-use	src/Shapes.flix	29	52	29	56	Shapes.area	Shapes.fromParam	
 arg	src/Shapes.flix	29	57	29	64	Shapes.area	Shapes.fromParam	of=def-use at=29:52 i=0 n=1
@@ -143,13 +222,16 @@ arg	src/Shapes.flix	37	76	37	97	List.Cons	Shapes.fromRow	of=case-construct at=37
 arg	src/Shapes.flix	37	101	37	104	List.Cons	Shapes.fromRow	of=case-construct at=37:74 i=1 n=2 sugar
 case-construct	src/Shapes.flix	37	101	37	104	List.Nil	Shapes.fromRow	
 def-decl	src/Shapes.flix	39	13	39	17	Shapes.open	Shapes.open	pub ext=39:5:39:60
+param	src/Shapes.flix	39	18	39	19	Shapes.open	Shapes.open	i=0 n=1 name=r type={count=Int32|?} tspan=39:21:39:42 reads=1 hidden=0 poly=1 fields=count:Int32 row=open
 def-decl	src/Shapes.flix	41	13	41	17	Shapes.bump	Shapes.bump	pub ext=41:5:41:64
+param	src/Shapes.flix	41	18	41	19	Shapes.bump	Shapes.bump	i=0 n=1 name=w type=Shapes.World tspan=41:21:41:26 reads=2 hidden=0 poly=0 fields=count:Int32;shape:Shapes.Shape
 type-use	src/Shapes.flix	41	21	41	26	Shapes.World	Shapes.bump	what=alias
 type-use	src/Shapes.flix	41	29	41	34	Shapes.World	Shapes.bump	what=alias
 def-decl	src/Shapes.flix	43	13	43	18	Shapes.piped	Shapes.piped	pub ext=43:5:43:84
+param	src/Shapes.flix	43	19	43	21	Shapes.piped	Shapes.piped	i=0 n=1 name=xs type=List[Shapes.Shape] tspan=43:23:43:34 reads=1 hidden=0 poly=0
 type-use	src/Shapes.flix	43	23	43	27	List	Shapes.piped	what=enum
 type-use	src/Shapes.flix	43	28	43	33	Shapes.Shape	Shapes.piped	what=enum
-arg	src/Shapes.flix	43	45	43	47	|>	Shapes.piped	of=def-use at=43:48 i=0 n=2
+arg	src/Shapes.flix	43	45	43	47	|>	Shapes.piped	of=def-use at=43:48 i=0 n=2 aparam=0
 arg	src/Shapes.flix	43	45	43	72	|>	Shapes.piped	of=def-use at=43:73 i=0 n=2
 def-use	src/Shapes.flix	43	48	43	50	|>	Shapes.piped	
 def-use	src/Shapes.flix	43	51	43	59	List.map	Shapes.piped	
@@ -167,8 +249,8 @@ def-use	src/Shapes.flix	45	57	45	61	Shapes.area	Shapes.wide
 case-construct	src/Shapes.flix	45	62	45	74	Shapes.Shape.Circle	Shapes.wide	
 arg	src/Shapes.flix	45	62	45	77	Shapes.area	Shapes.wide	of=def-use at=45:57 i=0 n=1
 arg	src/Shapes.flix	45	75	45	76	Shapes.Shape.Circle	Shapes.wide	of=case-construct at=45:62 i=0 n=1
-alias-decl	src/Shapes.flix	47	20	47	25	Shapes.Point	Shapes.Point	
-alias-decl	src/Shapes.flix	49	20	49	24	Shapes.Size	Shapes.Size	
+alias-decl	src/Shapes.flix	47	20	47	25	Shapes.Point	Shapes.Point	fields=x:Int32;y:Int32
+alias-decl	src/Shapes.flix	49	20	49	24	Shapes.Size	Shapes.Size	fields=x:Int32;y:Int32
 def-decl	src/Shapes.flix	51	13	51	19	Shapes.spread	Shapes.spread	pub ext=51:5:51:86
 def-use	src/Shapes.flix	51	31	51	39	List.sum	Shapes.spread	
 def-use	src/Shapes.flix	51	40	51	48	List.map	Shapes.spread	
@@ -186,5 +268,6 @@ def-decl	src/Uses.flix	8	13	8	16	Uses.dot	Uses.dot	pub ext=8:5:8:37
 type-use	src/Uses.flix	8	20	8	25	Shapes.Shape	Uses.dot	what=enum
 case-construct	src/Uses.flix	8	28	8	37	Shapes.Shape.Dot	Uses.dot	
 def-decl	src/Uses.flix	10	13	10	17	Uses.same	Uses.same	pub ext=10:5:10:52
+param	src/Uses.flix	10	18	10	19	Uses.same	Uses.same	i=0 n=1 name=w type=Shapes.World tspan=10:21:10:33 reads=1 hidden=0 poly=0 fields=count:Int32;shape:Shapes.Shape
 type-use	src/Uses.flix	10	21	10	33	Shapes.World	Uses.same	what=alias
 type-use	src/Uses.flix	10	36	10	48	Shapes.World	Uses.same	what=alias
