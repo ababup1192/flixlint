@@ -482,7 +482,10 @@ its tests.
   `--idle-minutes N` (30) and `--run-limit SECONDS` (900) are the caller's, read when the server starts: flixlint keeps
   no number of its own for them, so a project sets them in the one place it calls flixlint from.
 - **Sources.** Each run reads its source files once and gives the compiler exactly the bytes it compared with the last
-  run's (`addSource`), so a file written between the two cannot be checked in another version.
+  run's (`addSource`), so a file written between the two cannot be checked in another version. When the type aliases
+  of a changed, added or removed file are not the ones it had, the compiler's caches are cleared first: Flix 0.78 does not
+  type again a file that uses an alias only in a signature, and its old type would fail the callers ("Extra label")
+  where `flix check` passes (`test/check-alias.sh BUILD_DIR`).
 - **Check.** `bin/flixlint --check [--version-file FILE]` runs `flix check` of the project in the current directory on its
   server (started when none is up): `Bootstrap` as the CLI does (its progress on stderr), the check of the project's
   sources on the server's compiler, the compiler's messages on stdout, exit 0 or 1; the same bytes and code as
@@ -1079,7 +1082,9 @@ identity」（後ろに改行は付けない）の SHA-256 の頭 16 字に `.so
   `--run-limit 秒`（900）は呼び手が渡し、server を立てる時に読む。flixlint はこれらの数を持たないので、プロジェクトは flixlint を
   呼ぶ 1 か所で決める。
 - **ソース**: 走行ごとにソースを 1 回だけ読み、前回と比べたそのバイト列をコンパイラへ渡す（`addSource`）。比べた後に
-  書き換わったファイルが、比べた物と違う中身で検査される事は無い。
+  書き換わったファイルが、比べた物と違う中身で検査される事は無い。変わった・足した・消したファイルの型の別名が前と違う時は、先に
+  コンパイラのキャッシュを捨てる（Flix 0.78 は別名を引数の型にだけ使うファイルを型付けし直さず、古い型のまま呼ぶ側が
+  「Extra label」で落ちる。素の `flix check` は通る。`test/check-alias.sh BUILD_DIR`）。
 - **check**: `bin/flixlint --check [--version-file FILE]` は、今の作業場の `flix check` を常駐で流す（居なければ立てる）。
   CLI と同じく `Bootstrap`（進み具合は stderr）・常駐のコンパイラでプロジェクトのソースの検査・コンパイラの文は stdout・exit は
   0 か 1 で、別の JVM の `flix check` とバイトまで同じ（`test/check/`・`test/check-same.sh`）。答えに検査したソースの版 `V` が付き、

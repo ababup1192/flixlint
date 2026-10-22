@@ -575,15 +575,46 @@ object Resident {
     *
     * The path is the one `addFile` would key it by (`normalize`), and the text is decoded as `addFile` does, so the
     * compiler's messages and the facts name the files as before.
+    *
+    * WhyNot: not the kept caches when a type alias changed. The compiler (0.78) does not send a file that uses
+    * an alias only in a signature back through the typer when the alias changes, so the old type of that signature
+    * stays and a file calling it with a value of the new type fails ("Extra label"), where `flix check` passes. When
+    * the aliases of a changed, added or removed file are not the ones it had, the caches are cleared (`clearCaches`)
+    * and the next check compiles every file again; giving every file again is not enough (the old signature stays).
     */
   private def give(flix: Flix, before: Map[Path, Array[Byte]], files: List[Path]): Map[Path, Array[Byte]] = {
     val now = files.map(f => f.normalize -> Files.readAllBytes(f)).toMap
-    before.keys.filterNot(now.contains).foreach(flix.remSource)
-    now.foreach { case (f, b) =>
-      if (!before.get(f).exists(Arrays.equals(_, b))) flix.addSource(f, new String(b, flix.defaultCharset), SecurityContext.Unrestricted)
+    val changed = now.filterNot { case (f, b) => before.get(f).exists(Arrays.equals(_, b)) }
+    val gone = before.keys.filterNot(now.contains)
+    def aliases(b: Option[Array[Byte]]) = b.map(x => typeAliases(new String(x, flix.defaultCharset))).getOrElse(Nil)
+    val aliasChanged = before.nonEmpty && (changed.keys ++ gone).exists(f => aliases(before.get(f)) != aliases(now.get(f)))
+    gone.foreach(flix.remSource)
+    if (aliasChanged) flix.clearCaches()
+    changed.foreach { case (f, b) =>
+      flix.addSource(f, new String(b, flix.defaultCharset), SecurityContext.Unrestricted)
     }
     now
   }
+
+  private val AliasStart = """(?m)^[ \t]*(?:pub[ \t]+)?type[ \t]+alias\b""".r
+
+  /** The type aliases declared in `text`, each from `type alias` to the first line end outside brackets after its `=`,
+    * with the runs of white space made one space (a comment or a blank line moved does not count as a change).
+    */
+  private[flixlint] def typeAliases(text: String): List[String] =
+    AliasStart.findAllMatchIn(text).map { m =>
+      var i = m.end; var depth = 0; var seenEq = false
+      while (i < text.length && !(text(i) == '\n' && depth == 0 && seenEq)) {
+        text(i) match {
+          case '(' | '[' | '{' => depth += 1
+          case ')' | ']' | '}' => depth -= 1
+          case '=' if depth == 0 => seenEq = true
+          case _ =>
+        }
+        i += 1
+      }
+      text.substring(m.start, i).trim.split("\\s+").mkString(" ")
+    }.toList
 
   /** An output stream that writes what it is given as frames of one tag: the tag, the length, the bytes. */
   private final class Frames(to: DataOutputStream, tag: Char) extends OutputStream {
