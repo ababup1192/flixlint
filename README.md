@@ -368,6 +368,23 @@ deriving `ToString` on an enum of that size takes the compiler minutes (80 s at 
 the tables from case to name are split into chunks because one list literal of ten thousand tuples is a JVM method too
 large to compile.
 
+## Searching and refactoring: flix-search and flix-refactor
+
+The spans index (above) also drives two command-line tools in `go/`, so code can be searched by structure
+instead of with `grep`:
+
+- `bin/flix-search` reads only. `show Mod.f` prints one declaration with its doc comment, `search <part of a name>`
+  lists declarations (never uses), `outline src/X.flix` lists a file's declarations with their signatures,
+  `trace Mod.f` shows what a function calls, `context Mod.f` shows its body, callers, callees and types together,
+  and `usages`, `refs`, `match-sites`, `field-sites` count uses.
+- `bin/flix-refactor` takes all of those and also rewrites: `rewrite`, `remove-dead`, `make-private`, `move`,
+  `field-to-accessor`, `add-field` and more. Every rewrite is a dry run until `--apply`. `flix-refactor --help`.
+
+The first question builds the index (`build/refactor/spans-resolved.tsv`, a few seconds to a minute); later questions
+answer from it in well under a second, and files edited since are read from their current text. Both tools need
+Go 1.26 or newer; the wrappers build `build/go/<tool>` on first use. A host such as a game engine can embed
+`go/refactor` and plug in its own conventions with `refactor.SetHost`.
+
 ## Spans
 
 `--spans FILE` writes, in the same run as the facts, the position of every name the sources write: one line per
@@ -998,6 +1015,20 @@ rule も書ける。227 ファイルのプロジェクトで `Fn` の case は 1
 `ToString` を derive しないのは、この大きさの enum で `ToString` を derive するとコンパイラが分単位で掛かる
 ため（3,000 case で 80 秒、無しなら 6 秒）。case から名前への表を塊に割っているのは、1 万組の list literal 1 つが
 JVM のメソッドとして大きすぎてコンパイルできないため。
+
+## 探す・書き換える: flix-search と flix-refactor
+
+spans の索引（上）で、`go/` の 2 つの道具が grep の代わりにコードを構造で探す:
+
+- `bin/flix-search` は読むだけ。`show Mod.f` は宣言 1 つを doc コメントごと、`search <名前の一部>` は宣言の名前
+  （使う所は拾わない）、`outline src/X.flix` はファイルの宣言を頭の行つきで、`trace Mod.f` は呼ぶ先、`context Mod.f` は
+  本文・呼び手・呼ぶ先・型をまとめて、`usages`・`refs`・`match-sites`・`field-sites` は使う所を数える。
+- `bin/flix-refactor` はそれに加えて書き換える: `rewrite`・`remove-dead`・`make-private`・`move`・`field-to-accessor`・
+  `add-field` など。`--apply` までは dry-run。`flix-refactor --help`。
+
+最初の問いで索引（`build/refactor/spans-resolved.tsv`。数秒〜1 分）を作り、その後は 1 秒かからずに答える。索引の後に
+直したファイルは今の字から読む。どちらも Go 1.26 以上が要り、最初に流した時に `build/go/<道具>` を組む。ゲームエンジン
+などの組み込む側は `go/refactor` を取り込み、自前の決まりを `refactor.SetHost` で差し込める。
 
 ## spans（名前の位置）
 

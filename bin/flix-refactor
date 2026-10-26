@@ -1,0 +1,11 @@
+#!/bin/sh
+# flix-refactor: go/cmd/flix-refactor を build/go/flix-refactor に組んで流す（go/ の .go が jar より新しい時だけ組み直す）。要る物は go 1.26 以上。
+# 索引を作る flixlint は同じ bin/ の flixlint（FLIXLINT_BIN。FGE_FLIXLINT か --flixlint が先に効く）。
+set -e
+here=$(cd "$(dirname "$0")/.." && pwd)
+exe="$here/build/go/flix-refactor"
+if [ ! -x "$exe" ] || [ -n "$(find "$here/go" -name '*.go' -newer "$exe" -print -quit)" ] || [ "$here/go/go.mod" -nt "$exe" ]; then
+  mkdir -p "$here/build/go"
+  (cd "$here/go" && go build -o "$exe" ./cmd/flix-refactor)
+fi
+FLIXLINT_BIN="${FLIXLINT_BIN:-$here/bin/flixlint}" exec "$exe" "$@"
