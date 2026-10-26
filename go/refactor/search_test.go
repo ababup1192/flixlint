@@ -1,6 +1,10 @@
 package refactor
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func syms(fs []Found) []string {
 	out := make([]string, len(fs))
@@ -20,7 +24,7 @@ func TestSearchRanksExactThenPrefixThenWordThenSubstring(t *testing.T) {
 		{Sym: "W.enter", Kind: "def", File: "src/W.flix"},
 		{Sym: "W.Exit", Kind: "enum", File: "src/W.flix"},
 	}
-	got := syms(Search(all, "enter", ""))
+	got := syms(Search(all, "enter", "", nil))
 	want := []string{"W.enter", "W.enterFight", "T.enterTest", "R.pickEnter", "G.center"}
 	if len(got) != len(want) {
 		t.Fatalf("%v", got)
@@ -30,7 +34,7 @@ func TestSearchRanksExactThenPrefixThenWordThenSubstring(t *testing.T) {
 			t.Fatalf("%v（%v のはず）", got, want)
 		}
 	}
-	if got := syms(Search(all, "W.enter", "def")); len(got) != 2 || got[0] != "W.enter" {
+	if got := syms(Search(all, "W.enter", "def", nil)); len(got) != 2 || got[0] != "W.enter" {
 		t.Errorf("mod つき: %v", got)
 	}
 }
@@ -60,5 +64,27 @@ func TestOutlineSortsAndSkipsOneLineEnumCase(t *testing.T) {
 	got := Outline(all, "src/Shapes.flix", src)
 	if len(got) != 3 || got[0].Line != 5 || got[1].Line != 8 || got[2].Sig != "pub def area(s: Shape): Int32 = match s {" {
 		t.Errorf("%+v", got)
+	}
+}
+
+// 名前に当たらない時は、宣言の /// コメント（@ の注記の上も）に含む物を後ろに並べ、doc の印を付ける。
+func TestSearchFallsBackToDocComments(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "mod B {\n    /// 受けた傷の半分を返す反撃。\n    @Experimental\n    pub def riposteBack(x: Int32): Int32 = x / 2\n\n    /// 反撃の名前を持つ。\n    pub def counterName(): String = \"riposte\"\n    pub def plain(): Int32 = 1\n}\n"
+	if err := os.WriteFile(filepath.Join(root, "src", "B.flix"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	all := []Found{{Sym: "B.riposteBack", Kind: "def", File: "src/B.flix", Line: 4}, {Sym: "B.counterName", Kind: "def", File: "src/B.flix", Line: 7},
+		{Sym: "B.plain", Kind: "def", File: "src/B.flix", Line: 8}, {Sym: "B.reflect", Kind: "def", File: "src/B.flix", Line: 8}}
+	doc := docOf(&srcCache{root: root})
+	got := Search(all, "反撃", "", doc)
+	if len(got) != 2 || !got[0].Doc || !got[1].Doc || got[0].Sym+got[1].Sym != "B.counterNameB.riposteBack" {
+		t.Errorf("コメントで引けていない: %+v", got)
+	}
+	if got := Search(all, "reflect", "", doc); len(got) != 1 || got[0].Doc {
+		t.Errorf("名前の当たりは doc にしない: %+v", got)
 	}
 }

@@ -31,6 +31,7 @@ type Found struct {
 	Pub  bool   `json:"pub"`
 	Sig  string `json:"sig,omitempty"`  // outline: 宣言の頭の行
 	Text bool   `json:"text,omitempty"` // 直したファイルを字で拾った
+	Doc  bool   `json:"doc,omitempty"`  // search: 名前でなく宣言の /// コメントに当たった
 }
 
 func (f Found) name() string { return lastName(f.Sym) }
@@ -115,7 +116,11 @@ func textDecls(file, text string) []Found {
 }
 
 // Search は q に名前が当たる宣言を当たりの良い順に。q に `.` があれば mod つきの名前の終わりと比べる。大文字小文字は見ない。
-func Search(all []Found, q, kind string) []Found {
+// 名前に当たらない宣言は、doc（宣言の /// コメントの字を返す。nil なら見ない）に q を含めば一番後ろに並べる。
+//
+// WhyNot: コメントに当たった物を名前の当たりと混ぜない。名前を知っている時の答えが、コメントで名前を挙げる
+// 別の宣言に埋もれる。名前に当たらない時（ゲームの言葉と名前が違う・日本語で探した）の次の手として後ろに置く。
+func Search(all []Found, q, kind string, doc func(Found) string) []Found {
 	lq := strings.ToLower(q)
 	type hit struct {
 		f    Found
@@ -140,6 +145,18 @@ func Search(all []Found, q, kind string) []Found {
 			rank = 2
 		case strings.Contains(name, lq):
 			rank = 3
+		case doc != nil && strings.Contains(strings.ToLower(doc(f)), lq):
+			// コメントの頭の行（何をする物かの 1 行）がその語で始まる → 頭の行に含む → 後ろの行に含む。後ろの行は別の物の名前として出る事が多い。
+			first, _, _ := strings.Cut(strings.ToLower(doc(f)), "\n")
+			switch {
+			case strings.HasPrefix(first, lq):
+				rank = 4
+			case strings.Contains(first, lq):
+				rank = 5
+			default:
+				rank = 6
+			}
+			f.Doc = true
 		}
 		if rank >= 0 {
 			hits = append(hits, hit{f, rank})
@@ -163,6 +180,30 @@ func Search(all []Found, q, kind string) []Found {
 		out[i] = h.f
 	}
 	return out
+}
+
+// docOf は宣言の上に続く /// コメントの字（@ の注記の行は飛ばす）。src から読む。
+func docOf(src *srcCache) func(Found) string {
+	split := map[string][]string{}
+	return func(f Found) string {
+		ls, ok := split[f.File]
+		if !ok {
+			ls = strings.Split(src.get(f.File), "\n")
+			split[f.File] = ls
+		}
+		var doc []string
+		for i := f.Line - 2; i >= 0 && i < len(ls); i-- {
+			l := strings.TrimSpace(ls[i])
+			if strings.HasPrefix(l, "@") {
+				continue
+			}
+			if !strings.HasPrefix(l, "///") {
+				break
+			}
+			doc = append([]string{strings.TrimSpace(strings.TrimPrefix(l, "///"))}, doc...)
+		}
+		return strings.Join(doc, "\n")
+	}
 }
 
 // camelHit は q が name の語の頭（大文字の所）から当たるか（`enter` は pickEnterOf に当たり、center には当たらない）。
@@ -221,7 +262,7 @@ func listRun(out, errOut *strings.Builder, b Builder, s Stage, a args) int {
 	all := ds.currentDecls(src)
 	var found []Found
 	if a.op == "search" {
-		found = Search(all, a.target, a.kind)
+		found = Search(all, a.target, a.kind, docOf(src))
 	} else {
 		for _, f := range strings.Split(a.target, ",") {
 			if filepath.IsAbs(f) {
@@ -287,6 +328,9 @@ func foundMarks(f Found) string {
 	}
 	if f.Text {
 		m += "  字"
+	}
+	if f.Doc {
+		m += "  doc"
 	}
 	return m
 }

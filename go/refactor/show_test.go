@@ -41,3 +41,16 @@ func TestBodyEndSkipsStringsAndTakesDoc(t *testing.T) {
 		t.Errorf("%d-%d（1-6 のはず）", s, e)
 	}
 }
+
+func TestClipShownKeepsTheDocAndSignature(t *testing.T) {
+	text := "    /// 傷を数える。\n    /// 二行目。\n    pub def damage(a: Int32,\n                   b: Int32): Int32 =\n        let c = a + b;\n        c * 2"
+	if got := clipShown(text, true, 0); got != "    /// 傷を数える。\n    /// 二行目。\n    pub def damage(a: Int32,\n                   b: Int32): Int32 =\n    …（あと 2 行。全部は --head・--lines を外す）" {
+		t.Errorf("--head:\n%s", got)
+	}
+	if got := clipShown(text, false, 3); !strings.HasSuffix(got, "pub def damage(a: Int32,\n    …（あと 3 行。全部は --head・--lines を外す）") {
+		t.Errorf("--lines 3:\n%s", got)
+	}
+	if got := clipShown(text, false, 0); got != text {
+		t.Errorf("旗なしは全部:\n%s", got)
+	}
+}

@@ -22,14 +22,18 @@ const Usage = `使い方: flix-refactor <操作> [引数] [--json] [-v|--verbose
                                                        --depth N で呼び手の呼び手まで（Call Hierarchy）
   usages <Alias>#<欄> | --label x [--receiver T]       record の欄の読み・書き・組み立て（typed の段）。同じ名前の欄が
                                                        別の型にもあれば候補を並べて止まる
+  usages … --write | --read | --what <種類>[,…]          使い方の種類で絞る: --write は書き（{ x = v | e }）と組み立て・
+                                                       --read は読み・--what は call・ref・read・write・construct・pattern・type・use
   usages --unused                                      外から使われない pub の def（参照 0・テストからだけ・同じ mod の中だけ）と
                                                        使っていない use（flixlint の unused-use と同じ判定。読むだけ。消すのは
                                                        remove-dead・make-private・remove-use）
   show <Mod.f|Enum|Enum.Case|Alias>[,<名前>…]           宣言の本文だけを読む（/// と注記から本文の終わりまで。頭の行に
-                                                       file:始め-終わり。case はそれを持つ enum。grep → Read の 2 手を 1 手に）
+                                                       file:始め-終わり。case はそれを持つ enum。grep → Read の 2 手を 1 手に）。
+                                                       --head は doc コメントと頭の行（シグネチャ）だけ・--lines N は N 行まで
   search <名前の一部> [--kind def|enum|case|alias] [--all]
                                                        宣言の名前で引く（使っている所は拾わない）。1 行ずつ file:line・種類・名前・pub。
-                                                       並びは名前がそのまま → 頭が同じ → 語の頭から → 途中に含む。30 件まで（--all で全部）
+                                                       並びは名前がそのまま → 頭が同じ → 語の頭から → 途中に含む → 宣言の /// コメントに
+                                                       含む（「反撃」のような日本語でも引ける。行の末尾に「doc」）。30 件まで（--all で全部）
   outline <file>[,<file>…]                             ファイルの宣言を行の順に、頭の行（シグネチャ）つきで。case は enum の下に
                                                        （直したファイルは作り直さず今の字から拾い、行の末尾に「字」）
   trace <Mod.f> [--depth N]                            この def が呼ぶ def を下へ（既定 2 段）。プロジェクトの def は場所つき・
@@ -224,9 +228,12 @@ type args struct {
 	op, target, label, receiver, outside, flixlint, stage string
 	labelsFile                                            string // field-to-accessor の --labels-file
 	callers, catchAll, rebuild, asJSON                    bool
-	kind                                                  string // search --kind def|enum|case|alias
-	decls                                                 bool   // index --decls: show の宣言の索引まで作る（.flix を直した後にフックが裏で流す）
-	all                                                   bool   // --all（場所を全部画面に。remove-use ではファイルか全体の全部を消す）
+	kind                                                  string             // search --kind def|enum|case|alias
+	what                                                  map[UsageWhat]bool // usages --write・--read・--what: 見せる使い方の種類（nil は全部）
+	head                                                  bool               // show --head: 頭の行（doc コメントとシグネチャ）だけ
+	lines                                                 int                // show --lines N: 本文を N 行まで（0 は全部）
+	decls                                                 bool               // index --decls: show の宣言の索引まで作る（.flix を直した後にフックが裏で流す）
+	all                                                   bool               // --all（場所を全部画面に。remove-use ではファイルか全体の全部を消す）
 	apply, withTests, unused, verbose                     bool
 	requireClean                                          bool // --require-clean: 書き換えるファイルが git で clean な時だけ --apply
 	depth                                                 int  // usages --depth（0 は指定なし）
@@ -317,6 +324,37 @@ func parseArgs(rest []string) (args, error) {
 			a.decls = true
 		case "--kind":
 			a.kind, err = value(&i, x)
+		case "--write", "--read", "--what":
+			names := map[string][]UsageWhat{"--write": {WhatWrite, WhatConstruct}, "--read": {WhatRead}}[x]
+			if x == "--what" {
+				var v string
+				if v, err = value(&i, x); err != nil {
+					break
+				}
+				for _, w := range strings.Split(v, ",") {
+					if _, ok := whatLabel[UsageWhat(w)]; !ok {
+						return a, fmt.Errorf("--what は %s のどれか（, で複数）: %s", whatNames(), w)
+					}
+					names = append(names, UsageWhat(w))
+				}
+			}
+			if a.what == nil {
+				a.what = map[UsageWhat]bool{}
+			}
+			for _, w := range names {
+				a.what[w] = true
+			}
+		case "--head":
+			a.head = true
+		case "--lines":
+			var v string
+			if v, err = value(&i, x); err == nil {
+				n, convErr := strconv.Atoi(v)
+				if convErr != nil || n < 1 {
+					return a, fmt.Errorf("--lines には 1 以上の数を渡してください: %s", v)
+				}
+				a.lines = n
+			}
 		case "--label":
 			a.label, err = value(&i, x)
 		case "--labels-file":
@@ -528,6 +566,12 @@ func runOp(out, errOut *strings.Builder, root string, rest []string, o Options) 
 			return 2
 		}
 		return 0
+	}
+	for _, x := range rest[1:] {
+		if x == "--help" || x == "-h" {
+			fmt.Fprintln(out, opUsage(rest[0]))
+			return 0
+		}
 	}
 	a, err := parseArgs(rest)
 	if err != nil {
@@ -1295,4 +1339,27 @@ func indexReport(idx *Index) report {
 	r.gotText = fmt.Sprintf("%d 行（%s）", len(idx.Rows), countKinds(idx.Rows))
 	r.lines = append(r.lines, idx.Path)
 	return r
+}
+
+// opUsage は Usage のうち op の段（「  op 」で始まる行と、その続きの深く下げた行）。無ければ Usage の全部。
+func opUsage(op string) string {
+	lines := strings.Split(Usage, "\n")
+	var out []string
+	in := false
+	for _, l := range lines {
+		switch {
+		case strings.HasPrefix(l, "  "+op+" ") || l == "  "+op:
+			in = true
+		case in && strings.HasPrefix(l, "      "):
+		default:
+			in = false
+		}
+		if in {
+			out = append(out, l)
+		}
+	}
+	if len(out) == 0 {
+		return Usage
+	}
+	return strings.Join(append([]string{strings.SplitN(Usage, "\n", 2)[0], ""}, out...), "\n")
 }
