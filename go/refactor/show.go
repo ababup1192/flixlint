@@ -225,9 +225,36 @@ func showRun(out, errOut *strings.Builder, b Builder, s Stage, a args) int {
 		if sh.Note != "" {
 			kind += "・" + sh.Note
 		}
-		fmt.Fprintf(out, "── %s:%d-%d  %s（%s）\n%s\n", sh.File, sh.Start, sh.End, sh.Sym, kind, sh.Text)
+		fmt.Fprintf(out, "── %s:%d-%d  %s（%s）\n%s\n", sh.File, sh.Start, sh.End, sh.Sym, kind, clipShown(sh.Text, a.head, a.lines))
 	}
 	return code
+}
+
+// clipShown は宣言の字を短くする: head なら doc コメントと頭の行（シグネチャが ` =`・`{` で終わる所）まで、lines > 0 なら
+// 頭から lines 行まで。削った行の数を末尾に言う。
+func clipShown(text string, head bool, lines int) string {
+	ls := strings.Split(text, "\n")
+	keep := len(ls)
+	if head {
+		keep = 0
+		for keep < len(ls) && strings.HasPrefix(strings.TrimSpace(ls[keep]), "///") {
+			keep++
+		}
+		for start := keep; keep < len(ls) && keep-start < 8; {
+			l := strings.TrimSpace(ls[keep])
+			keep++
+			if strings.HasSuffix(l, "=") || strings.HasSuffix(l, "{") || strings.Contains(l, " = ") {
+				break
+			}
+		}
+	}
+	if lines > 0 && lines < keep {
+		keep = lines
+	}
+	if keep >= len(ls) {
+		return text
+	}
+	return strings.Join(ls[:keep], "\n") + fmt.Sprintf("\n    …（あと %d 行。全部は --head・--lines を外す）", len(ls)-keep)
 }
 
 // declSet は show が引く宣言の行（spans-<段>.decl.tsv）。索引を作った後に .flix を直していれば stale で、

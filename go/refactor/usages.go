@@ -49,6 +49,28 @@ var whatLabel = map[UsageWhat]string{
 
 var whatOrder = []UsageWhat{WhatCall, WhatRef, WhatRead, WhatWrite, WhatConstruct, WhatPattern, WhatType, WhatUse}
 
+func whatNames() string {
+	names := make([]string, len(whatOrder))
+	for i, w := range whatOrder {
+		names[i] = string(w)
+	}
+	return strings.Join(names, "・")
+}
+
+// keepWhat は what の種類の使われ所だけを残す（what が nil なら全部）。
+func keepWhat(us []UsageSite, what map[UsageWhat]bool) []UsageSite {
+	if what == nil {
+		return us
+	}
+	var out []UsageSite
+	for _, u := range us {
+		if what[u.What] {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
 // UsageSite は使われ所 1 つ。
 type UsageSite struct {
 	File   string    `json:"file"`
@@ -445,6 +467,17 @@ func usagesReport(root string, idx *Index, a args, cfg Config, b Builder) (repor
 	}
 	sortUsages(us)
 	sortUsages(unsure)
+	if a.what != nil {
+		all := len(us)
+		us, unsure = keepWhat(us, a.what), keepWhat(unsure, a.what)
+		var kinds []string
+		for _, w := range whatOrder {
+			if a.what[w] {
+				kinds = append(kinds, whatLabel[w])
+			}
+		}
+		r.extra = append(r.extra, fmt.Sprintf("%s だけ（全部で %d か所。絞らずに見るなら --write・--read・--what を外す）", strings.Join(kinds, "・"), all))
+	}
 	r.Sym, r.Usage = t.Sym, &t
 	r.got = len(us)
 	r.Sites = us

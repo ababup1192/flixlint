@@ -80,6 +80,34 @@ func TestUsagesOfFieldCountsReadsWritesAndConstructions(t *testing.T) {
 	}
 }
 
+// --write は書き（{ x = v | e }）と組み立てだけ・--read は読みだけを残し、受け手の決まらない物も同じ種類で絞る。
+func TestUsagesOfFieldFiltersByWhat(t *testing.T) {
+	sites := func(args ...string) (map[UsageWhat]int, int, string) {
+		t.Helper()
+		_, text := run(t, project(t), append([]string{"usages", "World#count", "--json"}, args...)...)
+		var rep struct {
+			Sites []UsageSite `json:"sites"`
+			Maybe []UsageSite `json:"maybe"`
+		}
+		if err := json.Unmarshal([]byte(text), &rep); err != nil {
+			t.Fatalf("%v\n%s", err, text)
+		}
+		return whats(rep.Sites), len(rep.Maybe), text
+	}
+	if n, _, text := sites("--write"); n[WhatRead] != 0 || n[WhatWrite] != 1 || n[WhatConstruct] != 1 {
+		t.Errorf("--write: %v\n%s", n, text)
+	}
+	if n, _, text := sites("--read"); n[WhatRead] != 3 || n[WhatWrite]+n[WhatConstruct] != 0 {
+		t.Errorf("--read: %v\n%s", n, text)
+	}
+	if n, _, text := sites("--what", "construct"); n[WhatConstruct] != 1 || len(n) != 1 {
+		t.Errorf("--what construct: %v\n%s", n, text)
+	}
+	if code, text := run(t, project(t), "usages", "World#count", "--what", "nope"); code != 2 || !strings.Contains(text, "--what は call・") {
+		t.Errorf("知らない種類は呼び方の誤り: %d\n%s", code, text)
+	}
+}
+
 // x は Point と Size の 2 つの型にある（欄の組も同じ）。受け手を決めずに数えれば grep と同じなので、候補を並べて止まる。
 func TestUsagesOfFieldStopsOnAnAmbiguousLabel(t *testing.T) {
 	code, text := run(t, project(t), "usages", "--label", "x")
