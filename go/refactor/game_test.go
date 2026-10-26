@@ -9,7 +9,7 @@ package refactor
 //   - その def への参照は「テストから・同じ mod から・ほかの src から・自分の中」の組ごとに 1 行（--unused の分け方は
 //     組の有る無しだけで決まる。数は残らない）
 // 作り直すには、ゲームの写しで flix-refactor index を流してから
-//   go test ./internal/refactor -run TestGameIndex -game-index <写し>/build/refactor/spans-resolved.tsv
+//   go test ./refactor -run TestGameIndex -game-index <写し>/build/refactor/spans-resolved.tsv
 // 使っていない use（8.0 の 35）はソースの字が要るので、ここでは数えない（写しで確かめる）。
 
 import (

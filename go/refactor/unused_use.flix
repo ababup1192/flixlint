@@ -1,6 +1,6 @@
 /// flix-refactor が使っていない use・import を探すのに流す flixlint の規則（Go に埋め込み、build/refactor/ に書いて
 /// 流す。ゲームの lint/rules.flix の unused-use と同じ判定: flixlint の Flixlint.Flix.uses・namesUsed・isUnused）。
-/// 手で直さない（go/internal/refactor/unused_use.flix が元）。
+/// 手で直さない（flixlint の go/refactor/unused_use.flix が元）。
 mod RefactorUnusedUse {
     use Flixlint.{RuleSet, customRule}
     use Flixlint.Facts.Facts

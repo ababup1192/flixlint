@@ -2,9 +2,9 @@ package refactor
 
 // testdata の索引（*-spans-*.tsv）を、一覧 testdata/regen.json のとおり flixlint で作り直す口。
 //
-//	go test ./internal/refactor -run TestRegenIndex -regen-index <bin/flixlint> [-regen-check] [-regen-resident]
+//	go test ./refactor -run TestRegenIndex -regen-index <bin/flixlint> [-regen-check] [-regen-resident]
 //
-// （make refactor-testdata FLIXLINT=<bin/flixlint> が同じ物）。-regen-check は書かずに今のファイルと比べ、違えば落ちる
+// （flixlint の make regen-testdata が同じ物）。-regen-check は書かずに今のファイルと比べ、違えば落ちる
 // （2 回作って同じバイトか・常駐と 1 回きりの JVM で同じバイトかの確かめ）。-regen-resident は flixlint に --resident を付ける。
 // 旗が無い時は、testdata の索引のファイルが全部一覧に載っているかだけを見る（一覧に無い索引は作り直せない）。
 //

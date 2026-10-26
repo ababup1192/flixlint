@@ -1,4 +1,4 @@
-.PHONY: test test-go test-resolved test-resident shim clean release ast-kinds
+.PHONY: test test-go regen-testdata test-resolved test-resident shim clean release ast-kinds
 
 # test/fixture と examples に flixlint を掛けて、報告を test/expected*.txt と突き合わせる。
 # 型検査もここで一緒に済む: 規則のエンジン（src/Flixlint*.flix）は生成物の Names.flix が揃って初めて
@@ -31,6 +31,10 @@ ast-kinds: shim
 # go/ の flix-search・flix-refactor と、その下の refactor・checkres のテスト。
 test-go:
 	cd go && go vet ./... && go test ./...
+
+# go/refactor の testdata の索引（go/refactor/testdata/regen.json の一覧）を bin/flixlint で作り直す（typed を含み重い）。
+regen-testdata:
+	cd go && go test ./refactor -count=1 -run TestRegenIndex -regen-index "$(abspath bin/flixlint)"
 
 clean:
 	rm -rf build shim/.scala-build

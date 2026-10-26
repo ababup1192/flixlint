@@ -200,8 +200,8 @@ const Usage = `使い方: flix-refactor <操作> [引数] [--json] [-v|--verbose
   確かめは sh -c で流す（Windows は make と同じく Git Bash か MSYS の sh が要る）。
   終了コード: 0 問題なし・1 --max を超えた／確かめが落ちて戻した（reverted）・2 呼び方か索引の誤り／断った（refused）・
   3 戻せないファイルが残った（revert-failed）。
-  道具のテスト: cd go && go test ./internal/refactor。本物の flixlint と flix で書き換えて確かめる e2e は
-  FGE_REFACTOR_E2E=1 FGE_FLIXLINT=<bin/flixlint> FLIX_JAR=<flix.jar> go test ./internal/refactor -run EndToEnd`
+  道具のテスト: flixlint の make test-go。本物の flixlint と flix で書き換えて確かめる e2e は
+  FGE_REFACTOR_E2E=1 FGE_FLIXLINT=<bin/flixlint> FLIX_JAR=<flix.jar> go test ./refactor -run EndToEnd`
 
 // Options は差し替えられる所（テストが索引の作り方と出力先を替える）。
 type Options struct {
