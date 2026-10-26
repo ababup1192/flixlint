@@ -224,6 +224,11 @@ func listRun(out, errOut *strings.Builder, b Builder, s Stage, a args) int {
 		found = Search(all, a.target, a.kind)
 	} else {
 		for _, f := range strings.Split(a.target, ",") {
+			if filepath.IsAbs(f) {
+				if rel, err := filepath.Rel(b.Root, f); err == nil {
+					f = rel // フックの案内（Read の file_path）は絶対パスで来る
+				}
+			}
 			f = filepath.ToSlash(filepath.Clean(f))
 			if src.get(f) == "" {
 				fmt.Fprintf(errOut, "refactor outline: %s が読めません（根からの相対パスで。例 src/World.flix）\n", f)
