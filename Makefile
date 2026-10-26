@@ -1,4 +1,4 @@
-.PHONY: test test-resolved test-resident shim clean release ast-kinds
+.PHONY: test test-go test-resolved test-resident shim clean release ast-kinds
 
 # test/fixture と examples に flixlint を掛けて、報告を test/expected*.txt と突き合わせる。
 # 型検査もここで一緒に済む: 規則のエンジン（src/Flixlint*.flix）は生成物の Names.flix が揃って初めて
@@ -27,6 +27,10 @@ shim:
 ast-kinds: shim
 	java -cp "$$(bin/flix-jar):build/flixlint-shim.jar" flixlint.AstSchema --schema schema/ast_schema.tsv --kinds src/Flixlint/AstKinds.flix --names shim/AstNames.scala
 	$(MAKE) --no-print-directory shim
+
+# go/ の flix-search・flix-refactor と、その下の refactor・checkres のテスト。
+test-go:
+	cd go && go vet ./... && go test ./...
 
 clean:
 	rm -rf build shim/.scala-build
