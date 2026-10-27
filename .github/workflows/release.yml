@@ -1,10 +1,13 @@
 name: release
 
-# v* のタグを push すると、shim の jar を組んで GitHub の release に付ける（make release と同じ物）。
-# WhyNot: テストは流し直さない。タグを打つのは CI が緑の main の commit で、ここで 15 分待っても同じ答え。
+# v* のタグを push するか、main で手で起動すると、shim の jar を組んで GitHub の release に付ける
+# （make release と同じ物）。手で起動した時はタグ v<flix.toml の版> もその commit に作る。
+# WhyNot: テストは流し直さない。出すのは CI が緑の main の commit で、ここで 15 分待っても同じ答え。
+# WhyNot: 手で起動する口も持つ。タグを push できない所（クラウドのセッションの git の proxy）からも出せる。
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -32,9 +35,16 @@ jobs:
       # WhyNot: タグと flix.toml の版が違えば止める。bin/flixlint --version は flix.toml を読むので、
       # 食い違ったまま出すと、利用側の hooks.json の版と jar の中身がずれる。
       - name: Check the tag against flix.toml
+        id: tag
         run: |
-          test "${GITHUB_REF_NAME}" = "v${{ steps.ver.outputs.flixlint }}" || {
-            echo "tag ${GITHUB_REF_NAME} but flix.toml says ${{ steps.ver.outputs.flixlint }}" >&2; exit 1; }
+          want="v${{ steps.ver.outputs.flixlint }}"
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            test "${GITHUB_REF_NAME}" = "$want" || {
+              echo "tag ${GITHUB_REF_NAME} but flix.toml says ${{ steps.ver.outputs.flixlint }}" >&2; exit 1; }
+          else
+            test "${GITHUB_REF_NAME}" = main || { echo "run it on main, not ${GITHUB_REF_NAME}" >&2; exit 1; }
+          fi
+          echo "name=$want" >> "$GITHUB_OUTPUT"
 
       - name: Download flix.jar
         run: |
@@ -50,7 +60,7 @@ jobs:
 
       - name: Create the release
         run: |
-          gh release create "${GITHUB_REF_NAME}" "build/flixlint-shim-${{ steps.ver.outputs.flix }}.jar" \
-            --title "${GITHUB_REF_NAME}" --notes "flixlint ${{ steps.ver.outputs.flixlint }} (Flix ${{ steps.ver.outputs.flix }})"
+          gh release create "${{ steps.tag.outputs.name }}" "build/flixlint-shim-${{ steps.ver.outputs.flix }}.jar" \
+            --target "${GITHUB_SHA}" --title "${{ steps.tag.outputs.name }}" --notes "flixlint ${{ steps.ver.outputs.flixlint }} (Flix ${{ steps.ver.outputs.flix }})"
         env:
           GH_TOKEN: ${{ github.token }}
