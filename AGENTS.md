@@ -67,5 +67,5 @@ make test-resolved   # 名前解決の直後の AST でも同じ報告になる�
 make shim            # build/flixlint-shim.jar を組み直す
 make clean           # build/ と .scala-build/ を消す
 make release         # shim の jar を GitHub の release に付ける（version は flix.toml。`bin/flixlint --version` も同じ所を読む）
-                     # v<version> のタグを push しても .github/workflows/release.yml が同じ jar を付ける
+                     # v<version> のタグを push するか main で release の workflow を手で起動しても同じ jar を付ける
 ```
