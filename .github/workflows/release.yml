@@ -1,0 +1,56 @@
+name: release
+
+# v* のタグを push すると、shim の jar を組んで GitHub の release に付ける（make release と同じ物）。
+# WhyNot: テストは流し直さない。タグを打つのは CI が緑の main の commit で、ここで 15 分待っても同じ答え。
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # WhyNot: setup-java を scala-cli-setup より後に置く（ci.yml と同じ。JAVA_HOME を 21 にする）。
+      - uses: VirtusLab/scala-cli-setup@v1.17.1
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Read the versions from flix.toml
+        id: ver
+        run: |
+          echo "flixlint=$(sed -n 's/^version *= *"\(.*\)"/\1/p' flix.toml)" >> "$GITHUB_OUTPUT"
+          echo "flix=$(sed -n 's/^flix *= *"\(.*\)"/\1/p' flix.toml)" >> "$GITHUB_OUTPUT"
+
+      # WhyNot: タグと flix.toml の版が違えば止める。bin/flixlint --version は flix.toml を読むので、
+      # 食い違ったまま出すと、利用側の hooks.json の版と jar の中身がずれる。
+      - name: Check the tag against flix.toml
+        run: |
+          test "${GITHUB_REF_NAME}" = "v${{ steps.ver.outputs.flixlint }}" || {
+            echo "tag ${GITHUB_REF_NAME} but flix.toml says ${{ steps.ver.outputs.flixlint }}" >&2; exit 1; }
+
+      - name: Download flix.jar
+        run: |
+          curl -fsSL -o flix.jar \
+            "https://github.com/flix/flix/releases/download/v${{ steps.ver.outputs.flix }}/flix.jar"
+
+      # WhyNot: --server=false（ci.yml と同じ。bloop のサーバの起動が CI で timeout する）。
+      - name: Build the shim
+        run: |
+          mkdir -p build
+          scala-cli --power package shim --jar "$PWD/flix.jar" --library -f --server=false \
+            -o "build/flixlint-shim-${{ steps.ver.outputs.flix }}.jar"
+
+      - name: Create the release
+        run: |
+          gh release create "${GITHUB_REF_NAME}" "build/flixlint-shim-${{ steps.ver.outputs.flix }}.jar" \
+            --title "${GITHUB_REF_NAME}" --notes "flixlint ${{ steps.ver.outputs.flixlint }} (Flix ${{ steps.ver.outputs.flix }})"
+        env:
+          GH_TOKEN: ${{ github.token }}
