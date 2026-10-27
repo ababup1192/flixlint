@@ -1,4 +1,4 @@
-# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields,inst
 alias-decl	src/Shape.flix	5	20	5	25	Shape.World	Shape.World	fields=clock:Float64;old:Bool;pointer:{x=Float64,y=Float64};speed:Int32
 alias-decl	src/Shape.flix	14	20	14	25	Shape.Model	Shape.Model	syn=Shape.World fields=clock:Float64;old:Bool;pointer:{x=Float64,y=Float64};speed:Int32
 alias-decl	src/Shape.flix	16	20	16	24	Shape.Pair	Shape.Pair	fields=clock:Float64;speed:Int32

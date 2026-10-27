@@ -1,4 +1,4 @@
-# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields,inst
 def-decl	src/Menu.flix	2	13	2	22	Menu.deckScene	Menu.deckScene	pub ext=2:5:2:72
 case-construct	src/Menu.flix	2	40	2	56	World.Scene.Deck	Menu.deckScene	
 arg	src/Menu.flix	2	59	2	71	World.Scene.Deck	Menu.deckScene	of=case-construct at=2:40 i=0 n=1

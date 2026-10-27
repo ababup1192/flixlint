@@ -71,6 +71,26 @@ func (r Row) Attr(key string) string {
 	return ""
 }
 
+// HasFlag は extra に `=` の無い語 w（def-decl の `pub`・`inst`）があるか。
+func (r Row) HasFlag(w string) bool {
+	for _, f := range strings.Fields(r.Extra) {
+		if f == w {
+			return true
+		}
+	}
+	return false
+}
+
+// isInstDef は sym が instance の def か（宣言が索引に無ければ false）。
+func isInstDef(rows []Row, sym string) bool {
+	for _, r := range rows {
+		if r.Kind == KindDefDecl && r.Sym == sym {
+			return r.HasFlag("inst")
+		}
+	}
+	return false
+}
+
 // AttrInt は Attr を数で読む（読めなければ 0）。
 func (r Row) AttrInt(key string) int {
 	n, _ := strconv.Atoi(r.Attr(key))

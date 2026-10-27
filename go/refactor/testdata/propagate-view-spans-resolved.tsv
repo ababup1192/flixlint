@@ -1,4 +1,4 @@
-# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields,inst
 use	src/Clash.flix	2	9	2	16	Res.Res	Clash	alias=Res what=alias
 def-decl	src/Clash.flix	4	13	4	17	Clash.leaf	Clash.leaf	pub ext=4:5:4:61
 param	src/Clash.flix	4	18	4	19	Clash.leaf	Clash.leaf	i=0 n=1 name=w type=Int32 tspan=4:21:4:26 reads=1 hidden=0 poly=0

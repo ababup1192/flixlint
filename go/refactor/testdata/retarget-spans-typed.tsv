@@ -1,4 +1,4 @@
-# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields,inst
 alias-decl	src/Doc.flix	2	20	2	31	Doc.TutorialDoc	Doc.TutorialDoc	fields=label:String;pen:Int32
 alias-decl	src/Res.flix	2	20	2	23	Res.Res	Res.Res	fields=theme:Int32;tutorialDoc:Doc.TutorialDoc
 def-decl	src/Res.flix	4	13	4	21	Res.defaults	Res.defaults	pub ext=4:5:4:84

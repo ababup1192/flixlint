@@ -13,8 +13,10 @@ import java.nio.file.{Files, Path}
   * `ec` one past the last character, counted in UTF-16 code units. The first line is a `#` header with the format
   * version and the stage. Kinds:
   *
-  *  - `def-decl` the name of a `def`; extra `pub` when public, `inst` for a def of an instance, `ann=a,b` its annotations
-  *    (lower case: `test`, `skip`, ...), `ext=sl:sc:el:ec` the whole definition as the compiler places it;
+  *  - `def-decl` the name of a `def`; extra `pub` when public, `inst` for a def of an instance written in the sources
+  *    (`adds=inst`: such a def and the names in its body are in the index, the def named `<module>.<name>`, `defNames`),
+  *    `ann=a,b` its annotations (lower case: `test`, `skip`, ...), `ext=sl:sc:el:ec` the whole definition as the compiler
+  *    places it;
   *    `def-use` a call or a reference to a def
   *  - `def-use`, `case-construct`, `case-pattern` have extra `sugar` when the span is not the written name but syntax that
   *    stands for it (`a :: b` is `List.Cons` over the whole expression, `a % b` is `Int32.remainder`)
@@ -111,7 +113,7 @@ object Spans {
     private def clean(s: String): String = s.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')
   }
 
-  import Facts.{field, hasField, symName, synthetic}
+  import Facts.{field, hasField, symName}
 
   private def isExpr(cls: String): Boolean = cls.contains("$Expr$")
 
@@ -403,13 +405,37 @@ object Spans {
     out.add("match-arm", sym, field[SourceLocation](rule, "loc"), owner, s"match=$matchAt pat=$kind at=${span(patLoc)} guard=$g$more")
   }
 
+  /** A def written in the sources: neither one the compiler made up (`Facts.synthetic`) nor a def of a derived instance
+    * (`with Eq`, typed stage only), which has no place in them.
+    * WhyNot: not `Facts.synthetic` itself. The compiler numbers every def of an instance (`fromJson$4521`), so that would
+    * leave out the bodies of the instances written in the sources, and a def called only from one would look unused.
+    */
+  private def written(sym: Symbol.DefnSym, loc: SourceLocation): Boolean = !sym.text.contains("$") && loc.isReal
+
+  /** The name of each def in the index: `Mod.f`; a def of an instance is `<the module the instance is in>.<its name>`.
+    * WhyNot: not the compiler's `Mod.f$4521`. The number changes from compile to compile, and no one can type it.
+    * WhyNot: when another def of the module has the same name (a def of the module, or the def of a second instance of
+    * the same trait), the def of the instance keeps the numbered name: a tool that renames or removes `Mod.f` looks
+    * the def up by its name, and would touch the instance's def too.
+    */
+  private def defNames(syms: Iterable[Symbol.DefnSym]): Map[Symbol.DefnSym, String] = {
+    val plain = syms.toList.distinct.map(s => s -> Facts.qname(s.namespace, s.text))
+    val count = plain.groupBy(_._2).map { case (n, xs) => n -> xs.length }
+    plain.map { case (s, n) => s -> (if (s.id.isEmpty || count(n) == 1) n else symName(s)) }.toMap
+  }
+
   def resolved(root: ResolvedAst.Root, path: Path): Int = {
-    val out = new Out("resolved", " adds=use,type-use,alias-decl,arg,param,aparam,alias-fields")
-    val allDefs: Iterable[ResolvedAst.Declaration.Def] = root.defs.values ++ root.instances.values.flatMap(_.defs)
+    val out = new Out("resolved", " adds=use,type-use,alias-decl,arg,param,aparam,alias-fields,inst")
+    val allDefs: Iterable[ResolvedAst.Declaration.Def] = (root.defs.values ++ root.instances.values.flatMap(_.defs)).filter(d => written(d.sym, d.loc))
     val instDefs: Set[Any] = root.instances.values.flatMap(_.defs).toSet
     def insts(d: Any): Boolean = instDefs.contains(d)
-    for (d <- allDefs if !synthetic(d)) {
-      val fn = symName(d.sym)
+    // An instance has no name of its own: its type is owned by `<the module it is in>.<the trait>`.
+    // WhyNot: added before the defs. The spec of each def of the instance carries the instance's type at the same place,
+    // and the first row at a place is the one kept.
+    for (i <- root.instances.values) typesIn(out, i.tpe, Facts.qname(i.ns.parts, i.symUse.sym.name))
+    val names = defNames(allDefs.map(_.sym))
+    for (d <- allDefs) {
+      val fn = names(d.sym)
       out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, insts(d), d.spec.ann, d.loc))
       typesIn(out, d.spec, fn)
       val fps = d.spec.fparams.toList
@@ -435,8 +461,6 @@ object Spans {
       out.add("alias-decl", symName(sym), sym.loc, symName(sym), ((if (end == sym) "" else s"syn=${symName(end)}") + Canon.fieldsOf(a.tpe)).trim)
       typesIn(out, a.tpe, symName(sym))
     }
-    // An instance has no name of its own: its type is owned by `<the module it is in>.<the trait>`.
-    for (i <- root.instances.values) typesIn(out, i.tpe, Facts.qname(i.ns.parts, i.symUse.sym.name))
     for ((sym, e) <- root.effects) typesIn(out, e.ops, symName(sym))
     for ((sym, t) <- root.traits) typesIn(out, t.sigs.values, symName(sym))
     for ((mod, u) <- root.uses.m.toList.flatMap { case (k, vs) => vs.map(k -> _) }) u match {
@@ -448,14 +472,15 @@ object Spans {
   }
 
   def typed(root: TypedAst.Root, path: Path): Int = {
-    val out = new Out("typed", " adds=arg,alias-decl,param,aparam,alias-fields")
+    val out = new Out("typed", " adds=arg,alias-decl,param,aparam,alias-fields,inst")
     val receivers = new Receivers(root)
-    val allDefs: Iterable[TypedAst.Def] = root.defs.values ++ root.instances.values.flatMap(_.defs)
+    val allDefs: Iterable[TypedAst.Def] = (root.defs.values ++ root.instances.values.flatMap(_.defs)).filter(d => written(d.sym, d.loc))
     val instDefs: Set[Any] = root.instances.values.flatMap(_.defs).toSet
+    val names = defNames(allDefs.map(_.sym))
     // the extensions inside a record literal already written as part of the literal around them
     val inner = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap[Any, java.lang.Boolean]())
-    for (d <- allDefs if !synthetic(d)) {
-      val fn = symName(d.sym)
+    for (d <- allDefs) {
+      val fn = names(d.sym)
       out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, instDefs.contains(d), d.spec.ann, d.loc))
       d.spec.fparams.toList.foreach(receivers.declare)
       receivers.params(d.spec.fparams.toList)

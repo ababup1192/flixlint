@@ -1,9 +1,10 @@
 {
   "note": "testdata の索引（*-spans-*.tsv）の一覧。各行は dir（testdata の下の fixture の根）に flixlint --spans --stage <stage> <sources> を掛けた物。作り直しは make refactor-testdata FLIXLINT=<bin/flixlint>（regen_test.go）。flixlint は版を記録する（作り直すたびに書き替わる）。steps は TestRegenIndex では作らない索引と、その作り方。",
-  "flixlint": "0.8.7",
+  "flixlint": "0.8.8",
   "indexes": [
     {"index": "acc-spans-typed.tsv", "dir": "acc", "stage": "typed", "sources": ["src"]},
     {"index": "accmod-spans-typed.tsv", "dir": "accmod", "stage": "typed", "sources": ["src"]},
+    {"index": "inst-spans-resolved.tsv", "dir": "inst", "stage": "resolved", "sources": ["src", "test"]},
     {"index": "move-spans-resolved.tsv", "dir": "move", "stage": "resolved", "sources": ["src", "test"]},
     {"index": "movefields-spans-resolved.tsv", "dir": "movefields", "stage": "resolved", "sources": ["src"]},
     {"index": "movefields-spans-typed.tsv", "dir": "movefields", "stage": "typed", "sources": ["src"]},

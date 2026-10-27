@@ -1,4 +1,4 @@
-# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields,inst
 enum-decl	src/Args.flix	3	14	3	19	Args.Scene	Args.Scene	
 case-decl	src/Args.flix	4	14	4	18	Args.Scene.Deck	Args.Scene	arity=2
 case-decl	src/Args.flix	5	14	5	19	Args.Scene.Empty	Args.Scene	arity=0
@@ -24,6 +24,19 @@ case-pattern	src/Args.flix	15	14	15	25	Args.Scene.Empty	Args.show
 def-use	src/Args.flix	15	29	15	34	Args.label	Args.show	
 arg	src/Args.flix	15	35	15	36	Args.label	Args.show	of=def-use at=15:29 i=0 n=2
 arg	src/Args.flix	15	38	15	40	Args.label	Args.show	of=def-use at=15:29 i=1 n=2
+enum-decl	src/Insts.flix	8	14	8	18	Insts.Coin	Insts.Coin	
+case-decl	src/Insts.flix	9	14	9	19	Insts.Coin.Heads	Insts.Coin	arity=0
+case-decl	src/Insts.flix	10	14	10	19	Insts.Coin.Tails	Insts.Coin	arity=0
+def-decl	src/Insts.flix	13	13	13	18	Insts.parse	Insts.parse	pub ext=13:5:13:55
+param	src/Insts.flix	13	19	13	20	Insts.parse	Insts.parse	i=0 n=1 name=s type=String tspan=13:22:13:28 reads=1 hidden=0 poly=0
+def-use	src/Insts.flix	13	39	13	52	String.length	Insts.parse	
+arg	src/Insts.flix	13	53	13	54	String.length	Insts.parse	of=def-use at=13:39 i=0 n=1 aparam=0
+def-decl	src/Insts.flix	16	17	16	21	Insts.load	Insts.load	pub inst ext=16:9:16:85
+param	src/Insts.flix	16	22	16	23	Insts.load	Insts.load	i=0 n=1 name=s type=String tspan=16:25:16:31 reads=1 hidden=0 poly=0
+def-use	src/Insts.flix	16	45	16	50	Insts.parse	Insts.load	
+arg	src/Insts.flix	16	51	16	52	Insts.parse	Insts.load	of=def-use at=16:45 i=0 n=1 aparam=0
+case-construct	src/Insts.flix	16	59	16	69	Insts.Coin.Heads	Insts.load	
+case-construct	src/Insts.flix	16	75	16	85	Insts.Coin.Tails	Insts.load	
 alias-decl	src/Owners.flix	3	20	3	24	Owners.Game	Owners.Game	fields=deck:Int32;top:Int32
 alias-decl	src/Owners.flix	5	20	5	25	Owners.Model	Owners.Model	syn=Owners.Game fields=deck:Int32;top:Int32
 alias-decl	src/Owners.flix	7	20	7	26	Owners.HasTop	Owners.HasTop	fields=top:Int32 row=open

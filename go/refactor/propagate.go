@@ -260,6 +260,9 @@ func stopReason(rows []Row, srcs *reshapeSources, o string, missing []string, ty
 	if depth > maxDepth {
 		return fmt.Sprintf("--depth %d を超える段", maxDepth)
 	}
+	if isInstDef(rows, o) {
+		return "instance の def（引数は trait の sig が決める）"
+	}
 	decl, _, _, params, err := readDefParams(rows, srcs, o)
 	if err != nil {
 		return "宣言が読めない（" + err.Error() + "）"

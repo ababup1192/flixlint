@@ -17,11 +17,15 @@ const KindParam = "param"
 // MinFlixlintParam は param・aparam・alias の fields= を書く一番古い flixlint の版。
 const MinFlixlintParam = "0.8.7"
 
+// MinFlixlintInst は instance の def（def-decl の inst）とその本体の中の名前を書く一番古い flixlint の版（adds=inst）。
+const MinFlixlintInst = "0.8.8"
+
 // addsSince は adds= の名前ごとに、それを書く一番古い flixlint の版（設計 M3: 版の定数は adds ごとに 1 つ）。
 var addsSince = map[string]string{
 	"param":        MinFlixlintParam,
 	"aparam":       MinFlixlintParam,
 	"alias-fields": MinFlixlintParam,
+	"inst":         MinFlixlintInst,
 }
 
 // paramInfo は param の行 1 つを読んだ物。
@@ -204,18 +208,31 @@ type paramRef struct {
 // requiredAdds は操作が読む adds= の名前（それを書く flixlint が要る）。
 // WhyNot: 古い索引を読む道は持たない（決め 2）。要る操作だけを止め、ほかの操作は古い flixlint のまま使える（設計 M3）。
 func (a args) requiredAdds() []string {
+	var need []string
 	switch a.op {
 	case "change-signature":
 		if a.retarget != "" {
-			return []string{"param", "aparam", "alias-fields"}
+			need = []string{"param", "aparam", "alias-fields"}
+		} else {
+			need = []string{"param", "aparam"}
 		}
-		return []string{"param", "aparam"}
 	case "remove-param":
-		return []string{"param", "aparam"}
+		need = []string{"param", "aparam"}
 	case "retarget-field":
-		return []string{"param", "aparam", "alias-fields"}
+		need = []string{"param", "aparam", "alias-fields"}
 	}
-	return nil
+	if instCallers[a.op] {
+		need = append(need, "inst")
+	}
+	return need
+}
+
+// instCallers は def の呼び手を数える・書き換える操作。
+// WhyNot: adds=inst の無い索引では instance の本体の中の呼び出しが見えず、remove-dead・safe-delete は同じ mod の instance
+// から呼ばれる def をテストからだけと見て消し、rename・move は呼び出しを書き換え残す。
+var instCallers = map[string]bool{
+	"usages": true, "refs": true, "remove-dead": true, "safe-delete": true, "make-private": true,
+	"rename": true, "move": true, "change-signature": true, "remove-param": true,
 }
 
 // minFlixlintFor は adds の名前の列に要る一番新しい flixlint の版（無ければ MinFlixlint）。
