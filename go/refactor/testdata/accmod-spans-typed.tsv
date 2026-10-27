@@ -1,4 +1,4 @@
-# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields,inst
 alias-decl	src/Box.flix	4	20	4	23	Box.Box	Box.Box	fields=flag:Bool;size:Int32
 def-decl	src/Box.flix	9	13	9	19	Box.flagOf	Box.flagOf	pub ext=9:5:9:42
 param	src/Box.flix	9	20	9	21	Box.flagOf	Box.flagOf	i=0 n=1 name=b type=Box.Box tspan=9:23:9:26 reads=1 hidden=0 poly=0 fields=flag:Bool;size:Int32

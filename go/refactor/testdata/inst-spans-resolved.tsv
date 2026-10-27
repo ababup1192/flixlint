@@ -1,0 +1,21 @@
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields,inst
+def-decl	src/Save.flix	6	13	6	18	Save.parse	Save.parse	pub ext=6:5:6:55
+param	src/Save.flix	6	19	6	20	Save.parse	Save.parse	i=0 n=1 name=s type=String tspan=6:22:6:28 reads=1 hidden=0 poly=0
+def-use	src/Save.flix	6	39	6	52	String.length	Save.parse	
+arg	src/Save.flix	6	53	6	54	String.length	Save.parse	of=def-use at=6:39 i=0 n=1 aparam=0
+def-decl	src/Save.flix	9	17	9	25	Save.fromText	Save.fromText	pub inst ext=9:9:9:54
+param	src/Save.flix	9	26	9	27	Save.fromText	Save.fromText	i=0 n=1 name=s type=String tspan=9:29:9:35 reads=1 hidden=0 poly=0
+def-use	src/Save.flix	9	46	9	51	Save.parse	Save.fromText	
+arg	src/Save.flix	9	52	9	53	Save.parse	Save.fromText	of=def-use at=9:46 i=0 n=1 aparam=0
+def-decl	test/TestSave.flix	4	9	4	18	TestSave.testParse	TestSave.testParse	ann=test ext=3:5:4:86
+def-use	test/TestSave.flix	4	38	4	53	Assert.assertEq	TestSave.testParse	
+arg	test/TestSave.flix	4	54	4	66	Assert.assertEq	TestSave.testParse	of=def-use at=4:38 i=0 n=2
+def-use	test/TestSave.flix	4	68	4	78	Save.parse	TestSave.testParse	
+arg	test/TestSave.flix	4	68	4	85	Assert.assertEq	TestSave.testParse	of=def-use at=4:38 i=1 n=2
+arg	test/TestSave.flix	4	79	4	84	Save.parse	TestSave.testParse	of=def-use at=4:68 i=0 n=1
+def-decl	test/TestSave.flix	7	9	7	23	TestSave.testParseEmpty	TestSave.testParseEmpty	ann=test ext=6:5:7:88
+def-use	test/TestSave.flix	7	43	7	58	Assert.assertEq	TestSave.testParseEmpty	
+arg	test/TestSave.flix	7	59	7	71	Assert.assertEq	TestSave.testParseEmpty	of=def-use at=7:43 i=0 n=2
+def-use	test/TestSave.flix	7	73	7	83	Save.parse	TestSave.testParseEmpty	
+arg	test/TestSave.flix	7	73	7	87	Assert.assertEq	TestSave.testParseEmpty	of=def-use at=7:43 i=1 n=2
+arg	test/TestSave.flix	7	84	7	86	Save.parse	TestSave.testParseEmpty	of=def-use at=7:73 i=0 n=1

@@ -27,6 +27,9 @@ func paramsOf(rows []Row, srcs *reshapeSources, sym string) (names []string, bod
 	if d == nil {
 		return nil, "", Row{}, fmt.Errorf("def %s の宣言が索引に無い（パッケージの def は直せない）", sym)
 	}
+	if d.HasFlag("inst") {
+		return nil, "", Row{}, fmt.Errorf("%s は instance の def（%s）。引数は trait の sig が決める", sym, d.Where())
+	}
 	src, err := srcs.get(d.File)
 	if err != nil {
 		return nil, "", *d, err

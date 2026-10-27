@@ -395,7 +395,7 @@ not pay for them (they are an order of magnitude more rows than all facts togeth
 at the typed stage on a 179-file project).
 
 ```
-# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields,inst
 def-use	src/Shapes.flix	23	23	23	27	Shapes.area	Shapes.isRound
 label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	owner=alias:Shapes.World why=decl rspan=29:42:29:43 rparam=0
 ```
@@ -408,7 +408,7 @@ and an emoji 2); `owner` is the top-level def the occurrence is in (lambdas and 
 
 | Kind | Stage | Span | `sym` | `extra` |
 |---|---|---|---|---|
-| `def-decl` | both | the name of a `def` | the def | `pub` when public, `inst` for a def of an instance, `ann=test,...` its annotations, `ext=sl:sc:el:ec` the whole definition (its `///` doc and annotations included) |
+| `def-decl` | both | the name of a `def` | the def | `pub` when public, `inst` for a def of an instance written in the sources (named `<the module the instance is in>.<its name>`, or the compiler's numbered `Mod.f$N` when another def of the module has that name; a derived instance's are not in the index; `adds=inst` says the shim writes them), `ann=test,...` its annotations, `ext=sl:sc:el:ec` the whole definition (its `///` doc and annotations included) |
 | `def-use` | both | a call or a reference (`World.moveTo`, or `moveTo` brought in by `use`) | the def | `sugar` when syntax stands for it (below) |
 | `enum-decl` | both | the name of an `enum` | the enum | |
 | `case-decl` | both | a case of it (`owner` is the enum) | the case | `arity=N`, the number of its fields |
@@ -1039,7 +1039,7 @@ spans の索引（上）で、`go/` の 2 つの道具が grep の代わりに�
 プロジェクトで resolved の段 6.5 万行・typed の段 8.5 万行）。
 
 ```
-# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields,inst
 def-use	src/Shapes.flix	23	23	23	27	Shapes.area	Shapes.isRound
 label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	owner=alias:Shapes.World why=decl rspan=29:42:29:43 rparam=0
 ```
@@ -1051,7 +1051,7 @@ UTF-16 の単位なので日本語の字は 1、絵文字は 2）。`owner` は�
 
 | kind | 段 | 範囲 | `sym` | `extra` |
 |---|---|---|---|---|
-| `def-decl` | 両方 | `def` の名前 | その def | 公開なら `pub`、instance の def なら `inst`、注記は `ann=test,...`、`ext=sl:sc:el:ec` は定義全体（前の `///` と注記を含む） |
+| `def-decl` | 両方 | `def` の名前 | その def | 公開なら `pub`、ソースに書いた instance の def なら `inst`（名前は `<instance の在る mod>.<def の名前>`。同じ mod に同じ名前の def が在る時だけコンパイラの番号付きの `Mod.f$N`。`with Eq` などで作られる instance の def は索引に入らない。書く shim は頭の行に `adds=inst`）、注記は `ann=test,...`、`ext=sl:sc:el:ec` は定義全体（前の `///` と注記を含む） |
 | `def-use` | 両方 | 呼び出しか参照（`World.moveTo`、`use` で入れた素の `moveTo`） | その def | 構文が指す時は `sugar`（下） |
 | `enum-decl` | 両方 | `enum` の名前 | その enum | |
 | `case-decl` | 両方 | その case（`owner` は enum） | その case | `arity=N`（欄の数） |

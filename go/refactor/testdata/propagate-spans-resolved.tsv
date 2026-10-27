@@ -1,4 +1,4 @@
-# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields,inst
 def-decl	src/Board.flix	2	13	2	17	Board.show	Board.show	pub ext=2:5:2:56
 param	src/Board.flix	2	18	2	19	Board.show	Board.show	i=0 n=1 name=w type=Int32 tspan=2:21:2:26 reads=1 hidden=0 poly=0
 def-use	src/Board.flix	2	41	2	51	Rule.twice	Board.show	

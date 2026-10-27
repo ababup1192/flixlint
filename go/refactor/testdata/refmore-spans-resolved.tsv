@@ -1,4 +1,4 @@
-# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields,inst
 def-decl	src/A.flix	4	13	4	17	A.keep	A.keep	pub ext=3:5:4:49
 param	src/A.flix	4	18	4	19	A.keep	A.keep	i=0 n=1 name=x type=Int32 tspan=4:21:4:26 reads=1 hidden=0 poly=0
 def-use	src/A.flix	4	37	4	43	A.helper	A.keep	

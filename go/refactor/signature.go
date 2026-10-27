@@ -405,6 +405,9 @@ func readDefParams(rows []Row, srcs *reshapeSources, sym string) (Row, string, A
 	if decl == nil {
 		return Row{}, "", ArgList{}, nil, fmt.Errorf("def %s の宣言が索引に無い（パッケージの def は直せない）", sym)
 	}
+	if decl.HasFlag("inst") {
+		return Row{}, "", ArgList{}, nil, fmt.Errorf("%s は instance の def（%s）。引数は trait の sig が決める", sym, decl.Where())
+	}
 	src, err := srcs.get(decl.File)
 	if err != nil {
 		return Row{}, "", ArgList{}, nil, err

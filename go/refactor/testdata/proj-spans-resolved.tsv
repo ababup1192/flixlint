@@ -1,4 +1,4 @@
-# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields,inst
 def-decl	src/Main.flix	1	5	1	9	main	main	pub ext=1:1:2:129
 def-use	src/Main.flix	2	5	2	12	println	main	
 def-use	src/Main.flix	2	16	2	25	Zoo.sound	main	

@@ -47,7 +47,7 @@ func PlanRename(root string, rows []Row, s, to string, outside map[string]string
 	}
 	var decl *Row
 	for i, r := range rows {
-		if r.Kind == KindDefDecl && r.Sym == newSym {
+		if r.Kind == KindDefDecl && r.Sym == newSym && !r.HasFlag("inst") {
 			return p, fmt.Errorf("%s がもう在る（%s）。別の名前にするか、先にそちらを替える", newSym, r.Where())
 		}
 		if r.Kind == KindDefDecl && r.Sym == s {
@@ -56,6 +56,9 @@ func PlanRename(root string, rows []Row, s, to string, outside map[string]string
 	}
 	if decl == nil {
 		return p, fmt.Errorf("def %s の宣言が索引に無い", s)
+	}
+	if decl.HasFlag("inst") {
+		return p, fmt.Errorf("%s は instance の def（%s）。名前は trait の sig が決める", s, decl.Where())
 	}
 	if library {
 		p.Fix = append(p.Fix, Fixed{*decl, "ライブラリ（fpkg で配る）: pub の def の使い手は索引の外にもいる"})

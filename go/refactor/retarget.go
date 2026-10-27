@@ -344,7 +344,7 @@ func retargetDefs(rows []Row, a args) ([]string, error) {
 	}
 	seen := map[string]bool{}
 	for _, r := range rows {
-		if r.Kind != KindDefDecl || seen[r.Sym] {
+		if r.Kind != KindDefDecl || seen[r.Sym] || r.HasFlag("inst") {
 			continue
 		}
 		if a.in != "" && modOf(r.Sym) != a.in && !strings.HasPrefix(r.Sym, a.in+".") {

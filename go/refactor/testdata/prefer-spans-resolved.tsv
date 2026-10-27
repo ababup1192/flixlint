@@ -1,4 +1,4 @@
-# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields,inst
 use	src/Hand.flix	2	9	2	19	View.World	Hand	alias=World what=alias
 def-decl	src/Hand.flix	4	13	4	17	Hand.hand	Hand.hand	pub ext=4:5:4:62
 param	src/Hand.flix	4	18	4	21	Hand.hand	Hand.hand	i=0 n=2 name=ctx type=Int32 tspan=4:23:4:28 reads=1 hidden=0 poly=0
