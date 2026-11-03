@@ -4,6 +4,8 @@
   "indexes": [
     {"index": "acc-spans-typed.tsv", "dir": "acc", "stage": "typed", "sources": ["src"]},
     {"index": "accmod-spans-typed.tsv", "dir": "accmod", "stage": "typed", "sources": ["src"]},
+    {"index": "deadtype-spans-resolved.tsv", "dir": "deadtype", "stage": "resolved", "sources": ["src"]},
+    {"index": "instuse-spans-resolved.tsv", "dir": "instuse", "stage": "resolved", "sources": ["src"]},
     {"index": "inst-spans-resolved.tsv", "dir": "inst", "stage": "resolved", "sources": ["src", "test"]},
     {"index": "move-spans-resolved.tsv", "dir": "move", "stage": "resolved", "sources": ["src", "test"]},
     {"index": "moveenum-spans-resolved.tsv", "dir": "moveenum", "stage": "resolved", "sources": ["src"]},

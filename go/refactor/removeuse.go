@@ -126,8 +126,11 @@ func lineOffset(src string, line int) int {
 	return at
 }
 
+// lastSeg は名前の最後の区切りの後ろ。
+// WhyNot: `.` だけで切らない。mount の別名の use は `use fge::SortingLayer` と `::` で書き、flixlint は同じ物を
+// `$pkg$….SortingLayer` と言うので、`.` だけでは use の字と名前が合わず人へ回っていた。
 func lastSeg(name string) string {
-	if i := strings.LastIndexAny(name, "."); i >= 0 {
+	if i := strings.LastIndexAny(name, ".:"); i >= 0 {
 		return name[i+1:]
 	}
 	return name
@@ -233,11 +236,12 @@ func sepBefore(src string, items []useItem, it useItem) string {
 }
 
 // removeUseReport は remove-use の入口。
-func removeUseReport(root string, a args, cfg Config, o Options, b Builder) (report, error) {
+func removeUseReport(root string, idx *Index, a args, cfg Config, o Options, b Builder) (report, error) {
 	found, err := b.UnusedUses()
 	if err != nil {
 		return report{}, fmt.Errorf("使っていない use を flixlint の判定で探せない: %v", err)
 	}
+	found, inInstances := dropInstanceUses(root, idx.Rows, found)
 	file, line := a.target, 0
 	if f, l, ok := strings.Cut(a.target, ":"); ok {
 		n, convErr := strconv.Atoi(l)
@@ -319,7 +323,7 @@ func removeUseReport(root string, a args, cfg Config, o Options, b Builder) (rep
 	}
 	r.gotText = fmt.Sprintf("使っていない use %d（名前 %d・%d ファイル）・人へ回す %d", len(sites), names, len(files), len(fix))
 	r.wantText = "flixlint の unused-use の違反 0（書けない形は fix）"
-	r.extra = append(r.extra, fmt.Sprintf("判定は flixlint の unused-use と同じ（Flixlint.Flix.namesUsed・isUnused・resolved の段。全体で %d）", len(found)))
+	r.extra = append(r.extra, fmt.Sprintf("判定は flixlint の unused-use（Flixlint.Flix.namesUsed・isUnused・resolved の段。全体で %d）から、instance の頭か中で使う %d を外した物（unused-use は instance を見ない）", len(found)+inInstances, inInstances))
 	for _, s := range sites {
 		r.lines = append(r.lines, fmt.Sprintf("%s:%d\t消す\t%s（%s）", s.File, s.Line, s.Sym, s.Owner))
 	}

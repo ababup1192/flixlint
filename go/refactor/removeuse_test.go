@@ -27,6 +27,8 @@ func TestRemoveUseEditShapes(t *testing.T) {
 		{"全部消えれば行ごと", "mod M {\n    use A.{b, c}\n    use D.e\n}\n", 2, []string{"A.b", "A.c"}, "mod M {\n    use D.e\n}\n"},
 		{"import は行ごと・後ろの空行も", "mod M {\n    import java.io.File\n\n    def f(): Int32 = 1\n}\n", 2, []string{"java.io.File"},
 			"mod M {\n    def f(): Int32 = 1\n}\n"},
+		{"mount の別名の use は行ごと", "mod M {\n    use fge::SortingLayer\n    use D.e\n}\n", 2, []string{"$pkg$fge.SortingLayer"},
+			"mod M {\n    use D.e\n}\n"},
 		{"空行の間の use は空行を 1 つに", "mod M {\n    use A.b\n\n    use C.d\n\n    def f(): Int32 = 1\n}\n", 4, []string{"C.d"},
 			"mod M {\n    use A.b\n\n    def f(): Int32 = 1\n}\n"},
 	} {
@@ -106,4 +108,41 @@ func TestRemoveUseNeedsALineOrAll(t *testing.T) {
 	if code, out := runRemoveUse(t, root, "", "remove-use", "src/B.flix"); code != 2 || !strings.Contains(out, "--all") {
 		t.Errorf("止まらない（%d）:\n%s", code, out)
 	}
+}
+
+// instance の頭に書いた trait と、instance の def の中で使う名前の use は使っている（flixlint の unused-use は instance を
+// 見ないので、そこにだけ書いた名前の use を使っていないと言う）。testdata/instuse の Tiles は Area を instance の頭に、
+// List.length を instance の def の中にだけ書き、Perimeter はどこにも書かない。
+func TestRemoveUseKeepsUsesAnInstanceWrites(t *testing.T) {
+	root := fixtureRoot(t, "instuse")
+	lint := "src/Shapes.flix:12: unused-use: Tiles: brings in Shapes.Area, which the module never uses\n" +
+		"src/Shapes.flix:13: unused-use: Tiles: brings in Shapes.Perimeter, which the module never uses\n" +
+		"src/Shapes.flix:14: unused-use: Tiles: brings in List.length, which the module never uses\n"
+	var out, errOut strings.Builder
+	var cmds []string
+	code := Run(&out, &errOut, root, []string{"remove-use", "--all", "--apply", "--flixlint", filepath.Join(root, "flixlint")},
+		Options{Run: unusedLintRunner("instuse", lint), Verify: verifyWith(0, "", &cmds), Log: io.Discard,
+			Version: func(string) string { return "flixlint " + MinFlixlintInst }})
+	if code != 0 {
+		t.Fatalf("終了コード %d:\n%s%s", code, out.String(), errOut.String())
+	}
+	got := read(t, root, "src/Shapes.flix")
+	mustContain(t, got, "    use Shapes.Area\n    use List.length\n")
+	if strings.Contains(got, "use Shapes.Perimeter") {
+		t.Errorf("使っていない Perimeter の use が残る:\n%s", got)
+	}
+}
+
+// usages --unused も、instance が使う use を使っていない use に数えない。
+func TestUnusedUsesSkipUsesAnInstanceWrites(t *testing.T) {
+	root := fixtureRoot(t, "instuse")
+	lint := "src/Shapes.flix:12: unused-use: Tiles: brings in Shapes.Area, which the module never uses\n" +
+		"src/Shapes.flix:13: unused-use: Tiles: brings in Shapes.Perimeter, which the module never uses\n" +
+		"src/Shapes.flix:14: unused-use: Tiles: brings in List.length, which the module never uses\n"
+	var out, errOut strings.Builder
+	var cmds []string
+	Run(&out, &errOut, root, []string{"usages", "--unused", "--flixlint", filepath.Join(root, "flixlint")},
+		Options{Run: unusedLintRunner("instuse", lint), Verify: verifyWith(0, "", &cmds), Log: io.Discard,
+			Version: func(string) string { return "flixlint " + MinFlixlintInst }})
+	mustContain(t, out.String()+errOut.String(), "使っていない use 1")
 }

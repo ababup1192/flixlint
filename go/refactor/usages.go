@@ -712,6 +712,7 @@ func unusedReport(root string, idx *Index, a args, cfg Config, b Builder) (repor
 	found, lintErr := b.UnusedUses()
 	switch {
 	case lintErr == nil:
+		found, _ = dropInstanceUses(root, idx.Rows, found)
 		uses = usesFromFindings(found, idx.Rows)
 	default:
 		uses, unjudged = UnusedUses(idx.Rows, src)

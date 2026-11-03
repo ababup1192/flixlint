@@ -31,10 +31,13 @@ type DeadQuery struct {
 // DeadPlan は remove-dead の計画。
 type DeadPlan struct {
 	Targets []Fixed // 消す def（why は test-only・unreferenced・道連れ）
-	Tests   []Fixed // 一緒に消すテスト
-	Fix     []Fixed // 消さずに人へ回す物
-	Edits   []Edit
-	Docs    []Fixed // doc を移す転送先（消す包みの doc を受ける def）
+	Types   []Fixed // 消す def だけが使っていて一緒に消す型（enum・型 alias）
+	// TypeNotes は使い手が全部消えるのに残す型の知らせ（pub・use で入れる・--skip・切り出せない）。
+	TypeNotes []string
+	Tests     []Fixed // 一緒に消すテスト
+	Fix       []Fixed // 消さずに人へ回す物
+	Edits     []Edit
+	Docs      []Fixed // doc を移す転送先（消す包みの doc を受ける def）
 	// DocRefs は消す def を文書が名指す所（file:line と名前。doc-refs の決まりで拾った物。消した後に doc-refs が止める）。
 	DocRefs  []Fixed
 	Sites    int // 候補の数（--skip・fix を含む）
@@ -74,6 +77,7 @@ func inDirs(file string, dirs []string) bool {
 //     候補（と道連れ）のほかに使わない時だけ、テストごと消す。それ以外は fix。
 //   - 消す def だけが使っていた def は道連れで消す（pub でない助けは残すとコンパイラが使われない def で止まる。pub の
 //     下請けも、use・入口の名前・ライブラリでなければ一緒に消す）。
+//   - 消す物だけが使っていた型（enum・型 alias）も一緒に消す（deadTypes。pub の型は --allow-external の時だけ）。
 //   - 名前が入口（Makefile・json・flow など、文章でない git の知るファイル）に字で出る候補は fix（名前で呼ばれるかもしれない）。
 //     文書（doc-refs が見る .md と .flix のコメント）が名指す候補は消し、その所を DocRefs に並べる（mentions.go）。
 func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
@@ -269,6 +273,8 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 			}
 		}
 	}
+	types, typeNotes := deadTypes(root, rows, removed, q)
+	plan.TypeNotes = typeNotes
 	for _, c := range targets {
 		plan.Targets = append(plan.Targets, Fixed{c.d.Row, c.why})
 	}
@@ -291,6 +297,10 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 			}
 			plan.Edits = append(plan.Edits, e)
 		}
+	}
+	for _, t := range types {
+		plan.Edits = append(plan.Edits, t.edit)
+		plan.Types = append(plan.Types, Fixed{t.d.Row, t.why})
 	}
 	plan.Edits = mergeDeletes(plan.Edits)
 	// 転送するだけの包み（本体が別の def を呼ぶだけ）を消す時は、その doc を転送先へ移す（転送先に doc が無いか、
@@ -333,6 +343,10 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 			gone[defs[f.Sym].File] = append(gone[defs[f.Sym].File], [2]int{top, end})
 		}
 	}
+	for _, t := range types {
+		top, end := declLineRange(root, t.d)
+		gone[t.d.File] = append(gone[t.d.File], [2]int{top, end})
+	}
 	inGone := func(file string, line int) bool {
 		for _, r := range gone[file] {
 			if line >= r[0] && line <= r[1] {
@@ -341,7 +355,7 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 		}
 		return false
 	}
-	for _, group := range [][]Fixed{plan.Targets, plan.Tests} {
+	for _, group := range [][]Fixed{plan.Targets, plan.Tests, plan.Types} {
 		for _, f := range group {
 			for _, at := range mentions.DocsNaming(f.Sym, inGone) {
 				plan.DocRefs = append(plan.DocRefs, Fixed{f.Row, at})
@@ -350,6 +364,115 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 	}
 	sort.Slice(plan.Fix, func(i, j int) bool { return less(plan.Fix[i].Row, plan.Fix[j].Row) })
 	return plan, nil
+}
+
+// deadType は一緒に消す型 1 つ（宣言の行と範囲・消す書き換え・理由）。
+type deadType struct {
+	d    defInfo
+	edit Edit
+	why  string
+}
+
+// deadTypes は消す def（removed）だけが使っていた型（enum・型 alias）と、使い手が全部消えるのに残す型の知らせ。
+// 使い手が 1 つ以上あって全部消える型だけを拾い、消える型だけが使う型も何度か回して拾う。消すと決めた型は removed に足す。
+// WhyNot: 残さない。使い手の def を消した後に非 pub の型が残ると、Flix のコンパイラが使われない型で止める。
+// WhyNot: pub の型は --allow-external が無ければ消さない（使い手が索引の外にいるかもしれない）。人へ回す fix にせず
+// 知らせにする: 残してもコンパイルは通り、fix に数えると消す def が pub の型を使うたびに結果が人待ちになる。
+// WhyNot: 互いに相手の case に入る 2 つの型は拾わない（相手が消えるのを互いに待つ）。まれなので組で判じない。
+func deadTypes(root string, rows []Row, removed map[string]bool, q DeadQuery) ([]deadType, []string) {
+	decls := map[string]Row{}
+	var order []string
+	for _, r := range rows {
+		if (r.Kind == KindEnumDecl || r.Kind == KindAliasDecl) && !inDirs(r.File, q.TestDirs) {
+			if _, dup := decls[r.Sym]; !dup {
+				order = append(order, r.Sym)
+			}
+			decls[r.Sym] = r
+		}
+	}
+	users := map[string][]string{} // 型 → 使い手（def・型）の名前
+	imported := map[string]bool{}  // use で型か、その case を入れる型（消すと use が名前を失う）
+	for _, r := range rows {
+		target := r.Sym
+		switch r.Kind {
+		case KindTypeUse:
+		case KindCaseConstruct, KindCasePattern:
+			target = modOf(r.Sym)
+		case KindUse:
+			imported[r.Sym] = true
+			imported[modOf(r.Sym)] = true
+			continue
+		default:
+			continue
+		}
+		if _, ok := decls[target]; ok && r.Owner != target {
+			users[target] = append(users[target], r.Owner)
+		}
+	}
+	gone := func(s string) bool {
+		for _, u := range users[s] {
+			if !removed[u] {
+				return false
+			}
+		}
+		return len(users[s]) > 0
+	}
+	var out []deadType
+	kept := map[string]string{} // 使い手が全部消えるのに残す型 → 理由
+	srcs := map[string]string{}
+	for changed := true; changed; {
+		changed = false
+		for _, s := range order {
+			r := decls[s]
+			if removed[s] || kept[s] != "" || !gone(s) {
+				continue
+			}
+			src, ok := srcs[r.File]
+			if !ok {
+				data, err := os.ReadFile(filepath.Join(root, r.File))
+				if err != nil {
+					kept[s] = "読めない: " + err.Error()
+					continue
+				}
+				src = string(data)
+				srcs[r.File] = src
+			}
+			what, extOf := "enum", enumExt
+			if r.Kind == KindAliasDecl {
+				what, extOf = "型 alias", aliasExt
+			}
+			switch {
+			case imported[s]:
+				kept[s] = "use で名前を入れる所がある（use と一緒に手で消す）"
+				continue
+			case q.Skip[r.File+":"+fmt.Sprint(r.Line)]:
+				kept[s] = "--skip で外した"
+				continue
+			case declIsPub(src, r) && !q.AllowExternal:
+				kept[s] = "pub（--allow-external で一緒に消す）"
+				continue
+			}
+			ext, err := extOf(src, r)
+			var e Edit
+			if err == nil {
+				e, err = deleteEdit(root, defInfo{Row: r, Ext: ext})
+			}
+			if err != nil {
+				kept[s] = "宣言を行ごと切り出せない（" + err.Error() + "。手で消す）"
+				continue
+			}
+			removed[s] = true
+			changed = true
+			out = append(out, deadType{defInfo{Row: r, Ext: ext}, e, "道連れ（消す物だけが使っていた " + what + "）"})
+		}
+	}
+	var notes []string
+	for _, s := range order {
+		if kept[s] != "" {
+			notes = append(notes, fmt.Sprintf("消す物だけが使っていた型 %s（%s）を残す: %s", s, decls[s].Where(), kept[s]))
+		}
+	}
+	return out, notes
 }
 
 // declLineRange は宣言の行の範囲（上の `///` と注記の行から ext の終わりまで・1 から）。読めなければ ext の範囲。
@@ -515,6 +638,8 @@ func declLines(src string, ext, row Row) (cut, text [2]int, err error) {
 		last++
 	case blank(first-1) && last+1 <= len(lines) && strings.HasPrefix(strings.TrimSpace(lines[last]), "}"):
 		first-- // 閉じ括弧の前に空行を残さない
+	case first >= 2 && strings.HasSuffix(strings.TrimSpace(lines[first-2]), "{") && blank(last+1):
+		last++ // 開き括弧の直後に空行を残さない
 	}
 	cut = [2]int{offsetOf(first), offsetOf(last + 1)}
 	return cut, text, nil

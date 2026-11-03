@@ -1,0 +1,23 @@
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields,inst
+def-decl	src/Main.flix	1	5	1	9	main	main	pub ext=1:1:2:57
+def-use	src/Main.flix	2	5	2	12	println	main	
+arg	src/Main.flix	2	16	2	54	println	main	of=def-use at=2:5 i=0 n=1
+case-construct	src/Main.flix	2	33	2	48	Tiles.Tile.Tile	main	
+arg	src/Main.flix	2	49	2	52	Tiles.Tile.Tile	main	of=case-construct at=2:33 i=0 n=1
+case-construct	src/Main.flix	2	49	2	52	List.Nil	main	
+use	src/Shapes.flix	12	9	12	20	Shapes.Area	Tiles	alias=Area what=trait
+use	src/Shapes.flix	13	9	13	25	Shapes.Perimeter	Tiles	alias=Perimeter what=trait
+use	src/Shapes.flix	14	9	14	20	List.length	Tiles	alias=length what=def
+case-decl	src/Shapes.flix	16	14	16	18	Tiles.Tile.Tile	Tiles.Tile	arity=1
+enum-decl	src/Shapes.flix	16	14	16	18	Tiles.Tile	Tiles.Tile	
+type-use	src/Shapes.flix	16	19	16	23	List	Tiles.Tile	what=enum
+type-use	src/Shapes.flix	18	19	18	23	Tiles.Tile	Tiles.Area	what=enum
+def-decl	src/Shapes.flix	19	17	19	21	Tiles.area	Tiles.area	pub inst ext=19:9:21:10
+param	src/Shapes.flix	19	22	19	23	Tiles.area	Tiles.area	i=0 n=1 name=x type=Tiles.Tile tspan=19:25:19:29 reads=1 hidden=0 poly=0
+type-use	src/Shapes.flix	19	25	19	29	Tiles.Tile	Tiles.area	what=enum
+match-site	src/Shapes.flix	19	40	21	10		Tiles.area	arms=1 wild=0 var=0 guard=0 enum=Tiles.Tile
+match-arm	src/Shapes.flix	20	13	20	45	Tiles.Tile.Tile	Tiles.area	match=19:40 pat=tag at=20:18:20:31 guard=0 full=1
+case-pattern	src/Shapes.flix	20	18	20	27	Tiles.Tile.Tile	Tiles.area	
+arg	src/Shapes.flix	20	28	20	30	Tiles.Tile.Tile	Tiles.area	of=case-pattern at=20:18 i=0 n=1
+def-use	src/Shapes.flix	20	35	20	41	List.length	Tiles.area	
+arg	src/Shapes.flix	20	42	20	44	List.length	Tiles.area	of=def-use at=20:35 i=0 n=1

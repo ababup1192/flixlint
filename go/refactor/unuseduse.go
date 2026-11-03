@@ -123,3 +123,101 @@ func (b Builder) UnusedUses() ([]UseFinding, error) {
 	}
 	return found, nil
 }
+
+var (
+	instanceHead = regexp.MustCompile(`^\s*instance\s+([A-Za-z_][A-Za-z0-9_.:]*)\s*\[`)
+	declHead     = regexp.MustCompile(`^\s*(pub\s+)?(mod|trait|enum|eff|type\s+alias|def)\b`)
+)
+
+// dropInstanceUses は flixlint の判定から、instance の頭（trait と型）か instance の def の中で使う use を外す（外した数も返す）。
+// WhyNot: flixlint の判定に任せきりにしない。flixlint の汎用の AST は instance の def を持たない（コンパイラが instance の
+// def に番号つきの名前を付け、作られた def と同じに外れる）ので、instance にだけ書いた名前の use を使っていないと言い、
+// 消すとコンパイルが通らない。flixlint の shim が instance の def を AST に入れたら、この手当ては外す。
+// WhyNot: instance の中だけで使う Java の import・effect は拾えない（索引に行が無い）。頭の `with` の trait も見ない。
+func dropInstanceUses(root string, rows []Row, found []UseFinding) ([]UseFinding, int) {
+	if len(found) == 0 {
+		return found, 0
+	}
+	type key struct{ file, mod string }
+	decls := map[string]bool{}     // def・enum・型 alias の名前（instance の型の owner と見分ける）
+	instMod := map[string]string{} // instance の def → その mod
+	type at struct {
+		file, mod string
+		line      int
+		up        bool // 上へ instance の頭を探す（def の行から）。false はその行が頭
+	}
+	var heads []at
+	for _, r := range rows {
+		switch r.Kind {
+		case KindDefDecl:
+			decls[r.Sym] = true
+			if r.HasFlag("inst") {
+				instMod[r.Sym] = modOf(r.Sym)
+				heads = append(heads, at{r.File, modOf(r.Sym), r.Line, true})
+			}
+		case KindEnumDecl, KindAliasDecl:
+			decls[r.Sym] = true
+		}
+	}
+	written := map[key][]string{}       // instance の def の中で書いた名前
+	traits := map[key]map[string]bool{} // instance の頭に素の名前で書いた trait
+	aliases := map[string]string{}      // file:line:名前 → use の別名
+	for _, r := range rows {
+		switch {
+		case r.Kind == KindUse:
+			aliases[fmt.Sprintf("%s:%d:%s", r.File, r.Line, r.Sym)] = r.Attr("alias")
+		case !refKinds[r.Kind]:
+		case instMod[r.Owner] != "":
+			k := key{r.File, instMod[r.Owner]}
+			written[k] = append(written[k], r.Sym)
+		case r.Kind == KindTypeUse && !decls[r.Owner] && strings.Contains(r.Owner, "."):
+			// instance の型の owner は `<mod>.<trait>`（instance に名前が無い）。その行が instance の頭で、型も頭が使う名前。
+			heads = append(heads, at{r.File, modOf(r.Owner), r.Line, false})
+			k := key{r.File, modOf(r.Owner)}
+			written[k] = append(written[k], r.Sym)
+		}
+	}
+	srcs := map[string][]string{}
+	for _, h := range heads {
+		lines, ok := srcs[h.file]
+		if !ok {
+			data, err := os.ReadFile(filepath.Join(root, h.file))
+			if err != nil {
+				continue
+			}
+			lines = strings.Split(string(data), "\n")
+			srcs[h.file] = lines
+		}
+		for l := h.line; l >= 1 && l <= len(lines); l-- {
+			if m := instanceHead.FindStringSubmatch(lines[l-1]); m != nil {
+				if !strings.ContainsAny(m[1], ".:") {
+					k := key{h.file, h.mod}
+					if traits[k] == nil {
+						traits[k] = map[string]bool{}
+					}
+					traits[k][m[1]] = true
+				}
+				break
+			}
+			if !h.up || l < h.line && declHead.MatchString(lines[l-1]) {
+				break
+			}
+		}
+	}
+	var keep []UseFinding
+	for _, f := range found {
+		k := key{f.File, f.Module}
+		local := aliases[fmt.Sprintf("%s:%d:%s", f.File, f.Line, f.Name)]
+		if local == "" {
+			local = lastSeg(f.Name)
+		}
+		used := traits[k][local]
+		for _, n := range written[k] {
+			used = used || n == f.Name || strings.HasPrefix(n, f.Name+".")
+		}
+		if !used {
+			keep = append(keep, f)
+		}
+	}
+	return keep, len(found) - len(keep)
+}

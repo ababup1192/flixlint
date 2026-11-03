@@ -923,7 +923,7 @@ func runOp(out, errOut *strings.Builder, root string, rest []string, o Options) 
 	case "safe-delete":
 		rep, err = safeDeleteReport(root, idx, a, cfg, o)
 	case "remove-use":
-		rep, err = removeUseReport(root, a, cfg, o, b)
+		rep, err = removeUseReport(root, idx, a, cfg, o, b)
 	case "rewrite":
 		rep, idx, err = rewriteReport(root, idx, a, cfg, o, b)
 	case "extract-function":

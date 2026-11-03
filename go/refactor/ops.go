@@ -124,9 +124,9 @@ func deadReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 		r.got = plan.Sites
 	}
 	var sites []Fixed
-	sites = append(append(sites, plan.Targets...), plan.Tests...)
+	sites = append(append(append(sites, plan.Targets...), plan.Types...), plan.Tests...)
 	r.Sites = sites
-	r.gotText = fmt.Sprintf("候補 %d（test-only %d・参照 0 %d）・消す def %d・一緒に消すテスト %d・人へ回す %d", plan.Sites, plan.TestOnly, plan.Sites-plan.TestOnly, len(plan.Targets), len(plan.Tests), len(plan.Fix))
+	r.gotText = fmt.Sprintf("候補 %d（test-only %d・参照 0 %d）・消す def %d・一緒に消す型 %d・一緒に消すテスト %d・人へ回す %d", plan.Sites, plan.TestOnly, plan.Sites-plan.TestOnly, len(plan.Targets), len(plan.Types), len(plan.Tests), len(plan.Fix))
 	r.wantText = "テストからだけ・どこからも参照されない pub の def 0（決められない所は fix）"
 	if a.def != "" {
 		r.Target = a.def
@@ -134,6 +134,7 @@ func deadReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 			r.extra = append(r.extra, fmt.Sprintf("ほかにも呼び手 0 の def が %d・テストからだけの def が %d（名指していないので触らない。見るのは flix-refactor usages --unused）", plan.Others, plan.OthersTestOnly))
 		}
 	}
+	r.extra = append(r.extra, plan.TypeNotes...)
 	if len(plan.Docs) > 0 {
 		var moved []string
 		for _, d := range plan.Docs {
@@ -144,7 +145,7 @@ func deadReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 	for _, t := range plan.Targets {
 		r.lines = append(r.lines, fmt.Sprintf("%s\t消す\t%s（%s）", t.Where(), t.Sym, t.Why))
 	}
-	for _, t := range plan.Tests {
+	for _, t := range append(append([]Fixed{}, plan.Types...), plan.Tests...) {
 		r.lines = append(r.lines, fmt.Sprintf("%s\t消す\t%s（%s）", t.Where(), t.Sym, t.Why))
 	}
 	for _, f := range plan.Fix {
