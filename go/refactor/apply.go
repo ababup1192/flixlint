@@ -3,6 +3,7 @@ package refactor
 import (
 	"bufio"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -509,4 +510,67 @@ func firstError(log string) string {
 		s = s[:300] + "…"
 	}
 	return s
+}
+
+// verifyRun は確かめの口（設定の verify・--with-tests なら verifyTests）だけを流す（書き換えない・索引を作らない）。
+// 手で直した後や、--apply を使わずに書いた後に、道具と同じ口で確かめるため。
+func verifyRun(out *strings.Builder, root string, cfg Config, a args, o Options) int {
+	cmd := cfg.Verify
+	if a.withTests {
+		cmd = cfg.VerifyTests
+	}
+	if strings.TrimSpace(cmd) == "" {
+		fmt.Fprintln(out, "verify: 確かめの口が設定に無い（bin/lint-rules/refactor.local.json の verify・verifyTests）")
+		return 2
+	}
+	dir := filepath.Join(root, "build", "refactor")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Fprintf(out, "verify: %v\n", err)
+		return 2
+	}
+	log := filepath.Join(dir, "verify.log")
+	run := o.Verify
+	if run == nil {
+		run = shVerify
+	}
+	start := time.Now()
+	code := run(cmd, root, log)
+	secs := time.Since(start).Seconds()
+	if a.asJSON {
+		exit, first := 0, ""
+		if code != 0 {
+			exit, first = 1, firstError(log)
+		}
+		js, _ := json.Marshal(map[string]any{"op": "verify", "verify": cmd, "code": code, "seconds": secs, "log": relTo(root, log), "firstError": first, "exit": exit})
+		out.Write(js)
+		out.WriteString("\n")
+		return exit
+	}
+	if code == 0 {
+		fmt.Fprintf(out, "verify: %s が %.0f s で通った\n", cmd, secs)
+		return 0
+	}
+	fmt.Fprintf(out, "verify: %s が %.0f s で落ちた（終了コード %d・出力: %s）\n", cmd, secs, code, relTo(root, log))
+	if first := firstError(log); first != "" {
+		fmt.Fprintf(out, "  最初の誤り: %s\n", first)
+	}
+	return 1
+}
+
+// shVerify は組み込む側が口を渡さない時の確かめ: sh -c で流し、出力を log へ。
+func shVerify(cmd, dir, log string) int {
+	f, err := os.Create(log)
+	if err != nil {
+		return 2
+	}
+	defer f.Close()
+	c := exec.Command("sh", "-c", cmd)
+	c.Dir, c.Stdout, c.Stderr = dir, f, f
+	if err := c.Run(); err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return ee.ExitCode()
+		}
+		return 2
+	}
+	return 0
 }

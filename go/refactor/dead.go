@@ -22,6 +22,8 @@ type DeadQuery struct {
 	Def string
 	// Library は fpkg で配るライブラリか（pub の def は使う側がこの索引の外にいるので、消さずに fix へ回す）。
 	Library bool
+	// AllowExternal はライブラリの pub の def も消す（--allow-external。索引の外の使い手は直らない）。
+	AllowExternal bool
 	// EntryTables は入口の表の def の短い名前（設定の entryTables。Mentions.withEntryDefs）。
 	EntryTables []string
 }
@@ -177,8 +179,8 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 		switch {
 		case q.Skip[c.d.File+":"+fmt.Sprint(c.d.Line)]:
 			plan.Fix = append(plan.Fix, Fixed{c.d.Row, "--skip で外した"})
-		case q.Library:
-			plan.Fix = append(plan.Fix, Fixed{c.d.Row, c.why + "・ライブラリ（fpkg で配る）の pub は使う側が索引の外にいる（使う側を確かめて手で消す）"})
+		case q.Library && c.d.Pub && !q.AllowExternal:
+			plan.Fix = append(plan.Fix, Fixed{c.d.Row, c.why + "・" + LibraryPubWhy})
 		case mentions.Entry[c.d.Sym] != "":
 			plan.Fix = append(plan.Fix, Fixed{c.d.Row, c.why + "・名前が入口のファイル " + mentions.Entry[c.d.Sym] + " に字で出る（名前で呼ばれるかもしれない。確かめて手で消す）"})
 		default:
@@ -250,7 +252,7 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 			if removed[s] || d.Inst || d.Test || len(refs[s]) == 0 || inDirs(d.File, q.TestDirs) || strings.HasSuffix(s, ".main") {
 				continue
 			}
-			if d.Pub && (imported[s] || q.Library || mentions.Entry[s] != "" || q.Skip[d.File+":"+fmt.Sprint(d.Line)]) {
+			if d.Pub && (imported[s] || q.Library && !q.AllowExternal || mentions.Entry[s] != "" || q.Skip[d.File+":"+fmt.Sprint(d.Line)]) {
 				continue
 			}
 			all := true

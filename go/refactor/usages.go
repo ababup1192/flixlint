@@ -736,7 +736,7 @@ func unusedReport(root string, idx *Index, a args, cfg Config, b Builder) (repor
 		r.extra = append(r.extra, fmt.Sprintf("うち名前が入口のファイル（Makefile・json など）に字で出る def %d（名前で呼ばれるかもしれない。行の末尾に出る所）", outside))
 	}
 	if IsLibrary(root, cfg) {
-		r.extra = append(r.extra, "ライブラリ（fpkg で配る）: pub の def の使い手は索引の外にもいる")
+		r.extra = append(r.extra, LibraryPubWhy)
 	}
 	switch {
 	case lintErr == nil:

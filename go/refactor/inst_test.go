@@ -50,14 +50,14 @@ func TestRemoveDeadKeepsADefCalledFromAnInstanceOfItsModule(t *testing.T) {
 }
 
 func TestRenameRefusesAnInstanceDef(t *testing.T) {
-	_, err := PlanRename(fixtureRoot(t, "inst"), instRows(t), "Save.fromText", "fromStr", nil, false)
+	_, err := PlanRename(fixtureRoot(t, "inst"), instRows(t), "Save.fromText", "fromStr", nil, false, false)
 	if err == nil || !strings.Contains(err.Error(), "instance の def") {
 		t.Errorf("err %v（want instance の def で止める）", err)
 	}
 }
 
 func TestRenameToTheNameOfAnInstanceDefIsAllowed(t *testing.T) {
-	_, err := PlanRename(fixtureRoot(t, "inst"), instRows(t), "Save.parse", "fromText", nil, false)
+	_, err := PlanRename(fixtureRoot(t, "inst"), instRows(t), "Save.parse", "fromText", nil, false, false)
 	if err != nil {
 		t.Errorf("err %v（want 止めない: instance の def の名前は mod の名前と重ならない）", err)
 	}

@@ -1,0 +1,44 @@
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields,inst
+enum-decl	src/Cards.flix	5	14	5	18	Cards.Suit	Cards.Suit	
+case-decl	src/Cards.flix	6	14	6	17	Cards.Suit.Red	Cards.Suit	arity=0
+case-decl	src/Cards.flix	7	14	7	19	Cards.Suit.Black	Cards.Suit	arity=1
+def-decl	src/Cards.flix	10	13	10	16	Cards.red	Cards.red	pub ext=10:5:10:35
+type-use	src/Cards.flix	10	20	10	24	Cards.Suit	Cards.red	what=enum
+case-construct	src/Cards.flix	10	27	10	35	Cards.Suit.Red	Cards.red	
+def-decl	src/Cards.flix	12	13	12	18	Cards.isRed	Cards.isRed	pub ext=12:5:15:6
+param	src/Cards.flix	12	19	12	20	Cards.isRed	Cards.isRed	i=0 n=1 name=s type=Cards.Suit tspan=12:22:12:26 reads=1 hidden=0 poly=0
+type-use	src/Cards.flix	12	22	12	26	Cards.Suit	Cards.isRed	what=enum
+match-site	src/Cards.flix	12	36	15	6		Cards.isRed	arms=2 wild=0 var=0 guard=0 enum=Cards.Suit
+match-arm	src/Cards.flix	13	9	13	30	Cards.Suit.Red	Cards.isRed	match=12:36 pat=tag at=13:14:13:22 guard=0 full=1
+case-pattern	src/Cards.flix	13	14	13	22	Cards.Suit.Red	Cards.isRed	
+match-arm	src/Cards.flix	14	9	14	36	Cards.Suit.Black	Cards.isRed	match=12:36 pat=tag at=14:14:14:27 guard=0 full=1
+case-pattern	src/Cards.flix	14	14	14	24	Cards.Suit.Black	Cards.isRed	
+arg	src/Cards.flix	14	25	14	26	Cards.Suit.Black	Cards.isRed	of=case-pattern at=14:14 i=0 n=1
+def-decl	src/Deck.flix	3	13	3	17	Deck.size	Deck.size	pub ext=3:5:3:31
+def-decl	src/Deck.flix	5	13	5	18	Deck.first	Deck.first	pub ext=5:5:5:54
+type-use	src/Deck.flix	5	22	5	32	Cards.Suit	Deck.first	what=enum
+case-construct	src/Deck.flix	5	35	5	51	Cards.Suit.Black	Deck.first	
+arg	src/Deck.flix	5	52	5	53	Cards.Suit.Black	Deck.first	of=case-construct at=5:35 i=0 n=1
+use	src/Hand.flix	2	9	2	19	Cards.Suit	Hand	alias=Suit what=enum
+def-decl	src/Hand.flix	4	13	4	17	Hand.pick	Hand.pick	pub ext=4:5:4:80
+param	src/Hand.flix	4	18	4	19	Hand.pick	Hand.pick	i=0 n=1 name=n type=Int32 tspan=4:21:4:26 reads=2 hidden=0 poly=0
+type-use	src/Hand.flix	4	29	4	33	Cards.Suit	Hand.pick	what=enum
+case-construct	src/Hand.flix	4	47	4	63	Cards.Suit.Black	Hand.pick	
+arg	src/Hand.flix	4	64	4	65	Cards.Suit.Black	Hand.pick	of=case-construct at=4:47 i=0 n=1 aparam=0
+case-construct	src/Hand.flix	4	72	4	80	Cards.Suit.Red	Hand.pick	
+def-decl	src/Hand.flix	6	13	6	18	Hand.count	Hand.count	pub ext=6:5:9:6
+param	src/Hand.flix	6	19	6	20	Hand.count	Hand.count	i=0 n=1 name=s type=Cards.Suit tspan=6:22:6:26 reads=1 hidden=0 poly=0
+type-use	src/Hand.flix	6	22	6	26	Cards.Suit	Hand.count	what=enum
+match-site	src/Hand.flix	6	37	9	6		Hand.count	arms=2 wild=0 var=0 guard=0 enum=Cards.Suit
+match-arm	src/Hand.flix	7	9	7	33	Cards.Suit.Red	Hand.count	match=6:37 pat=tag at=7:14:7:28 guard=0 full=1
+case-pattern	src/Hand.flix	7	14	7	28	Cards.Suit.Red	Hand.count	
+match-arm	src/Hand.flix	8	9	8	32	Cards.Suit.Black	Hand.count	match=6:37 pat=tag at=8:14:8:27 guard=0 full=1
+case-pattern	src/Hand.flix	8	14	8	24	Cards.Suit.Black	Hand.count	
+arg	src/Hand.flix	8	25	8	26	Cards.Suit.Black	Hand.count	of=case-pattern at=8:14 i=0 n=1
+def-decl	src/Main.flix	1	5	1	9	main	main	pub ext=1:1:1:58
+def-use	src/Main.flix	1	25	1	32	println	main	
+def-use	src/Main.flix	1	33	1	43	Hand.count	main	
+arg	src/Main.flix	1	33	1	57	println	main	of=def-use at=1:25 i=0 n=1
+def-use	src/Main.flix	1	44	1	54	Deck.first	main	
+arg	src/Main.flix	1	44	1	56	Hand.count	main	of=def-use at=1:33 i=0 n=1
+arg	src/Main.flix	1	54	1	56	Deck.first	main	of=def-use at=1:44 i=0 n=1

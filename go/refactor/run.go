@@ -34,7 +34,8 @@ const Usage = `使い方: flix-refactor <操作> [引数] [--json] [-v|--verbose
                                                        宣言の名前で引く（使っている所は拾わない）。1 行ずつ file:line・種類・名前・pub。
                                                        並びは名前がそのまま → 頭が同じ → 語の頭から → 途中に含む → 宣言の /// コメントに
                                                        含む（「反撃」のような日本語でも引ける。行の末尾に「doc」）。30 件まで（--all で全部）
-  outline <file>[,<file>…]                             ファイルの宣言を行の順に、頭の行（シグネチャ）つきで。case は enum の下に
+  outline <file>[,<file>…]                             ファイルの宣言を行の順に、頭の行（シグネチャ）つきで。case は enum の下に。
+                                                       symlink の先のパス（engine の根の src/ が指すパッケージの src/）でも引ける。
                                                        （直したファイルは作り直さず今の字から拾い、行の末尾に「字」）
   trace <Mod.f> [--depth N]                            この def が呼ぶ def を下へ（既定 2 段）。プロジェクトの def は場所つき・
                                                        engine と標準は名前だけを 1 行に（呼び手を上へは usages --callers）
@@ -47,8 +48,10 @@ const Usage = `使い方: flix-refactor <操作> [引数] [--json] [-v|--verbose
   index [--stage resolved|typed]                       索引を作る（か使い回す）だけ。種類ごとの行の数と秒
   index --decls                                        show の宣言の索引まで作る（.flix を直した後に hook-flix-touch が裏で流す。
                                                        もう流れていれば何もしない。作っている間に直されたら作り直す）
+  verify [--with-tests]                                確かめの口（設定の verify・--with-tests は verifyTests）だけを流す。書き換えない・
+                                                       索引を作らない。手で直した後に --apply と同じ口で確かめる
   expand-wildcard --enum E [--apply] [--skip file:line]  E への match の ` + "`case _ =>`" + `（使わない変数の腕も）を残りの case に書き出す
-  remove-dead [--with-tests] [--only test-only|unreferenced] [--def Mod.name[,Mod.g]] [--apply] [--skip file:line]
+  remove-dead [--with-tests] [--only test-only|unreferenced] [--def Mod.name[,Mod.g]] [--allow-external] [--apply] [--skip file:line]
                                                        テストからだけ・どこからも参照されない pub の def を ///・注記ごと消す。
                                                        消す def が別の def を呼ぶだけの包みなら、その /// を転送先へ移す（転送先に
                                                        doc が無いか、転送先の doc が包みの名前を指す時。同じ転送先の包みが 2 つ
@@ -114,6 +117,10 @@ const Usage = `使い方: flix-refactor <操作> [引数] [--json] [-v|--verbose
                                                        （別名は同じ型・短い名前が同じ別の型は別）。読む所が全部消える呼び手の引数は fix
                                                        --retarget a[,b] --from w: 葉の本体の w#a を足す引数（@名前）の同じ欄へ読み替え、
                                                        同じ計画で書く（--params に w を書かなければ w も外す。確かめ 1 回）
+  change-signature --def Mod.f[,Mod.g] (--add-effect E[,F] | --remove-effect G[,H]) [--apply]
+                                                       --params を渡さない時は、宣言の effect の列（\ A + B・\ {A, B}）だけを替える。
+                                                       足す物は終わりへ・列が空になれば \ ごと消す。呼び手の列は替えない（確かめで
+                                                       落ちたら呼び手も --def に並べる）。列に無い物を外せ・- や & の式は fix
   retarget-field --label a[,b] --from w --to res [--in Mod | --def Mod.f[,Mod.g]] [--drop-from] [--apply]
                                                        受け手が引数 w そのものの欄の読み（w#a）を、同じ def の引数 res の同じ欄（res#a）へ。
                                                        別の引数・式の読みと書き込みは書かずに並べる。res の型に欄が無い・型が違う def は fix。
@@ -123,22 +130,31 @@ const Usage = `使い方: flix-refactor <操作> [引数] [--json] [-v|--verbose
                                                        全部。_ で始まる物は残す）。resolved の索引で足り、型検査が通らない途中でも使える:
                                                        --apply の確かめは書く前にも流し、前から落ちていれば、書いた後の誤り（ファイル・
                                                        種類・番号）が書く前に収まる（新しい誤り 0）時に通す。本体が使う引数は fix
-  make-private [--def Mod.f[,Mod.g]] [--apply]          外の mod から使われない pub の def から pub を外す（--def を省くと usages --unused の
+  make-private [--def Mod.f[,Mod.g]] [--allow-external] [--apply]
+                                                       外の mod から使われない pub の def から pub を外す（--def を省くと usages --unused の
                                                        「同じ mod の中だけ」を全部）。外の mod の呼び出し・use・テストが使う・どこからも
                                                        参照されない（消すのは remove-dead）・名前が .flix の外に出る・ライブラリは fix。
                                                        --def の時はほかの当たる def の数を 1 行で知らせるだけ
-  safe-delete --def Mod.f [--apply]                   名指した def を消してよい時だけ消す（usages --unused と同じ決め）: 参照 0 は remove-dead、
+  safe-delete --def Mod.f [--allow-external] [--apply]
+                                                       名指した def を消してよい時だけ消す（usages --unused と同じ決め）: 参照 0 は remove-dead、
                                                        テストからだけ使う物は使うテストごと（remove-dead --with-tests）。同じ mod の中から・
                                                        外から使う物は消さずに使い手を並べる（同じ mod の中だけなら next に make-private）
-  rename --def Mod.f --to g [--apply]                  def の名前を替える: 宣言・使う所（Mod.f も f も）・use の中の名前の、書いた名前の最後の区切り
-                                                       だけ。use の別名（f => h）と、それを書いた所は替えない。同じ mod に g が在れば止める。
-                                                       名前が入口のファイル（Makefile・json など）に出る・ライブラリ・読めない書き方は fix
+  rename <Mod.f|Mod.T> --to <新しい名前> [--allow-external] [--apply]（--def Mod.f でも）
+                                                       def か型 alias の名前を替える: 宣言・使う所（Mod.f も f も・型の注記）・use の中の
+                                                       名前の、書いた名前の最後の区切りだけ。use の別名（f => h）と、それを書いた所は
+                                                       替えない。同じ mod に同じ名前が在れば止める。名前が入口のファイル（Makefile・
+                                                       json など）に出る・ライブラリの pub・読めない書き方は fix
+  rename --label x (--receiver T | --case E.C) --to y [--allow-external] [--apply]
+                                                       record の欄の名前を替える（typed の段）: 型の欄・組み立て（record の式）・直の読み
+                                                       （e#x）・書き（{ x = v | e }）。受け手が証明できない読み書き・欄の組が同じ別の型の
+                                                       組み立て・欄を足す外す式（{ +x … }・{ -x … }）は fix（fix があれば書かない）。
+                                                       匿名の record の型と record のパターンは拾わない（確かめで落ちて戻る）
   remove-use (<file>:<行> | <file> --all | --all) [--apply]
                                                        使っていない use・import を消す（判定は flixlint の unused-use と同じ:
                                                        Flixlint.Flix.namesUsed・isUnused を resolved の段で流す。flixlint ` + MinFlixlintUnusedUse + ` 以上）。
                                                        波括弧の中なら名前を 1 つ消し、空になった use は行ごと消す
-  move --def Mod.f[,Mod.T] --to Mod2 [--with Mod.h] [--apply]
-                                                       def と型 alias を ///・注記ごと Mod2 の終わりへ移し（Mod2 が無ければ
+  move --def Mod.f[,Mod.T,Mod.E] --to Mod2 [--with Mod.h] [--apply]
+                                                       def・型 alias・enum を ///・注記ごと Mod2 の終わりへ移し（Mod2 が無ければ
                                                        src/<Mod2>.flix を作る・同じ名前があれば止める）、呼ぶ所の Mod.f を Mod2.f に、
                                                        元の mod の中の素の f を Mod2.f に、use Mod.{f, g} は f を外して use Mod2.{f} を
                                                        足す（別名 f => h もそのまま）。本体の中の元の mod の名前は修飾つきに、元の mod の
@@ -198,7 +214,9 @@ const Usage = `使い方: flix-refactor <操作> [引数] [--json] [-v|--verbose
     flix-refactor field-sites --label scene --receiver World --outside World --max 0
   名前は終わりで当てる（Phase.Clear は World.Phase.Clear に当たる。2 つ以上に当たれば候補を出して止まる）。
   設定は bin/lint-rules/refactor.json（engine が配る）と refactor.local.json（flixlint・sources・verify・verifyTests・testDirs・library・rewrites）。
-  library（既定 auto: flix.toml に repository がある package）では remove-dead が pub の def を消さない（使う側が索引の外）。
+  library（既定 auto: flix.toml に repository がある package）では、pub の def を rename・make-private・remove-dead・
+  safe-delete が書かずに fix へ回す（使う側が索引の外）。--allow-external で書く（索引の外の使い手は直らない。pub でない
+  def は旗が無くても書く）。
   flixlint は ` + MinFlixlint + ` 以上（索引の形 3。lint・make check と 1 つの常駐で索引を作る）。change-signature・remove-param・
   retarget-field は ` + MinFlixlintParam + ` 以上（adds=param・aparam・alias-fields）。足りなければ索引を作る前に止まる。
   確かめは sh -c で流す（Windows は make と同じく Git Bash か MSYS の sh が要る）。
@@ -235,8 +253,10 @@ type args struct {
 	decls                                                 bool               // index --decls: show の宣言の索引まで作る（.flix を直した後にフックが裏で流す）
 	all                                                   bool               // --all（場所を全部画面に。remove-use ではファイルか全体の全部を消す）
 	apply, withTests, unused, verbose                     bool
-	requireClean                                          bool // --require-clean: 書き換えるファイルが git で clean な時だけ --apply
-	depth                                                 int  // usages --depth（0 は指定なし）
+	addEffect, removeEffect                               string // change-signature の --add-effect・--remove-effect（a,b で複数）
+	allowExternal                                         bool   // --allow-external: ライブラリの pub の def も書き換える（索引の外の使い手は直らない）
+	requireClean                                          bool   // --require-clean: 書き換えるファイルが git で clean な時だけ --apply
+	depth                                                 int    // usages --depth（0 は指定なし）
 	only                                                  string
 	def                                                   string
 	reader, mapper, setter                                string
@@ -297,6 +317,12 @@ func parseArgs(rest []string) (args, error) {
 			a.catchAll = true
 		case "--apply":
 			a.apply = true
+		case "--add-effect":
+			a.addEffect, err = value(&i, x)
+		case "--remove-effect":
+			a.removeEffect, err = value(&i, x)
+		case "--allow-external":
+			a.allowExternal = true
 		case "--require-clean":
 			a.requireClean = true
 		case "--with-tests":
@@ -487,6 +513,9 @@ func (a args) applyWith(verify string, o Options) Apply {
 
 // needs は操作に要る一番低い段（欄の読み書きと受け手の型を見る物だけ typed）。
 func (a args) needs() Stage {
+	if a.op == "rename" && a.label != "" {
+		return Typed
+	}
 	if a.op == "retarget-field" || a.op == "field-sites" || a.op == "field-to-accessor" || a.op == "remove-field" || (a.op == "move-fields" && a.finish) || a.op == "rewrite" || a.op == "extract-function" {
 		return Typed
 	}
@@ -627,6 +656,13 @@ func runOp(out, errOut *strings.Builder, root string, rest []string, o Options) 
 			return 2
 		}
 	case "change-signature":
+		if (a.params != "" || a.argsText != "" || a.retarget != "" || a.propagate) && (a.addEffect != "" || a.removeEffect != "") {
+			fmt.Fprintln(errOut, "refactor change-signature: 引数を替える旗（--params・--args・--retarget・--propagate）と --add-effect・--remove-effect は一緒に使えない（回を分ける）")
+			return 2
+		}
+		if a.def != "" && a.params == "" && (a.addEffect != "" || a.removeEffect != "") {
+			break
+		}
 		if a.def == "" || a.params == "" || a.argsText == "" {
 			fmt.Fprintln(errOut, "refactor change-signature: --def <Mod.f>（a,b で複数）・--params '<新しい引数の並び>'・--args '<呼ぶ所の式（元の引数の名前が使える）>' が要ります（例 --def TitleView.titleTree --params 'env: ViewEnv.Env, input: TitleScene.In' --args 'ViewEnv.of(ctx, w), TitleScene.inputOf(w)'）")
 			return 2
@@ -685,8 +721,19 @@ func runOp(out, errOut *strings.Builder, root string, rest []string, o Options) 
 			return 2
 		}
 	case "rename":
-		if a.def == "" || a.to == "" {
-			fmt.Fprintln(errOut, "refactor rename: --def <Mod.f> と --to <新しい名前> が要ります（例 --def World.moveTo --to goTo）")
+		if a.label != "" && (a.def != "" || a.target != "") {
+			fmt.Fprintln(errOut, "refactor rename: 名前（Mod.f・--def）か欄（--label）のどちらか 1 つを渡す")
+			return 2
+		}
+		if a.def != "" && a.target != "" && a.def != a.target {
+			fmt.Fprintf(errOut, "refactor rename: 名前が 2 つ（%s と --def %s）。どちらか 1 つにする\n", a.target, a.def)
+			return 2
+		}
+		if a.def == "" {
+			a.def = a.target
+		}
+		if a.def == "" && a.label == "" || a.to == "" {
+			fmt.Fprintln(errOut, "refactor rename: <Mod.f|Mod.T>（--def でも）か --label x --receiver T と、--to <新しい名前> が要ります（例 rename World.moveTo --to goTo）")
 			return 2
 		}
 	case "make-private", "remove-dead":
@@ -729,9 +776,9 @@ func runOp(out, errOut *strings.Builder, root string, rest []string, o Options) 
 			fmt.Fprintln(errOut, "refactor show: 名前を渡してください（例 refactor show World.enter・a,b で複数）")
 			return 2
 		}
-	case "index":
+	case "index", "verify":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・show・search・outline・trace・context・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・move-fields・change-case-shape・change-signature・retarget-field・remove-param・make-private・rename・safe-delete・move・remove-use・rewrite・extract-function・extract-type-alias）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・show・search・outline・trace・context・refs・match-sites・field-sites・index・verify・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・move-fields・change-case-shape・change-signature・retarget-field・remove-param・make-private・rename・safe-delete・move・remove-use・rewrite・extract-function・extract-type-alias）\n", a.op)
 		return 2
 	}
 	if a.op != "field-to-accessor" && a.op != "retarget-field" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
@@ -747,6 +794,9 @@ func runOp(out, errOut *strings.Builder, root string, rest []string, o Options) 
 	if err != nil {
 		fmt.Fprintf(errOut, "refactor: %v\n", err)
 		return 2
+	}
+	if a.op == "verify" {
+		return verifyRun(out, root, cfg, a, o)
 	}
 	fl, err := FindFlixlint(root, a.flixlint, cfg)
 	if err != nil {
@@ -855,6 +905,10 @@ func runOp(out, errOut *strings.Builder, root string, rest []string, o Options) 
 	case "change-case-shape":
 		rep, err = caseShapeReport(root, idx, a, cfg, o)
 	case "change-signature":
+		if a.params == "" {
+			rep, err = effectsReport(root, idx, a, cfg, o)
+			break
+		}
 		rep, err = signatureReport(root, idx, a, cfg, o, extra)
 	case "retarget-field":
 		rep, err = retargetReport(root, idx, a, cfg, o)

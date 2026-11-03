@@ -187,6 +187,12 @@ func (m *LibraryMode) UnmarshalJSON(b []byte) error {
 
 var repositoryLine = regexp.MustCompile(`(?m)^\s*repository\s*=`)
 
+// LibraryPubWhy は、ライブラリの pub の def を書き換えずに fix へ回す時の理由（旗の名前ごと）。
+const LibraryPubWhy = "ライブラリ（fpkg で配る）の pub の名前: 使い手は索引の外にもいる（--allow-external で書く。外の使い手は直らない）"
+
+// ExternalNote は --allow-external でライブラリの pub の名前を書いた時に添える 1 行。
+const ExternalNote = "--allow-external: ライブラリの pub の名前を書いた。索引の外の使い手（fpkg を使うゲーム・templates）は直らない（make check-external か各ゲームの make check で確かめる）"
+
 // IsLibrary は root が fpkg で配るライブラリか（設定の library。auto なら flix.toml に repository があるか）。
 //
 // WhyNot: engine の refactor.json に true と書かないのは、bin/lint-rules はゲームへ配られ、ゲームまで

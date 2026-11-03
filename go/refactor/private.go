@@ -24,6 +24,8 @@ type PrivateQuery struct {
 	TestDirs []string
 	Outside  map[string]string // 入口のファイルに字で出る名前 → そのファイル（Mentions.Entry）
 	Library  bool
+	// AllowExternal はライブラリの pub の def からも pub を外す（--allow-external。索引の外の使い手は直らない）。
+	AllowExternal bool
 }
 
 // PrivatePlan は make-private の計画。
@@ -76,8 +78,8 @@ func PlanPrivate(root string, rows []Row, q PrivateQuery) (PrivatePlan, error) {
 			return own, fmt.Sprintf("外の使い手 %d（最初: %s）", len(outside), outside[0]), true
 		case own == 0:
 			return own, "どこからも参照されない（非 pub にすると使わない def の誤りになる。消すのは flix-refactor remove-dead --def " + s + "）", true
-		case q.Library:
-			return own, "ライブラリ（fpkg で配る）: pub の def の使い手は索引の外にもいる", false
+		case q.Library && !q.AllowExternal:
+			return own, LibraryPubWhy, false
 		case q.Outside[s] != "":
 			return own, "名前が入口のファイルに字で出る（" + q.Outside[s] + "。名前で呼ぶなら pub のまま）", false
 		}
@@ -156,7 +158,7 @@ func privateEdit(root string, d defInfo) (Edit, error) {
 
 // privateReport は make-private の入口。
 func privateReport(root string, idx *Index, a args, cfg Config, o Options) (report, error) {
-	q := PrivateQuery{TestDirs: cfg.TestDirs, Library: IsLibrary(root, cfg)}
+	q := PrivateQuery{TestDirs: cfg.TestDirs, Library: IsLibrary(root, cfg), AllowExternal: a.allowExternal}
 	if a.def != "" {
 		for _, d := range strings.Split(a.def, ",") {
 			sym, err := Resolve(idx.Rows, strings.TrimSpace(d), map[string]bool{KindDefDecl: true})
@@ -177,6 +179,9 @@ func privateReport(root string, idx *Index, a args, cfg Config, o Options) (repo
 		target = "（同じ mod の中だけの pub の def を全部）"
 	}
 	r := report{Op: "make-private", Target: target, code: CodePrivate, Outcome: &out, Fix: plan.Fix}
+	if a.allowExternal && q.Library {
+		r.extra = append(r.extra, ExternalNote)
+	}
 	r.got = len(plan.Fix)
 	if out.State == StateReverted || out.State == StateRefused {
 		r.got = len(plan.Targets)

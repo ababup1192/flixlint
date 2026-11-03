@@ -246,3 +246,51 @@ func TestMoveRewritesOldNamesInComments(t *testing.T) {
 	mustContain(t, read(t, root, "src/Geometry.flix"), "    /// 面積（`Geometry.area`）。\n    pub def area(")
 	mustContain(t, out, "コメントの中の古い名前 3 か所（移す本体の外 1 ファイル）も新しい名前へ書き替える")
 }
+
+// enum を移すと、型の注記・case を作る所と当てる所（元の mod の中の素の Suit.Red・外の修飾 Cards.Suit.Black）・
+// use Cards.Suit を移し先へ向け、移し先の中では修飾を外す。use で入れた Suit.Red は use の方を直すので字のまま。
+func TestMoveMovesAnEnumAndItsCases(t *testing.T) {
+	root := fixtureRoot(t, "moveenum")
+	var out, errOut strings.Builder
+	var cmds []string
+	code := Run(&out, &errOut, root, []string{"move", "--def", "Cards.Suit", "--to", "Deck", "--apply", "--flixlint", filepath.Join(root, "flixlint")},
+		Options{Run: spansRunner("moveenum"), Verify: verifyWith(0, "", &cmds), Log: io.Discard})
+	if code != 0 {
+		t.Fatalf("終了コード %d:\n%s%s", code, out.String(), errOut.String())
+	}
+	mustContain(t, read(t, root, "src/Deck.flix"), "    pub def first(): Suit = Suit.Black(1)\n",
+		"    /// 札の色。\n    pub enum Suit with Eq {\n        case Red\n        case Black(Int32)\n    }\n}\n")
+	cards := read(t, root, "src/Cards.flix")
+	mustContain(t, cards, "pub def red(): Deck.Suit = Deck.Suit.Red", "pub def isRed(s: Deck.Suit): Bool", "case Deck.Suit.Red => true", "case Deck.Suit.Black(_) => false")
+	if strings.Contains(cards, "enum Suit") || strings.Contains(cards, "札の色") {
+		t.Errorf("元の mod に enum が残る:\n%s", cards)
+	}
+	mustContain(t, read(t, root, "src/Hand.flix"), "    use Deck.Suit\n", "Deck.Suit.Black(n) else Suit.Red", "case Deck.Suit.Red => 0", "case Suit.Black(n) => n")
+}
+
+// 元のファイルに enum の instance がある・case を use で入れた所がある時は fix に並べて書かない。
+func TestMoveAnEnumLeavesInstancesAndCaseUsesToAPerson(t *testing.T) {
+	root := fixtureRoot(t, "moveenum")
+	must(t, os.WriteFile(filepath.Join(root, "src/Cards.flix"), []byte(read(t, root, "src/Cards.flix")+"\ninstance ToString[Cards.Suit] {\n    pub def toString(_: Cards.Suit): String = \"s\"\n}\n"), 0o644))
+	var out, errOut strings.Builder
+	code := Run(&out, &errOut, root, []string{"move", "--def", "Cards.Suit", "--to", "Deck", "--apply", "--flixlint", filepath.Join(root, "flixlint")},
+		Options{Run: spansRunner("moveenum"), Verify: verifyWith(0, "", nil), Log: io.Discard})
+	if code != 2 || !strings.Contains(out.String(), "instance") {
+		t.Errorf("code %d:\n%s%s", code, out.String(), errOut.String())
+	}
+	if strings.Contains(read(t, root, "src/Deck.flix"), "enum Suit") {
+		t.Error("fix があるのに書いた")
+	}
+}
+
+// engine の根の src/ のような symlink の集まりに新しい mod のファイルを作らない（どのパッケージにも入らない）。
+func TestLinkedTreeSeesASymlinkCollection(t *testing.T) {
+	root := t.TempDir()
+	must(t, os.MkdirAll(filepath.Join(root, "pkg", "src"), 0o755))
+	must(t, os.MkdirAll(filepath.Join(root, "src", "pkg"), 0o755))
+	must(t, os.WriteFile(filepath.Join(root, "pkg", "src", "A.flix"), nil, 0o644))
+	must(t, os.Symlink("../../pkg/src/A.flix", filepath.Join(root, "src", "pkg", "A.flix")))
+	if !linkedTree(root, "src/pkg") || linkedTree(root, "pkg/src") {
+		t.Error("symlink の集まりだけを見分けるはず")
+	}
+}

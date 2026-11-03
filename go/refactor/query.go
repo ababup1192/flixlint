@@ -248,6 +248,7 @@ var FieldActs = map[string]map[FieldClass]FieldAct{
 	"field-sites":          {ClassHit: ActList, ClassMaybe: ActUnsure, ClassMiss: ActSkip},
 	"usages":               {ClassHit: ActList, ClassMaybe: ActUnsure, ClassMiss: ActSkip},
 	"field-to-accessor":    {ClassHit: ActRewrite, ClassMaybe: ActFix, ClassMiss: ActSkip},
+	"rename --label":       {ClassHit: ActRewrite, ClassMaybe: ActFix, ClassMiss: ActSkip},
 }
 
 // OwnerTarget は問いの受け手: alias（別名を鎖の終わりへ写した名前）か case（`#i` は書いた時だけ）。

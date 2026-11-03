@@ -2,6 +2,8 @@ package refactor
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -1123,4 +1125,248 @@ func holeWhy(missing []string, head string) string {
 	n := "@" + strings.Join(missing, "・@")
 	return fmt.Sprintf("呼ぶ所に局所の名前 %s が無く、囲む lambda %s の引数に _ がある（%s の値が入る所なら _ を %s に替えてから流し直す。"+
 		"道具はどの _ かを決めない・囲む def へも広げない）", n, head, n, strings.Join(missing, "・"))
+}
+
+// EffectRow は def の宣言の effect の列（`\ A + B`・`\ {A, B}`）の位置と中身。
+type EffectRow struct {
+	Start, End int      // `\` から列の終わりまで（無ければ Start = End = 書き足す所）
+	Terms      []string // A・B（書いた字のまま）
+	Braces     bool     // `{A, B}` の形
+}
+
+// FindEffectRow は src の def の名前の終わり nameEnd から、宣言の effect の列を探す（型の引数 `[a]`・引数の並びの後、
+// 本体の `=` の前。`with`・`where` の制約の前まで）。
+func FindEffectRow(src string, nameEnd int) (EffectRow, error) {
+	i := nameEnd
+	if i < len(src) && src[i] == '[' {
+		_, close, err := scanTop(src, i+1, "]")
+		if err != nil {
+			return EffectRow{}, fmt.Errorf("型の引数が読めない")
+		}
+		i = close + 1
+	}
+	if i >= len(src) || src[i] != '(' {
+		return EffectRow{}, fmt.Errorf("引数の並びが読めない")
+	}
+	_, close, err := scanTop(src, i+1, ")")
+	if err != nil {
+		return EffectRow{}, fmt.Errorf("引数の並びが読めない")
+	}
+	_, eq, err := scanTop(src, close+1, "=")
+	if err != nil {
+		return EffectRow{}, fmt.Errorf("本体の `=` が読めない")
+	}
+	head := src[close+1 : eq]
+	end := len(head)
+	if m := sigConstraint.FindStringIndex(head); m != nil {
+		end = m[0]
+	}
+	for end > 0 && (head[end-1] == ' ' || head[end-1] == '\t' || head[end-1] == '\n' || head[end-1] == '\r') {
+		end--
+	}
+	bs := -1
+	if stop, at, err := scanTop(head[:end]+"\x00", 0, "\\\x00"); err == nil && stop == '\\' {
+		bs = at
+	}
+	if bs >= 0 && strings.Contains(head[:bs], "->") {
+		if _, at, err := scanTop(head[:bs]+"\x00", 0, "-\x00"); err == nil && at < bs {
+			return EffectRow{}, fmt.Errorf("戻りの型が括弧の無い関数の型（`a -> b \\ E`）で、どの列が def の物か決められない")
+		}
+	}
+	if bs < 0 {
+		return EffectRow{Start: close + 1 + end, End: close + 1 + end}, nil
+	}
+	row := EffectRow{Start: close + 1 + bs, End: close + 1 + end}
+	body := strings.TrimSpace(head[bs+1 : end])
+	if strings.HasPrefix(body, "{") && strings.HasSuffix(body, "}") {
+		row.Braces = true
+		body = body[1 : len(body)-1]
+	}
+	parts, err := splitEffectTerms(body)
+	if err != nil {
+		return EffectRow{}, err
+	}
+	row.Terms = parts
+	return row, nil
+}
+
+var sigConstraint = regexp.MustCompile(`\s(with|where)\s`)
+
+// splitEffectTerms は列の中身を深さ 0 の `+`・`,` で分ける（`-`・`&` の式は読めないとして誤り）。
+func splitEffectTerms(body string) ([]string, error) {
+	var out []string
+	i := 0
+	for {
+		stop, at, err := scanTop(body+"\x00", i, "+,-&\x00")
+		if err != nil {
+			return nil, fmt.Errorf("effect の列が読めない")
+		}
+		if stop == '-' || stop == '&' {
+			return nil, fmt.Errorf("effect の列に %c の式がある（足す・外すだけの列でない。手で）", stop)
+		}
+		if t := strings.TrimSpace(body[i:at]); t != "" {
+			out = append(out, t)
+		}
+		if stop == 0 {
+			return out, nil
+		}
+		i = at + 1
+	}
+}
+
+// Text は列の字（空なら ""・`{}` の形は `{A, B}`・ほかは ` \ A + B`）。
+func (e EffectRow) Text(terms []string) string {
+	switch {
+	case len(terms) == 0:
+		return ""
+	case e.Braces:
+		return " \\ {" + strings.Join(terms, ", ") + "}"
+	}
+	return " \\ " + strings.Join(terms, " + ")
+}
+
+// Edit は列を terms にする書き換えの範囲と字（列が無い所へ足す時は前に空白を置き、全部外す時は前の空白ごと消す）。
+func (e EffectRow) Edit(src string, terms []string) (start, end int, text string) {
+	start, end, text = e.Start, e.End, e.Text(terms)
+	switch {
+	case start == end:
+	case len(terms) == 0:
+		for start > 0 && (src[start-1] == ' ' || src[start-1] == '\t') {
+			start--
+		}
+	default:
+		text = strings.TrimPrefix(text, " ")
+	}
+	return start, end, text
+}
+
+// WithEffects は terms から remove を外し add を足した並び（足す物は終わりへ・もうある物は足さない）。
+// 外す物が無ければ誤り（名指しの取り違えを黙って通さない）。
+func WithEffects(terms, add, remove []string) ([]string, error) {
+	out := []string{}
+	gone := map[string]bool{}
+	for _, t := range terms {
+		if t == "Pure" && len(add) > 0 {
+			continue
+		}
+		if indexOf(remove, t) >= 0 {
+			gone[t] = true
+			continue
+		}
+		out = append(out, t)
+	}
+	for _, r := range remove {
+		if !gone[r] {
+			return nil, fmt.Errorf("effect %s が列に無い（今の列: %s。列に書いた形のまま渡す）", r, strings.Join(terms, " + "))
+		}
+	}
+	for _, a := range add {
+		if indexOf(out, a) < 0 {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+// effectsReport は change-signature --add-effect・--remove-effect（--params 無し）: def の宣言の effect の列だけを替える。
+// 呼び手の列は替えない（足した effect を呼び手が持たなければ確かめで落ちて戻す。その時は呼び手も --def に並べる）。
+func effectsReport(root string, idx *Index, a args, cfg Config, o Options) (report, error) {
+	add, remove := splitList(a.addEffect), splitList(a.removeEffect)
+	srcs := map[string]string{}
+	var edits []Edit
+	var sites, fix []Fixed
+	done := map[string]bool{}
+	for _, d := range strings.Split(a.def, ",") {
+		sym, err := Resolve(idx.Rows, strings.TrimSpace(d), map[string]bool{KindDefDecl: true})
+		if err != nil {
+			return report{}, err
+		}
+		if done[sym] {
+			continue
+		}
+		done[sym] = true
+		var decl Row
+		for _, r := range idx.Rows {
+			if r.Kind == KindDefDecl && r.Sym == sym {
+				decl = r
+			}
+		}
+		if decl.HasFlag("inst") {
+			fix = append(fix, Fixed{decl, "instance の def（列は trait の sig が決める）"})
+			continue
+		}
+		src, ok := srcs[decl.File]
+		if !ok {
+			b, err := os.ReadFile(filepath.Join(root, decl.File))
+			if err != nil {
+				return report{}, err
+			}
+			src = string(b)
+			srcs[decl.File] = src
+		}
+		_, nameEnd, err := ByteRange(src, decl)
+		if err != nil {
+			return report{}, fmt.Errorf("索引が古い: %s（flix-refactor index --rebuild）", decl.Where())
+		}
+		row, err := FindEffectRow(src, nameEnd)
+		if err != nil {
+			fix = append(fix, Fixed{decl, err.Error()})
+			continue
+		}
+		terms, err := WithEffects(row.Terms, add, remove)
+		if err != nil {
+			fix = append(fix, Fixed{decl, err.Error()})
+			continue
+		}
+		start, end, after := row.Edit(src, terms)
+		before := src[start:end]
+		if before == after {
+			continue
+		}
+		name := shortName(sym)
+		edits = append(edits, Edit{File: decl.File, Start: start, End: end, Site: decl,
+			Check: []Want{{Span: decl, Text: name}},
+			Make:  func(string) (string, error) { return after, nil }})
+		sites = append(sites, Fixed{decl, fmt.Sprintf("%q → %q", strings.TrimSpace(before), strings.TrimSpace(after))})
+	}
+	var out Outcome
+	if len(fix) > 0 {
+		out = Outcome{State: StateNothing}
+		if a.apply {
+			out.State, out.Reason = StateRefused, "人へ回す所があるので書かない（fix の理由を片付けてから）"
+		}
+	} else {
+		out = Change(root, edits, a.applyWith(cfg.Verify, o))
+	}
+	r := report{Op: "change-signature", Target: a.def, code: CodeSignature, Outcome: &out, Fix: fix}
+	r.got = len(fix)
+	r.Sites = sites
+	r.gotText = fmt.Sprintf("effect の列を替える def %d・人へ回す %d", len(sites), len(fix))
+	r.wantText = "宣言の effect の列から --remove-effect を外し --add-effect を足す（呼び手の列は替えない）"
+	r.extra = append(r.extra, "呼び手の effect の列は替えない（足した effect を呼び手が持たなければ確かめで落ちる。呼び手も --def に並べる）")
+	for _, s := range sites {
+		r.lines = append(r.lines, fmt.Sprintf("%s\t%s\t%s", s.Where(), s.Sym, s.Why))
+	}
+	for _, f := range fix {
+		r.fixLines = append(r.fixLines, fmt.Sprintf("%s\tfix\t%s（%s）", f.Where(), f.Sym, f.Why))
+	}
+	base := "flix-refactor change-signature --def " + a.def
+	if a.addEffect != "" {
+		base += " --add-effect " + a.addEffect
+	}
+	if a.removeEffect != "" {
+		base += " --remove-effect " + a.removeEffect
+	}
+	nextOf(&r, base, a, &out)
+	return r, nil
+}
+
+func splitList(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

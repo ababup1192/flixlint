@@ -56,7 +56,7 @@ func renameFixture(t *testing.T) (string, []Row) {
 
 func TestRenameWritesEveryPlaceButTheAlias(t *testing.T) {
 	root, rows := renameFixture(t)
-	p, err := PlanRename(root, rows, "World.moveTo", "goTo", nil, false)
+	p, err := PlanRename(root, rows, "World.moveTo", "goTo", nil, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestRenameWritesEveryPlaceButTheAlias(t *testing.T) {
 func TestRenameStopsOnANameThatIsThere(t *testing.T) {
 	root, rows := renameFixture(t)
 	rows = append(rows, Row{Kind: KindDefDecl, File: "src/World.flix", Line: 9, Col: 13, EndLine: 9, EndCol: 17, Sym: "World.goTo", Owner: "World.goTo"})
-	if _, err := PlanRename(root, rows, "World.moveTo", "goTo", nil, false); err == nil || !strings.Contains(err.Error(), "もう在る") {
+	if _, err := PlanRename(root, rows, "World.moveTo", "goTo", nil, false, false); err == nil || !strings.Contains(err.Error(), "もう在る") {
 		t.Fatalf("err %v, want it to stop on World.goTo", err)
 	}
 }

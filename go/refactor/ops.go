@@ -110,12 +110,15 @@ func expandReport(root string, idx *Index, a args, cfg Config, o Options) (repor
 }
 
 func deadReport(root string, idx *Index, a args, cfg Config, o Options) (report, error) {
-	plan, err := PlanDead(root, idx.Rows, DeadQuery{WithTests: a.withTests, Only: a.only, TestDirs: cfg.TestDirs, Skip: a.skip, Engine: engineDir(root), Def: a.def, Library: IsLibrary(root, cfg), EntryTables: cfg.EntryTables})
+	plan, err := PlanDead(root, idx.Rows, DeadQuery{WithTests: a.withTests, Only: a.only, TestDirs: cfg.TestDirs, Skip: a.skip, Engine: engineDir(root), Def: a.def, Library: IsLibrary(root, cfg), AllowExternal: a.allowExternal, EntryTables: cfg.EntryTables})
 	if err != nil {
 		return report{}, err
 	}
 	out := Change(root, plan.Edits, a.applyWith(cfg.VerifyTests, o))
 	r := report{Op: "remove-dead", code: CodeRemoveDead, Outcome: &out, Fix: plan.Fix}
+	if a.allowExternal && IsLibrary(root, cfg) {
+		r.extra = append(r.extra, ExternalNote)
+	}
 	r.got = len(plan.Fix)
 	if out.State == StateReverted || out.State == StateRefused {
 		r.got = plan.Sites

@@ -356,9 +356,9 @@ Go の lint で `fmt.Fprint*` の回し方を数える規則は、構造で止�
 | find-usages（`usages`） | 途中の物あり | def-use・case-*・label-*・type-use・use・record の式（字） | 全部機械。受け手の決まらない欄は `?` |
 | call-hierarchy（`usages --callers --depth N`） | 同上 | def-use の owner | 全部機械 |
 | safe-delete（`remove-dead`＋`usages --unused`） | remove-dead あり | def-decl（pub・ann）・def-use・use | 参照 0 は消す。テストからだけはテストごと。同じ mod の中だけは「pub を外す」を出す（消さない） |
-| rename | 未 | def-use・case-*・type-use・use（alias= の字）・label-*（欄の時は typed） | 書いた名前の最後の区切りだけ替える。use の `{a, b}` の中も span がある（use の行は宣言の場所を持つ）。文字列・コメント・`.flow` は候補として fix |
-| change-signature（引数を足す・並べ替える・消す） | 未 | def-use の呼び出しの span（＋引数の式の範囲＝v0.7 の Node の子） | 足す引数の値は `--value EXPR`、決められなければ fix。関数を値で渡す所（`参照`）は fix（lambda で包むかは人） |
-| move（def を別の mod へ） | 未 | def-decl の ext・def-use・use | 本体を写し、呼び出しの修飾名を替え、use を直す。移す先で名前がぶつかれば止める |
+| rename | あり（def・型 alias・record の欄。enum・case・mod はまだ） | def-use・type-use・use（alias= の字）・label-*（欄の時は typed） | 書いた名前の最後の区切りだけ替える。use の `{a, b}` の中も替え、別名（`f => h`）で書いた所は替えない。受け手が証明できない欄の読み書き・欄の組が同じ別の型の組み立ては fix。ライブラリの pub は `--allow-external` の時だけ（索引の外の使い手は直らない） |
+| change-signature（引数を足す・並べ替える・消す・effect の列を足す・外す） | あり | def-use の呼び出しの span（＋引数の式の範囲＝v0.7 の Node の子） | 足す引数の値は `--value EXPR`、決められなければ fix。関数を値で渡す所（`参照`）は fix（lambda で包むかは人） |
+| move（def・型 alias・enum を別の mod へ） | あり（同じ package の中。package をまたぐのはまだ） | def-decl の ext・alias-decl・enum-decl・def-use・type-use・case-*・use | 本体を写し、呼び出しと case の修飾名を替え、use を直す。移す先で名前がぶつかれば止める。case だけを use で入れた所は fix |
 | **change-case-shape**（enum の case の形を変える: `Scene.Deck(a, b)` → `Scene.Deck({ a, b })`） | 未 | case-construct・case-pattern（＋引数の span）・match-arm | Fight で手の一番かかった物（場面の case を payload の形へ 26 か所）。作る所は `{ a = x, b = y }` へ包み、当てる所は `Scene.Deck(p)` と束ねて本体の `a` を `p#a` へ（使わない欄は落とす）。ガードや入れ子の型は fix |
 | move-fields（§7） | 設計メモ | label-*（typed）・record の式・case の payload | §7 のとおり。field-to-accessor（口を作る）→ 移す の 2 段 |
 | field-to-accessor | あり（口を作る所は途中） | label-*（typed）・型 alias の宣言 | 口が無ければ作る（`<欄>Of`・`with<欄>`）。型の合わない読みは fix |

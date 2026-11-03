@@ -240,6 +240,38 @@ func Outline(all []Found, file string, src *srcCache) []Found {
 	return out
 }
 
+func declFiles(all []Found) []string {
+	seen := map[string]bool{}
+	var fs []string
+	for _, f := range all {
+		if !seen[f.File] {
+			seen[f.File] = true
+			fs = append(fs, f.File)
+		}
+	}
+	return fs
+}
+
+// indexFileOf は渡されたパス f を、索引の書くパス（files の 1 つ）に替える。同じ実体（symlink を辿った先）の物があれば
+// それ・無ければ f のまま。
+// WhyNot: 字で比べるだけにしない。engine の根の src/ はパッケージの src/ への symlink 集で、索引は src/engine/X.flix と
+// 書くが、人が開くのは engine/src/X.flix。
+func indexFileOf(root string, files []string, f string) string {
+	if indexOf(files, f) >= 0 {
+		return f
+	}
+	want, err := filepath.EvalSymlinks(filepath.Join(root, f))
+	if err != nil {
+		return f
+	}
+	for _, g := range files {
+		if got, err := filepath.EvalSymlinks(filepath.Join(root, g)); err == nil && got == want {
+			return g
+		}
+	}
+	return f
+}
+
 func clipRunes(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
@@ -270,7 +302,7 @@ func listRun(out, errOut *strings.Builder, b Builder, s Stage, a args) int {
 					f = rel // フックの案内（Read の file_path）は絶対パスで来る
 				}
 			}
-			f = filepath.ToSlash(filepath.Clean(f))
+			f = indexFileOf(b.Root, declFiles(all), filepath.ToSlash(filepath.Clean(f)))
 			if src.get(f) == "" {
 				fmt.Fprintf(errOut, "refactor outline: %s が読めません（根からの相対パスで。例 src/World.flix）\n", f)
 				return 2

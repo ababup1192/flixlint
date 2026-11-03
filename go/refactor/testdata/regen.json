@@ -6,6 +6,7 @@
     {"index": "accmod-spans-typed.tsv", "dir": "accmod", "stage": "typed", "sources": ["src"]},
     {"index": "inst-spans-resolved.tsv", "dir": "inst", "stage": "resolved", "sources": ["src", "test"]},
     {"index": "move-spans-resolved.tsv", "dir": "move", "stage": "resolved", "sources": ["src", "test"]},
+    {"index": "moveenum-spans-resolved.tsv", "dir": "moveenum", "stage": "resolved", "sources": ["src"]},
     {"index": "movefields-spans-resolved.tsv", "dir": "movefields", "stage": "resolved", "sources": ["src"]},
     {"index": "movefields-spans-typed.tsv", "dir": "movefields", "stage": "typed", "sources": ["src"]},
     {"index": "prefer-spans-resolved.tsv", "dir": "prefer", "stage": "resolved", "sources": ["src"]},

@@ -88,3 +88,19 @@ func TestSearchFallsBackToDocComments(t *testing.T) {
 		t.Errorf("名前の当たりは doc にしない: %+v", got)
 	}
 }
+
+// 根の src/ がパッケージの src/ への symlink 集の時、パッケージのパスで渡しても索引のパスで引く。
+func TestIndexFileOfFollowsTheSymlinkToThePackageSource(t *testing.T) {
+	root := t.TempDir()
+	must(t, os.MkdirAll(filepath.Join(root, "render_gl", "src"), 0o755))
+	must(t, os.MkdirAll(filepath.Join(root, "src", "render_gl"), 0o755))
+	must(t, os.WriteFile(filepath.Join(root, "render_gl", "src", "Gl.flix"), []byte("mod Gl {}\n"), 0o644))
+	must(t, os.Symlink("../../render_gl/src/Gl.flix", filepath.Join(root, "src", "render_gl", "Gl.flix")))
+	files := []string{"src/Other.flix", "src/render_gl/Gl.flix"}
+	if got := indexFileOf(root, files, "render_gl/src/Gl.flix"); got != "src/render_gl/Gl.flix" {
+		t.Errorf("got %s", got)
+	}
+	if got := indexFileOf(root, files, "src/render_gl/Gl.flix"); got != "src/render_gl/Gl.flix" {
+		t.Errorf("索引のパスはそのまま: %s", got)
+	}
+}

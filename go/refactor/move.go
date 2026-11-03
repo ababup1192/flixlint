@@ -2,14 +2,16 @@ package refactor
 
 import (
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf16"
 )
 
-// move（IDE の Move）: def と型 alias を別の mod へ移し、呼ぶ所の修飾名と use を直す。
+// move（IDE の Move）: def・型 alias・enum を別の mod へ移し、呼ぶ所の修飾名と use を直す（enum は case を書いた所も）。
 //
 //	flix-refactor move --def Mod.f[,Mod.T] --to Mod2 [--with Mod.h] [--apply]
 //
@@ -60,7 +62,7 @@ type MovePlan struct {
 }
 
 type moveItem struct {
-	sym, kind string // kind は def か alias
+	sym, kind string // kind は def・alias・enum
 	from      string // 元の mod
 	row       Row
 	pub, with bool
@@ -107,8 +109,20 @@ func PlanMove(rows []Row, srcs *reshapeSources, q MoveQuery) (MovePlan, error) {
 				return err
 			}
 			it.kind, it.row, it.pub = "alias", a, declIsPub(src, a)
+		} else if e, ok := decls[sym]; ok && e.Kind == KindEnumDecl {
+			src, err := srcs.get(e.File)
+			if err != nil {
+				return err
+			}
+			if ext, err = enumExt(src, e); err != nil {
+				return err
+			}
+			it.kind, it.row, it.pub = "enum", e, declIsPub(src, e)
+			if at := instanceIn(src, shortName(sym)); at >= 0 {
+				p.Fix = append(p.Fix, Fixed{rowAt(e.File, src, at, sym), "元のファイルに " + shortName(sym) + " の instance がある（移すと孤立した instance になる。instance を先に移し先へ書くか、trait の mod へ）"})
+			}
 		} else {
-			return fmt.Errorf("%s は def か型 alias でない（enum は移せない）", sym)
+			return fmt.Errorf("%s は def・型 alias・enum でない", sym)
 		}
 		if it.from == q.To {
 			return fmt.Errorf("%s はもう %s にある", sym, q.To)
@@ -243,6 +257,17 @@ func PlanMove(rows []Row, srcs *reshapeSources, q MoveQuery) (MovePlan, error) {
 			}
 			continue
 		}
+		if isCaseRef(r) {
+			if _, also := moved[vis]; also {
+				// 一緒に移す enum の case: 移し先の中では Enum.Case
+				if short := shortName(vis) + "." + shortName(r.Sym); w != short && strings.Contains(w, ".") {
+					if err := edit(short); err != nil {
+						return p, err
+					}
+				}
+				continue
+			}
+		}
 		if pub, here := pubOf(vis); here && !pub && modOf(vis) == it.from {
 			if _, also := moved[vis]; !also {
 				p.Fix = append(p.Fix, Fixed{r, fmt.Sprintf("元の mod の非 pub の %s を使う。--with %s で一緒に移すか、%s を pub にする", vis, vis, vis)})
@@ -319,6 +344,32 @@ func PlanMove(rows []Row, srcs *reshapeSources, q MoveQuery) (MovePlan, error) {
 	callerWants := map[[2]string][]useWant{} // (file, mod) → 足す use
 	var callerOrder [][2]string
 	for _, r := range rows {
+		if r.Kind == KindUse && r.Attr("what") == "case" {
+			if _, ok := moved[modOf(r.Sym)]; ok {
+				p.Fix = append(p.Fix, Fixed{r, "case を use で入れている（use Mod.Enum.{Case}）。use を手で移し先へ"})
+				continue
+			}
+		}
+		if isCaseRef(r) {
+			if it, ok := moved[modOf(r.Sym)]; ok {
+				if _, in := moved[r.Owner]; in {
+					continue
+				}
+				e, why, err := moveCaseEdit(srcs, ix, r, it, q.To)
+				switch {
+				case err != nil:
+					return p, err
+				case why != "":
+					p.Fix = append(p.Fix, Fixed{r, why})
+				case e != nil:
+					edits = append(edits, *e)
+					p.Calls++
+					p.CallFiles[r.File]++
+					p.Sites = append(p.Sites, Fixed{r, "case"})
+				}
+				continue
+			}
+		}
 		it, isMoved := moved[r.Sym]
 		if !isMoved {
 			continue
@@ -914,7 +965,7 @@ func moveReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 		return report{}, err
 	}
 	q := MoveQuery{To: strings.TrimSpace(a.to), All: all, Dir: firstSourceDir(root, cfg)}
-	kinds := map[string]bool{KindDefDecl: true, KindAliasDecl: true}
+	kinds := map[string]bool{KindDefDecl: true, KindAliasDecl: true, KindEnumDecl: true}
 	for _, list := range []struct {
 		text string
 		dst  *[]string
@@ -937,6 +988,9 @@ func moveReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 	plan, err := PlanMove(idx.Rows, srcs, q)
 	if err != nil {
 		return report{}, err
+	}
+	if plan.Created && linkedTree(root, path.Dir(plan.Target)) {
+		plan.Fix = append(plan.Fix, Fixed{Row{File: plan.Target, Line: 1, Col: 1}, "移し先の mod が無く、作るフォルダが symlink の集まり（engine の根の src/ など）。そこに作ったファイルはどのパッケージにも入らない。先にパッケージの src/ に mod " + q.To + " のファイルを置いてから移す"})
 	}
 	how := a.applyWith(cfg.Verify, o)
 	if len(plan.Fix) > 0 {
@@ -1108,4 +1162,102 @@ func firstSourceDir(root string, cfg Config) string {
 		}
 	}
 	return "src"
+}
+
+func isCaseRef(r Row) bool { return r.Kind == KindCaseConstruct || r.Kind == KindCasePattern }
+
+// moveCaseEdit は移す enum の case を書いた所（作る所・当てる所）の書き換え。書いた字の `Enum.Case` の前の mod の
+// 修飾を移し先へ替える（移し先の中では外す）。元の mod の中の `Enum.Case` は移し先の修飾をつける。
+// 外の mod の `Enum.Case` は enum を use で入れた物（use の方を直す）なので書かない。case だけを use で入れた `Case` は fix。
+func moveCaseEdit(srcs *reshapeSources, ix *sigIndex, r Row, it *moveItem, to string) (*Edit, string, error) {
+	if isSugar(r) {
+		return nil, "", nil
+	}
+	src, err := srcs.get(r.File)
+	if err != nil {
+		return nil, "", err
+	}
+	s, e, err := ByteRange(src, r)
+	if err != nil {
+		return nil, "", fmt.Errorf("索引が古い: %s（flix-refactor index --rebuild）", r.Where())
+	}
+	w := src[s:e]
+	tail := shortName(it.sym) + "." + shortName(r.Sym)
+	mod := modOf(r.Owner)
+	var repl string
+	switch {
+	case w == tail && mod == it.from:
+		repl = to + "." + tail
+	case w == tail:
+		return nil, "", nil
+	case strings.HasSuffix(w, "."+tail) && mod == to:
+		repl = tail
+	case strings.HasSuffix(w, "."+tail):
+		repl = to + "." + tail
+	default:
+		return nil, fmt.Sprintf("case を `%s` と書いた（case だけを use で入れた形）。use を手で移し先へ", w), nil
+	}
+	if repl == w {
+		return nil, "", nil
+	}
+	ed, err := replaceEdit(srcs, r, w, repl)
+	if err != nil {
+		return nil, "", err
+	}
+	return &ed, "", nil
+}
+
+// enumExt は enum の宣言の範囲（名前の行の字の頭 〜 本体の `}`、本体が無ければ深さ 0 の改行まで）。
+func enumExt(src string, r Row) (Row, error) {
+	s, e, err := ByteRange(src, r)
+	if err != nil {
+		return Row{}, fmt.Errorf("索引が古い: %s（flix-refactor index --rebuild）", r.Where())
+	}
+	end := len(src)
+	stop, at, err := scanTop(src, e, "{\n")
+	switch {
+	case err != nil:
+		return Row{}, fmt.Errorf("%s: enum の本体が読めない", r.Where())
+	case stop == '{':
+		_, close, err := scanTop(src, at+1, "}")
+		if err != nil {
+			return Row{}, fmt.Errorf("%s: enum の `}` が読めない", r.Where())
+		}
+		end = close + 1
+	default:
+		end = at
+	}
+	for end > s && (src[end-1] == ' ' || src[end-1] == '\t' || src[end-1] == '\r') {
+		end--
+	}
+	ls := lineStart(src, s)
+	start := ls + len(lineIndent(src, s))
+	sl, sc := lineCol(src, start)
+	el, ec := lineCol(src, end)
+	return Row{File: r.File, Line: sl, Col: sc, EndLine: el, EndCol: ec}, nil
+}
+
+// instanceIn は src の中で enum short を型の引数に持つ instance の宣言の位置（無ければ -1）。
+func instanceIn(src, short string) int {
+	re := regexp.MustCompile(`\binstance\s+[A-Za-z0-9_.]+\[\s*(?:[A-Za-z0-9_]+\.)*` + regexp.QuoteMeta(short) + `\b`)
+	if m := re.FindStringIndex(src); m != nil {
+		return m[0]
+	}
+	return -1
+}
+
+// linkedTree は root の dir（かその上）の .flix に symlink があるか（パッケージの src/ を指す symlink の集まりか）。
+func linkedTree(root, dir string) bool {
+	for d := dir; d != "." && d != "/" && d != ""; d = path.Dir(d) {
+		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(d)))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.Type()&os.ModeSymlink != 0 && strings.HasSuffix(e.Name(), ".flix") {
+				return true
+			}
+		}
+	}
+	return false
 }
