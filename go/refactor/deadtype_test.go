@@ -39,7 +39,7 @@ func TestRemoveDeadKeepsAPubTypeWithoutAllowExternalAndSaysSo(t *testing.T) {
 
 // use で case を入れる型は消さない（消すと use が名前を失う）。その型の case の中だけが使う Cell も残る。
 func TestRemoveDeadKeepsATypeWhoseCaseIsImported(t *testing.T) {
-	rows := append(deadtypeRows(t), Row{Kind: KindUse, File: "src/Main.flix", Line: 1, Col: 1, Sym: "Dungeon.Node.Room", Owner: "Main"})
+	rows := append(deadtypeRows(t), Row{Kind: KindUse, File: "src/Main.flix", Line: 1, Col: 1, Sym: "Dungeon.Node.Room", Owner: "Main", Extra: "alias=Room what=case"})
 	plan, err := PlanDead(fixtureRoot(t, "deadtype"), rows, DeadQuery{Def: "Dungeon.describe", AllowExternal: true})
 	must(t, err)
 	if got, want := removedSyms(plan), []string{"Dungeon.Shade", "Dungeon.describe", "Dungeon.size"}; !equalSyms(got, want) {
@@ -109,5 +109,35 @@ func TestDeclLinesDropsTheBlankAfterAnOpeningBrace(t *testing.T) {
 	must(t, err)
 	if got, want := src[:cut[0]]+src[cut[1]:], "mod M {\n    def b(): Int32 = 2\n}\n"; got != want {
 		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+// enum と同じ名前の mod（companion mod）の def を use で入れても、enum の use ではないので enum は道連れで消す。
+func TestRemoveDeadTakesAnEnumWhoseCompanionModDefIsImported(t *testing.T) {
+	rows := append(deadtypeRows(t), Row{Kind: KindUse, File: "src/Main.flix", Line: 1, Col: 1, Sym: "Dungeon.Node.helper", Owner: "Main", Extra: "alias=helper what=def"})
+	plan, err := PlanDead(fixtureRoot(t, "deadtype"), rows, DeadQuery{Def: "Dungeon.describe"})
+	must(t, err)
+	if got, want := removedSyms(plan), []string{"Dungeon.Cell", "Dungeon.Node", "Dungeon.describe", "Dungeon.size"}; !equalSyms(got, want) {
+		t.Fatalf("消す物 %v（want %v）", got, want)
+	}
+}
+
+// 非 pub の型が読めない時は、知らせでなく fix に回す（残すと確かめが Redundancy で落ちて書き換えごと戻る）。
+func TestRemoveDeadSendsAnUnreadableTypeToFix(t *testing.T) {
+	rows := deadtypeRows(t)
+	for i := range rows {
+		if rows[i].Kind == KindEnumDecl && rows[i].Sym == "Dungeon.Node" {
+			rows[i].File = "src/Missing.flix"
+		}
+	}
+	plan, err := PlanDead(fixtureRoot(t, "deadtype"), rows, DeadQuery{Def: "Dungeon.describe"})
+	must(t, err)
+	if len(plan.Fix) != 1 || plan.Fix[0].Sym != "Dungeon.Node" || !strings.Contains(plan.Fix[0].Why, "読めない") {
+		t.Fatalf("fix %+v（want Dungeon.Node の読めない 1）", plan.Fix)
+	}
+	for _, n := range plan.TypeNotes {
+		if strings.Contains(n, "Dungeon.Node") {
+			t.Fatalf("fix に回した型が知らせにも出る: %s", n)
+		}
 	}
 }

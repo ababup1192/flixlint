@@ -32,7 +32,7 @@ type DeadQuery struct {
 type DeadPlan struct {
 	Targets []Fixed // 消す def（why は test-only・unreferenced・道連れ）
 	Types   []Fixed // 消す def だけが使っていて一緒に消す型（enum・型 alias）
-	// TypeNotes は使い手が全部消えるのに残す型の知らせ（pub・use で入れる・--skip・切り出せない）。
+	// TypeNotes は使い手が全部消えるのに残す型の知らせ（pub・use で入れる・--skip）。
 	TypeNotes []string
 	Tests     []Fixed // 一緒に消すテスト
 	Fix       []Fixed // 消さずに人へ回す物
@@ -273,8 +273,9 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 			}
 		}
 	}
-	types, typeNotes := deadTypes(root, rows, removed, q)
+	types, typeNotes, typeFix := deadTypes(root, rows, removed, q)
 	plan.TypeNotes = typeNotes
+	plan.Fix = append(plan.Fix, typeFix...)
 	for _, c := range targets {
 		plan.Targets = append(plan.Targets, Fixed{c.d.Row, c.why})
 	}
@@ -378,8 +379,10 @@ type deadType struct {
 // WhyNot: 残さない。使い手の def を消した後に非 pub の型が残ると、Flix のコンパイラが使われない型で止める。
 // WhyNot: pub の型は --allow-external が無ければ消さない（使い手が索引の外にいるかもしれない）。人へ回す fix にせず
 // 知らせにする: 残してもコンパイルは通り、fix に数えると消す def が pub の型を使うたびに結果が人待ちになる。
+// 読めない・行ごと切り出せない型は fix に回す: 非 pub の型が残ると確かめが Redundancy で落ちて書き換えごと戻るので、
+// 人が手で消すまで進めない（読めない型は pub かどうかも決められないので同じに扱う）。
 // WhyNot: 互いに相手の case に入る 2 つの型は拾わない（相手が消えるのを互いに待つ）。まれなので組で判じない。
-func deadTypes(root string, rows []Row, removed map[string]bool, q DeadQuery) ([]deadType, []string) {
+func deadTypes(root string, rows []Row, removed map[string]bool, q DeadQuery) ([]deadType, []string, []Fixed) {
 	decls := map[string]Row{}
 	var order []string
 	for _, r := range rows {
@@ -400,7 +403,9 @@ func deadTypes(root string, rows []Row, removed map[string]bool, q DeadQuery) ([
 			target = modOf(r.Sym)
 		case KindUse:
 			imported[r.Sym] = true
-			imported[modOf(r.Sym)] = true
+			if r.Attr("what") == "case" {
+				imported[modOf(r.Sym)] = true
+			}
 			continue
 		default:
 			continue
@@ -419,6 +424,11 @@ func deadTypes(root string, rows []Row, removed map[string]bool, q DeadQuery) ([
 	}
 	var out []deadType
 	kept := map[string]string{} // 使い手が全部消えるのに残す型 → 理由
+	var fix []Fixed
+	toFix := func(s, why string) {
+		kept[s] = why
+		fix = append(fix, Fixed{decls[s], "消す物だけが使っていた型・" + why})
+	}
 	srcs := map[string]string{}
 	for changed := true; changed; {
 		changed = false
@@ -427,11 +437,19 @@ func deadTypes(root string, rows []Row, removed map[string]bool, q DeadQuery) ([
 			if removed[s] || kept[s] != "" || !gone(s) {
 				continue
 			}
+			switch {
+			case imported[s]:
+				kept[s] = "use で名前を入れる所がある（use と一緒に手で消す）"
+				continue
+			case q.Skip[r.File+":"+fmt.Sprint(r.Line)]:
+				kept[s] = "--skip で外した"
+				continue
+			}
 			src, ok := srcs[r.File]
 			if !ok {
 				data, err := os.ReadFile(filepath.Join(root, r.File))
 				if err != nil {
-					kept[s] = "読めない: " + err.Error()
+					toFix(s, "読めない（"+err.Error()+"。確かめて手で消す）")
 					continue
 				}
 				src = string(data)
@@ -441,14 +459,7 @@ func deadTypes(root string, rows []Row, removed map[string]bool, q DeadQuery) ([
 			if r.Kind == KindAliasDecl {
 				what, extOf = "型 alias", aliasExt
 			}
-			switch {
-			case imported[s]:
-				kept[s] = "use で名前を入れる所がある（use と一緒に手で消す）"
-				continue
-			case q.Skip[r.File+":"+fmt.Sprint(r.Line)]:
-				kept[s] = "--skip で外した"
-				continue
-			case declIsPub(src, r) && !q.AllowExternal:
+			if declIsPub(src, r) && !q.AllowExternal {
 				kept[s] = "pub（--allow-external で一緒に消す）"
 				continue
 			}
@@ -458,7 +469,7 @@ func deadTypes(root string, rows []Row, removed map[string]bool, q DeadQuery) ([
 				e, err = deleteEdit(root, defInfo{Row: r, Ext: ext})
 			}
 			if err != nil {
-				kept[s] = "宣言を行ごと切り出せない（" + err.Error() + "。手で消す）"
+				toFix(s, "宣言を行ごと切り出せない（"+err.Error()+"。手で消す）")
 				continue
 			}
 			removed[s] = true
@@ -468,11 +479,20 @@ func deadTypes(root string, rows []Row, removed map[string]bool, q DeadQuery) ([
 	}
 	var notes []string
 	for _, s := range order {
-		if kept[s] != "" {
+		if kept[s] != "" && !fixed(fix, s) {
 			notes = append(notes, fmt.Sprintf("消す物だけが使っていた型 %s（%s）を残す: %s", s, decls[s].Where(), kept[s]))
 		}
 	}
-	return out, notes
+	return out, notes, fix
+}
+
+func fixed(fix []Fixed, sym string) bool {
+	for _, f := range fix {
+		if f.Sym == sym {
+			return true
+		}
+	}
+	return false
 }
 
 // declLineRange は宣言の行の範囲（上の `///` と注記の行から ext の終わりまで・1 から）。読めなければ ext の範囲。
