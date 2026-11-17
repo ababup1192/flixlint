@@ -3,7 +3,7 @@ package flixlint
 
 /** The names of `Flixlint.AstKinds`, in number order, and the hash of the `ast_schema` they come from. */
 object AstNames {
-  val schemaHash: String = "32aaa77c5f393c58"
+  val schemaHash: String = "81bfb8bbbd0d747d"
   val kinds: Vector[String] = Vector(
     "Annotation.CompileTest", "Annotation.DefaultHandler", "Annotation.Deprecated", "Annotation.DontInline", "Annotation.Error", "Annotation.Experimental", "Annotation.Inline", "Annotation.Lazy",
     "Annotation.LazyWhenPure", "Annotation.LoweringTargetChannel", "Annotation.LoweringTargetDatalog", "Annotation.Parallel", "Annotation.ParallelWhenPure", "Annotation.Skip", "Annotation.TailRecursive", "Annotation.Terminates",
@@ -17,15 +17,16 @@ object AstNames {
     "Expr.Match", "Expr.NewChannel", "Expr.NewObject", "Expr.OpenAs", "Expr.ParYield", "Expr.PutChannel", "Expr.PutField", "Expr.PutStaticField",
     "Expr.RecordExtend", "Expr.RecordRestrict", "Expr.RecordSelect", "Expr.Region", "Expr.RestrictableChoose", "Expr.RestrictableTag", "Expr.RunWith", "Expr.SelectChannel",
     "Expr.Spawn", "Expr.Stm", "Expr.StructGet", "Expr.StructNew", "Expr.StructPut", "Expr.Tag", "Expr.Throw", "Expr.TryCatch",
-    "Expr.Tuple", "Expr.Unary", "Expr.UncheckedCast", "Expr.Unsafe", "Expr.Use", "Expr.Var", "Expr.VectorLength", "Expr.VectorLit",
-    "Expr.VectorLoad", "ExtMatchRule", "ExtPattern.Default", "ExtPattern.Error", "ExtPattern.Tag", "ExtTagPattern.Error", "ExtTagPattern.Unit", "ExtTagPattern.Var",
-    "ExtTagPattern.Wild", "FormalParam", "HandlerRule", "JClass", "JvmAnnotation", "JvmConstructor", "JvmMethod", "MatchRule",
-    "Modifiers", "Op", "ParYieldFragment", "Pattern.Cst", "Pattern.Error", "Pattern.Record", "Pattern.Record.RecordLabelPattern", "Pattern.Tag",
-    "Pattern.Tuple", "Pattern.Var", "Pattern.Wild", "Predicate.Body.Atom", "Predicate.Body.Functional", "Predicate.Body.Guard", "Predicate.Head.Atom", "PredicateAndArity",
-    "PredicateParam", "PredicateParam.PredicateParamUntyped", "PredicateParam.PredicateParamWithType", "RestrictableChoosePattern.Error", "RestrictableChoosePattern.Tag", "RestrictableChoosePattern.Var", "RestrictableChoosePattern.Wild", "RestrictableChooseRule",
-    "SelectChannelRule", "Spec", "TraitConstraint", "Tuple2", "TypeAlias", "TypeParam", "TypeParam.Implicit", "TypeParam.Kinded",
-    "TypeParam.Unkinded", "UseOrImport.Import", "UseOrImport.Use", "jvm.JavaField", "jvm.JavaFieldRef", "jvm.JavaMethod", "jvm.JavaMethodRef", "jvm.JavaType.GenericArray",
-    "jvm.JavaType.NonGeneric", "jvm.JavaType.Parameterized", "jvm.JavaType.Variable", "jvm.JavaType.Wildcard", "jvm.JavaTypeParameter", "jvm.JavaTypeVariable", "jvm.JavaTypeVariableOwner.Class", "jvm.JavaTypeVariableOwner.Method")
+    "Expr.Tuple", "Expr.Unary", "Expr.UncheckedCast", "Expr.Unsafe", "Expr.Use", "Expr.Val", "Expr.Var", "Expr.VectorLength",
+    "Expr.VectorLit", "Expr.VectorLoad", "ExtMatchRule", "ExtPattern.Default", "ExtPattern.Error", "ExtPattern.Tag", "ExtTagPattern.Error", "ExtTagPattern.Unit",
+    "ExtTagPattern.Var", "ExtTagPattern.Wild", "FormalParam", "HandlerRule", "JClass", "JvmAnnotation", "JvmConstructor", "JvmMethod",
+    "MatchRule", "Modifiers", "Op", "ParYieldFragment", "Pattern.Cst", "Pattern.Error", "Pattern.Record", "Pattern.Record.RecordLabelPattern",
+    "Pattern.Tag", "Pattern.Tuple", "Pattern.Var", "Pattern.Wild", "Predicate.Body.Atom", "Predicate.Body.Functional", "Predicate.Body.Guard", "Predicate.Head.Atom",
+    "PredicateAndArity", "PredicateParam", "PredicateParam.PredicateParamUntyped", "PredicateParam.PredicateParamWithType", "RestrictableChoosePattern.Error", "RestrictableChoosePattern.Tag", "RestrictableChoosePattern.Var", "RestrictableChoosePattern.Wild",
+    "RestrictableChooseRule", "SelectChannelRule", "Spec", "TraitConstraint", "Tuple2", "TypeAlias", "TypeParam", "TypeParam.Implicit",
+    "TypeParam.Kinded", "TypeParam.Unkinded", "UseOrImport.Import", "UseOrImport.Use", "jvm.JavaField", "jvm.JavaFieldRef", "jvm.JavaMethod", "jvm.JavaMethodRef",
+    "jvm.JavaType.GenericArray", "jvm.JavaType.NonGeneric", "jvm.JavaType.Parameterized", "jvm.JavaType.Variable", "jvm.JavaType.Wildcard", "jvm.JavaTypeParameter", "jvm.JavaTypeVariable", "jvm.JavaTypeVariableOwner.Class",
+    "jvm.JavaTypeVariableOwner.Method")
   val slots: Vector[String] = Vector(
     "_2", "ann", "annotations", "arguments", "bnd", "body", "cases", "chan",
     "clazz", "component", "constructor", "constructors", "cparams", "cs", "default", "derives",
@@ -36,14 +37,14 @@ object AstNames {
     "select", "selects", "spec", "tconstrs", "terms", "tparams", "traits", "typeParameters",
     "upperBounds", "variable", "where")
   val attrs: Vector[String] = Vector(
-    "_1", "alias", "allowSubeffecting", "arg", "arity", "arrowTpe", "asEff", "bodyEff",
-    "bodyType", "cast", "clazz", "cst", "cst.lit", "declaredEff", "declaredType", "decreasing",
-    "den", "desc", "descriptor", "eff", "erasure", "expectedEff", "expectedType", "fieldName",
-    "fixity", "handledEff", "ident", "isConstructor", "isInterface", "isOpen", "isRuntimeVisible", "isVarArgs",
-    "itpe", "label", "m", "methodName", "mod", "mode", "modifiers", "name",
-    "op", "optPreds", "owner", "parameterNames", "polarity", "pos", "pred", "regSym",
-    "retTpe", "runEff", "sop", "src", "star", "sym", "symUse", "syms",
-    "targ", "targs", "tpe", "tpe1", "tpe2", "tpes", "withh")
+    "_1", "alias", "arg", "arity", "arrowTpe", "asEff", "bodyEff", "bodyType",
+    "cast", "clazz", "cst", "cst.lit", "declaredEff", "declaredType", "decreasing", "den",
+    "desc", "descriptor", "eff", "erasure", "expectedEff", "expectedType", "fieldName", "fixity",
+    "handledEff", "ident", "isConstructor", "isInterface", "isOpen", "isRuntimeVisible", "isVarArgs", "itpe",
+    "label", "m", "methodName", "mod", "mode", "modifiers", "name", "op",
+    "optPreds", "owner", "parameterNames", "polarity", "pos", "pred", "regSym", "retTpe",
+    "runEff", "sop", "src", "star", "sym", "symUse", "syms", "targ",
+    "targs", "tpe", "tpe1", "tpe2", "tpes", "withh")
   lazy val kindNumbers: Map[String, Int] = kinds.zipWithIndex.toMap
   lazy val slotNumbers: Map[String, Int] = slots.zipWithIndex.toMap
   lazy val attrNumbers: Map[String, Int] = attrs.zipWithIndex.toMap
@@ -83,15 +84,15 @@ object AstNames {
     "Expr.NewChannel", "Expr.NewObject", "Expr.OpenAs", "Expr.ParYield", "Expr.PutChannel", "Expr.PutField", "Expr.PutStaticField", "Expr.RecordExtend",
     "Expr.RecordRestrict", "Expr.RecordSelect", "Expr.Region", "Expr.RestrictableChoose", "Expr.RestrictableTag", "Expr.RunWith", "Expr.SelectChannel", "Expr.Spawn",
     "Expr.Stm", "Expr.StructGet", "Expr.StructNew", "Expr.StructPut", "Expr.Tag", "Expr.Throw", "Expr.TryCatch", "Expr.Tuple",
-    "Expr.Unary", "Expr.UncheckedCast", "Expr.Unsafe", "Expr.Use", "Expr.Var", "Expr.VectorLength", "Expr.VectorLit", "Expr.VectorLoad",
-    "ExtMatchRule", "ExtPattern.Default", "ExtPattern.Error", "ExtPattern.Tag", "ExtTagPattern.Error", "ExtTagPattern.Unit", "ExtTagPattern.Var", "ExtTagPattern.Wild",
-    "FormalParam", "HandlerRule", "JClass", "JvmAnnotation", "JvmConstructor", "JvmMethod", "MatchRule", "Modifiers",
-    "Op", "ParYieldFragment", "Pattern.Cst", "Pattern.Error", "Pattern.Record", "Pattern.Record.RecordLabelPattern", "Pattern.Tag", "Pattern.Tuple",
-    "Pattern.Var", "Pattern.Wild", "Predicate.Body.Atom", "Predicate.Body.Functional", "Predicate.Body.Guard", "Predicate.Head.Atom", "PredicateAndArity", "PredicateParam.PredicateParamUntyped",
-    "PredicateParam.PredicateParamWithType", "RestrictableChoosePattern.Error", "RestrictableChoosePattern.Tag", "RestrictableChoosePattern.Var", "RestrictableChoosePattern.Wild", "RestrictableChooseRule", "SelectChannelRule", "Spec",
-    "TraitConstraint", "Tuple2", "TypeAlias", "TypeParam.Implicit", "TypeParam.Kinded", "TypeParam.Unkinded", "UseOrImport.Import", "UseOrImport.Use",
-    "jvm.JavaField", "jvm.JavaFieldRef", "jvm.JavaMethodRef", "jvm.JavaType.GenericArray", "jvm.JavaType.NonGeneric", "jvm.JavaType.Parameterized", "jvm.JavaType.Variable", "jvm.JavaType.Wildcard",
-    "jvm.JavaTypeVariable", "jvm.JavaTypeVariableOwner.Class", "jvm.JavaTypeVariableOwner.Method")
+    "Expr.Unary", "Expr.UncheckedCast", "Expr.Unsafe", "Expr.Use", "Expr.Val", "Expr.Var", "Expr.VectorLength", "Expr.VectorLit",
+    "Expr.VectorLoad", "ExtMatchRule", "ExtPattern.Default", "ExtPattern.Error", "ExtPattern.Tag", "ExtTagPattern.Error", "ExtTagPattern.Unit", "ExtTagPattern.Var",
+    "ExtTagPattern.Wild", "FormalParam", "HandlerRule", "JClass", "JvmAnnotation", "JvmConstructor", "JvmMethod", "MatchRule",
+    "Modifiers", "Op", "ParYieldFragment", "Pattern.Cst", "Pattern.Error", "Pattern.Record", "Pattern.Record.RecordLabelPattern", "Pattern.Tag",
+    "Pattern.Tuple", "Pattern.Var", "Pattern.Wild", "Predicate.Body.Atom", "Predicate.Body.Functional", "Predicate.Body.Guard", "Predicate.Head.Atom", "PredicateAndArity",
+    "PredicateParam.PredicateParamUntyped", "PredicateParam.PredicateParamWithType", "RestrictableChoosePattern.Error", "RestrictableChoosePattern.Tag", "RestrictableChoosePattern.Var", "RestrictableChoosePattern.Wild", "RestrictableChooseRule", "SelectChannelRule",
+    "Spec", "TraitConstraint", "Tuple2", "TypeAlias", "TypeParam.Implicit", "TypeParam.Kinded", "TypeParam.Unkinded", "UseOrImport.Import",
+    "UseOrImport.Use", "jvm.JavaField", "jvm.JavaFieldRef", "jvm.JavaMethodRef", "jvm.JavaType.GenericArray", "jvm.JavaType.NonGeneric", "jvm.JavaType.Parameterized", "jvm.JavaType.Variable",
+    "jvm.JavaType.Wildcard", "jvm.JavaTypeVariable", "jvm.JavaTypeVariableOwner.Class", "jvm.JavaTypeVariableOwner.Method")
   val typedSlots: Set[String] = Set(
     "_2", "ann", "annotations", "arguments", "bnd", "body", "cases", "chan",
     "clazz", "component", "constructor", "constructors", "cparams", "cs", "default", "derives",
@@ -119,10 +120,10 @@ object AstNames {
     "star", "sym", "symUse", "targ", "targs", "tpe", "tpe1", "tpe2",
     "tpes", "withh")
   val resolvedAttrs: Set[String] = Set(
-    "_1", "alias", "allowSubeffecting", "arity", "asEff", "cast", "clazz", "cst",
-    "cst.lit", "declaredEff", "declaredType", "den", "desc", "descriptor", "eff", "erasure",
-    "expectedEff", "expectedType", "fieldName", "fixity", "ident", "isInterface", "isOpen", "isRuntimeVisible",
-    "label", "m", "methodName", "mod", "mode", "modifiers", "name", "optPreds",
-    "owner", "polarity", "pred", "regSym", "sop", "star", "sym", "symUse",
-    "syms", "targs", "tpe", "tpe1", "tpe2", "tpes", "withh")
+    "_1", "alias", "arity", "asEff", "cast", "clazz", "cst", "cst.lit",
+    "declaredEff", "declaredType", "den", "desc", "descriptor", "eff", "erasure", "expectedEff",
+    "expectedType", "fieldName", "fixity", "ident", "isInterface", "isOpen", "isRuntimeVisible", "label",
+    "m", "methodName", "mod", "mode", "modifiers", "name", "optPreds", "owner",
+    "polarity", "pred", "regSym", "sop", "star", "sym", "symUse", "syms",
+    "targs", "tpe", "tpe1", "tpe2", "tpes", "withh")
 }

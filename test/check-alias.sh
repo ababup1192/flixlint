@@ -12,7 +12,7 @@ mkdir -p "$1"; build="$(cd "$1" && pwd)"
 FLIX_JAR="${FLIX_JAR:-$("$here/bin/flix-jar")}"; export FLIX_JAR
 p="$build/alias"
 rm -rf "$p"; mkdir -p "$p/src"
-printf '[package]\nversion = "0.1.0"\nflix = "0.78.0"\n' > "$p/flix.toml"
+printf '[package]\nversion = "0.1.0"\nflix = "0.80.0"\n' > "$p/flix.toml"
 printf 'mod A {\n    pub type alias Res = { x = Int32 }\n    pub def make(): Res = { x = 1 }\n}\n' > "$p/src/A.flix"
 printf 'mod B {\n    use A.Res\n    pub def use1(r: Res): Int32 = r#x\n}\n' > "$p/src/B.flix"
 printf 'mod C {\n    pub def go(): Int32 = B.use1(A.make())\n}\n' > "$p/src/C.flix"

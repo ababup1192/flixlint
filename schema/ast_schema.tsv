@@ -178,7 +178,6 @@ resolved	Expr.InvokeSuperMethod	exps	List[ResolvedAst.Expr]
 resolved	Expr.InvokeSuperMethod	methodName	Name.Ident
 resolved	Expr.InvokeSuperMethod	targs	List[UnkindedType]
 resolved	Expr.Lambda		
-resolved	Expr.Lambda	allowSubeffecting	boolean
 resolved	Expr.Lambda	exp	ResolvedAst.Expr
 resolved	Expr.Lambda	fparam	ResolvedAst.FormalParam
 resolved	Expr.Lazy		
@@ -291,6 +290,8 @@ resolved	Expr.Use
 resolved	Expr.Use	alias	Name.Ident
 resolved	Expr.Use	exp	ResolvedAst.Expr
 resolved	Expr.Use	sym	Symbol
+resolved	Expr.Val		
+resolved	Expr.Val	symUse	shared.SymUse.ValSymUse
 resolved	Expr.Var		
 resolved	Expr.Var	sym	Symbol.VarSym
 resolved	Expr.VectorLength		

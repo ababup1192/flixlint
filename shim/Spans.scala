@@ -232,9 +232,20 @@ object Spans {
   private def span(loc: SourceLocation): String = s"${loc.startLine}:${loc.startCol}:${loc.endLine}:${loc.endCol}"
 
   /** `pub inst ann=test ext=sl:sc:el:ec`. */
-  private def declExtra(pub: Boolean, inst: Boolean, ann: ca.uwaterloo.flix.language.ast.shared.Annotations, loc: SourceLocation): String = {
+  private def declExtra(pub: Boolean, inst: Boolean, ann: ca.uwaterloo.flix.language.ast.shared.Annotations, doc: ca.uwaterloo.flix.language.ast.shared.Doc, loc: SourceLocation): String = {
     val anns = ann.annotations.map(a => a.getClass.getSimpleName.stripSuffix("$").toLowerCase)
-    (Seq("pub").filter(_ => pub) ++ Seq("inst").filter(_ => inst) ++ (if (anns.isEmpty) Nil else Seq("ann=" + anns.mkString(","))) ++ Seq("ext=" + span(loc))).mkString(" ")
+    (Seq("pub").filter(_ => pub) ++ Seq("inst").filter(_ => inst) ++ (if (anns.isEmpty) Nil else Seq("ann=" + anns.mkString(","))) ++ Seq("ext=" + extent(doc, loc))).mkString(" ")
+  }
+
+  /** The definition with its doc comment in front.
+    * WhyNot: not `loc` alone. From Flix 0.79 the def's place starts at the def and the doc comment has a place of its own;
+    * a tool that cuts a def out by `ext=` would leave its doc comment behind.
+    */
+  private def extent(doc: ca.uwaterloo.flix.language.ast.shared.Doc, loc: SourceLocation): String = {
+    val d = doc.loc
+    val before = d.isReal && d.source == loc.source &&
+      (d.startLine < loc.startLine || (d.startLine == loc.startLine && d.startCol < loc.startCol))
+    if (doc.lines.nonEmpty && before) s"${d.startLine}:${d.startCol}:${loc.endLine}:${loc.endCol}" else span(loc)
   }
 
   private def varSym(pat: Any): Symbol.VarSym =
@@ -436,7 +447,7 @@ object Spans {
     val names = defNames(allDefs.map(_.sym))
     for (d <- allDefs) {
       val fn = names(d.sym)
-      out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, insts(d), d.spec.ann, d.loc))
+      out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, insts(d), d.spec.ann, d.spec.doc, d.loc))
       typesIn(out, d.spec, fn)
       val fps = d.spec.fparams.toList
       paramRows(out, fn, fps.map(fp => (fp.sym, fp.tpe)), d.exp)
@@ -481,7 +492,7 @@ object Spans {
     val inner = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap[Any, java.lang.Boolean]())
     for (d <- allDefs) {
       val fn = names(d.sym)
-      out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, instDefs.contains(d), d.spec.ann, d.loc))
+      out.add("def-decl", fn, d.sym.loc, fn, declExtra(d.spec.mod.isPublic, instDefs.contains(d), d.spec.ann, d.spec.doc, d.loc))
       d.spec.fparams.toList.foreach(receivers.declare)
       receivers.params(d.spec.fparams.toList)
       paramRows(out, fn, d.spec.fparams.toList.map(fp => (fp.bnd.sym, Some(fp.tpe))), d.exp)

@@ -13,7 +13,7 @@ here="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$1"; build="$(cd "$1" && pwd)"
 FLIX_JAR="${FLIX_JAR:-$("$here/bin/flix-jar")}"; export FLIX_JAR
 p="$build/proj"; rm -rf "$p"; mkdir -p "$p/src" "$p/test"
-printf '[package]\nversion = "0.1.0"\nflix = "0.78.0"\n' > "$p/flix.toml"
+printf '[package]\nversion = "0.1.0"\nflix = "0.80.0"\n' > "$p/flix.toml"
 printf 'def main(): Unit \\ IO = println(A.f(1))\n' > "$p/src/Main.flix"
 printf 'mod TestHelp {\n    pub def two(): Int32 = A.f(1)\n}\n' > "$p/test/Help.flix"
 

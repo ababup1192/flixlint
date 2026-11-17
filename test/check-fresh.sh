@@ -18,7 +18,7 @@ mkdir -p "$1"; build="$(cd "$1" && pwd)"; runs="${2:-200}"; max_delay="${3:-3000
 FLIX_JAR="${FLIX_JAR:-$("$here/bin/flix-jar")}"; export FLIX_JAR
 p="$build/proj"; outside="$build/outside"
 rm -rf "$p" "$outside"; mkdir -p "$p/src" "$p/test" "$outside"
-printf '[package]\nversion = "0.1.0"\nflix = "0.78.0"\n' > "$p/flix.toml"
+printf '[package]\nversion = "0.1.0"\nflix = "0.80.0"\n' > "$p/flix.toml"
 printf 'def main(): Unit \\ IO = println(A.f(1) + B.g() + C.h() + L.k())\n' > "$p/src/Main.flix"
 a_good='mod A {\n    pub def f(x: Int32): Int32 = x + 1\n}\n'; a_bad='mod A {\n    pub def f(x: Int32): Int32 = x + y\n}\n'
 b_good='mod B {\n    pub def g(): Int32 = 2\n}\n'; b_bad='mod B {\n    pub def g(): Int32 = "2"\n}\n'
