@@ -540,6 +540,11 @@ its tests.
 - **One compiler.** In a project every kind compiles all the sources `Bootstrap` finds (`src/` and `test/`, by the paths
   `flix check` uses), so a check, a lint and an index share one compiler; the SRC of a lint or an index only picks
   the files its facts and index are about.
+- **Dependencies.** The compiler is made again when the packages and jars `Bootstrap` gives change, and also when a file
+  behind one of their paths changed: the link or the file there, the file it leads to, its size and its time. A
+  workspace that builds its own dependency points `lib/github/<owner>/<name>/<version>/<name>-<version>.fpkg` at the new
+  build under the same path; the server kept the old package and a check said the new names were not there where
+  `flix check` passed (`test/check-relink.sh BUILD_DIR`).
 - **Two runs on one build directory** at once overwrite each other's engine sources; give each caller its own.
 
 ## Layout

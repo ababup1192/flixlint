@@ -1,9 +1,12 @@
 package refactor
 
 import (
+	"archive/zip"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -261,6 +264,51 @@ func loadSources(root string, cfg Config) (map[string]string, error) {
 		srcs[filepath.ToSlash(f)] = string(b)
 	}
 	return srcs, nil
+}
+
+// packageSources はプロジェクトが使うパッケージ（lib/github の下の .fpkg）の .flix（鍵は `<fpkg>!/<中の名前>`）。読めない束は飛ばす。
+// WhyNot: パッケージの型 alias を索引の外として数えないままにしない。パッケージの record（engine の Camera3d など）を
+// 組み立てる所はプロジェクトの側にあり、alias の欄の組が読めないと usages の組み立てが 0 か所になっていた。
+// 組み立てを数えるのはプロジェクトのソースだけで、束からは alias の形しか読まない。
+// 束は flix.toml の [dependencies] が名指す版だけ（lib/github には前の版の束も残る）。
+func packageSources(root string) map[string]string {
+	out := map[string]string{}
+	toml, err := os.ReadFile(filepath.Join(root, "flix.toml"))
+	if err != nil {
+		return out
+	}
+	for _, m := range githubDep.FindAllStringSubmatch(string(toml), -1) {
+		owner, name, version := m[1], m[2], m[3]+m[4]
+		rel := filepath.Join("lib", "github", owner, name, version, name+"-"+version+".fpkg")
+		readFpkg(filepath.Join(root, rel), filepath.ToSlash(rel), out)
+	}
+	return out
+}
+
+// githubDep は flix.toml の `"github:<owner>/<name>" = "<版>"` か `= { version = "<版>", … }` の 1 行。
+var githubDep = regexp.MustCompile(`(?m)^\s*"github:([^/"]+)/([^"]+)"\s*=\s*(?:"([^"]+)"|\{[^}\n]*\bversion\s*=\s*"([^"]+)")`)
+
+// readFpkg は束 path の .flix を `<key>!/<中の名前>` の鍵で out へ足す（読めなければ足さない）。
+func readFpkg(path, key string, out map[string]string) {
+	z, err := zip.OpenReader(path)
+	if err != nil {
+		return
+	}
+	defer z.Close()
+	for _, f := range z.File {
+		if !strings.HasSuffix(f.Name, ".flix") {
+			continue
+		}
+		r, err := f.Open()
+		if err != nil {
+			continue
+		}
+		b, err := io.ReadAll(r)
+		r.Close()
+		if err == nil {
+			out[key+"!/"+f.Name] = string(b)
+		}
+	}
 }
 
 // shapeOf は --receiver（record の alias）か --case（enum の case の record）が指す型。

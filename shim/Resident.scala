@@ -462,16 +462,17 @@ object Resident {
 
   /** What the server keeps between runs: the compiler with the sources it was last given, and the loaded engines. */
   private final class State {
-    private var deps: Option[Facts.Deps] = None
+    private var deps: Option[(Facts.Deps, List[String])] = None
     private var flix: Flix = _
     private var sent = Map.empty[Path, Array[Byte]]
 
     /** The kept compiler for `d`: a new one only when the dependencies change (a check and a lint of one project ask
-      * for the same ones, and share it).
+      * for the same ones, and share it), the files behind their paths included (`depsStamp`).
       */
     def compilerFor(d: Facts.Deps): Flix = {
-      if (!deps.contains(d)) {
-        deps = Some(d)
+      val key = (d, depsStamp(d))
+      if (!deps.contains(key)) {
+        deps = Some(key)
         flix = Facts.compiler(d)
         sent = Map.empty
       }
@@ -567,6 +568,24 @@ object Resident {
       if (code != 0) code else Option(System.getProperty("flixlint.exit")).map(_.toInt).getOrElse(0)
     }
   }
+
+  /** What stands behind each package and jar path of `d` now: the path, when the link (or the file) there was last
+    * changed, the file it leads to, and that file's size and time.
+    *
+    * WhyNot: not the paths alone. A project's `lib/github/<owner>/<name>/<version>/<name>-<version>.fpkg` keeps its
+    * path when the package is built again and the link there is pointed at the new build (a workspace that builds
+    * its own dependency does this); the kept compiler went on with the old package, and a check said the new names
+    * and labels were not there where `flix check` passed.
+    * WhyNot: not the bytes. A package is megabytes and the stamp is taken on every run; a rebuilt file has a new time.
+    */
+  private[flixlint] def depsStamp(d: Facts.Deps): List[String] =
+    (d.pkgs.map(_.path) ++ d.jars).map { p =>
+      try {
+        val link = Files.getLastModifiedTime(p, java.nio.file.LinkOption.NOFOLLOW_LINKS).toMillis
+        val real = p.toRealPath()
+        s"$p $link $real ${Files.size(real)} ${Files.getLastModifiedTime(real).toMillis}"
+      } catch { case _: IOException => s"$p missing" }
+    }
 
   /** Gives `flix` the sources `files` as they are on disk now, and returns what it was given (path -> bytes): each file
     * is read once, and the bytes compared are the bytes given (`addSource`), so a file written between the comparison

@@ -129,7 +129,7 @@ func ResolveTarget(rows []Row, q string) (Target, error) {
 	}
 	switch len(order) {
 	case 0:
-		return Target{}, fmt.Errorf("%s という名前は索引にありません（def・enum・case・型 alias を Mod.name で。record の欄は <Alias>#<欄> か --label）", q)
+		return Target{}, fmt.Errorf("%s という名前は索引にありません（def・enum・case・型 alias を Mod.name で。record の欄は <Alias>#<欄> か --label）%s", q, nearNote(rows, q))
 	case 1:
 		return *found[order[0]], nil
 	}
@@ -548,6 +548,13 @@ func fieldConstructions(root string, idx *Index, cfg Config, receiver, label str
 		return nil, "", err
 	}
 	shape, err := FindAliasShape(srcs, receiver)
+	if err != nil {
+		if pkg := packageSources(root); len(pkg) > 0 {
+			if s, perr := FindAliasShape(pkg, receiver); perr == nil {
+				shape, err = s, nil
+			}
+		}
+	}
 	if err != nil {
 		return nil, "組み立ては数えていない（" + err.Error() + "）", err
 	}

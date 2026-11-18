@@ -182,3 +182,16 @@ func TestUsagesUnusedRun(t *testing.T) {
 		t.Errorf("exit %d\n%s", code, text)
 	}
 }
+
+// 当たらない名前には、名前の末尾が同じ宣言をパッケージの頭を外して並べる（companion mod の case の前に mod の名前を足して書いた時）。
+func TestResolveTargetSuggestsNamesWithTheSameLastPart(t *testing.T) {
+	rows := []Row{
+		{Kind: KindEnumDecl, Sym: "$pkg$github$o$e.Timeline", File: "src/T.flix", Line: 56, Col: 14},
+		{Kind: KindCaseDecl, Sym: "$pkg$github$o$e.Timeline.Timeline", File: "src/T.flix", Line: 57, Col: 14},
+		{Kind: KindDefDecl, Sym: "Timeline.afterAll", File: "src/T.flix", Line: 179, Col: 13},
+	}
+	_, err := ResolveTarget(rows, "Timeline.Timeline.Timeline")
+	if err == nil || !strings.Contains(err.Error(), "名前の末尾が同じ宣言: Timeline（enum）・Timeline.Timeline（case）") {
+		t.Errorf("近い名前の並べ方: %v", err)
+	}
+}

@@ -16,6 +16,7 @@ test-resident:
 	FLIXLINT_RESIDENT=1 test/run.sh
 	FLIXLINT_RESIDENT=1 FLIXLINT_STAGE=resolved test/run.sh
 	test/check-alias.sh build/check-alias
+	test/check-relink.sh build/check-relink
 
 # Scala の shim を build/flixlint-shim.jar に組む（bin/flixlint も初回と shim/*.scala の変更時に同じ事をする）。
 # 出来る jar は flixlint のクラスだけで、コンパイラの内部 AST に対して組むので Flix のバージョンに紐づく。

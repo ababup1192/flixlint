@@ -29,6 +29,51 @@ func nameMatches(sym, q string) bool {
 	return sym == q || strings.HasSuffix(sym, "."+q)
 }
 
+// nearNote は q に当たらなかった時に、名前の末尾（最後の . の後）が同じ宣言を並べる 1 行（無ければ ""）。
+// WhyNot: 当たらないとだけ言わない。enum と同じ名前の mod（companion）の case は `Enum.Case` で、mod の名前を
+// 前にもう 1 つ足した `Mod.Enum.Case` と書くと当たらない。末尾が同じ物を見せれば、書き直す形がその場で分かる。
+func nearNote(rows []Row, q string) string {
+	last := strings.ToLower(shortName(q))
+	kinds := map[string]string{KindDefDecl: "def", KindEnumDecl: "enum", KindCaseDecl: "case", KindAliasDecl: "alias"}
+	seen := map[string]bool{}
+	var near []string
+	for _, r := range rows {
+		k, ok := kinds[r.Kind]
+		if !ok || strings.ToLower(shortName(r.Sym)) != last {
+			continue
+		}
+		name := withoutPkg(r.Sym)
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		near = append(near, name+"（"+k+"）")
+	}
+	if len(near) == 0 {
+		return ""
+	}
+	sort.Slice(near, func(i, j int) bool {
+		if len(near[i]) != len(near[j]) {
+			return len(near[i]) < len(near[j])
+		}
+		return near[i] < near[j]
+	})
+	if len(near) > 5 {
+		near = near[:5]
+	}
+	return "。名前の末尾が同じ宣言: " + strings.Join(near, "・")
+}
+
+// withoutPkg は索引の名前からパッケージの頭（`$pkg$github$owner$name.`）を外す（書く時の形）。
+func withoutPkg(sym string) string {
+	if strings.HasPrefix(sym, "$pkg$") {
+		if i := strings.Index(sym, "."); i >= 0 {
+			return sym[i+1:]
+		}
+	}
+	return sym
+}
+
 // Resolve は q が指す symbol を 1 つに決める（kinds の行の sym から）。0 個・2 個以上は誤り（候補を並べる）。
 func Resolve(rows []Row, q string, kinds map[string]bool) (string, error) {
 	found := map[string]bool{}
@@ -44,7 +89,7 @@ func Resolve(rows []Row, q string, kinds map[string]bool) (string, error) {
 	sort.Strings(syms)
 	switch len(syms) {
 	case 0:
-		return "", fmt.Errorf("%s という名前は索引にありません（def・enum・case の名前を Mod.name で）", q)
+		return "", fmt.Errorf("%s という名前は索引にありません（def・enum・case の名前を Mod.name で）%s", q, nearNote(rows, q))
 	case 1:
 		return syms[0], nil
 	}
