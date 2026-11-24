@@ -137,7 +137,7 @@ object Generic {
     clear(dir)
     // The stream is closed: on the resident server one JVM runs this on every lint, and an unclosed one keeps the file open.
     val limits = Limits(nodeRatio, files.map(f => { val ls = Files.lines(f); try ls.count() finally ls.close() }).sum, 200L * 1000 * 1000)
-    val out = emit(root, stage, files.map(_.toString), limits)
+    val out = emit(root, stage, files.map(Facts.slashed), limits)
     val tw = System.nanoTime()
     out.write(dir)
     writeRuleNames(dir, rules.map(ruleNames(_, out)).getOrElse(Nil))

@@ -23,6 +23,11 @@ import scala.jdk.CollectionConverters._
   * walker serves both stages, and a compiler upgrade that renames a node breaks in one place with a clear message.
   */
 object Facts {
+  /** A source file as the facts and the reports spell it: '/' between the parts on every OS.
+    * WhyNot: not `Path.toString`. On Windows it joins with '\\', and a rule's `allowInFile("src/X.flix")` then names no file.
+    */
+  def slashed(p: Path): String = p.toString.replace(java.io.File.separatorChar, '/')
+
 
   final case class Args(out: Path, namesOut: Option[Path], stage: String, pkgs: List[Path], jars: List[Path], srcs: List[Path], projectRoot: Option[Path],
                         namesOf: Option[Path] = None, offline: Boolean = false)
@@ -158,7 +163,7 @@ object Facts {
     // WhyNot: the set of files is not left to be read off the definitions. A file that holds only type aliases, or
     // only a trait, has no `def`, `enum` or `eff` row, so an `allowInFile` naming it would be refused as a file the
     // sources do not have.
-    files.foreach(f => sink.sourceFile(f.toString))
+    files.foreach(f => sink.sourceFile(slashed(f)))
     val (nErrors, phaseNs) = args.stage match {
       case "typed" =>
         val (optRoot, errors) = flix.check()
@@ -376,8 +381,8 @@ object Facts {
     */
   def sourceFile(loc: SourceLocation): Option[String] = (loc.source.origin, loc.source.sourceName) match {
     case (Origin.User, SourceName.PathName(p)) => shown match {
-      case Some(names) => names.get(p.normalize).map(_.toString)
-      case None => Some(p.toString)
+      case Some(names) => names.get(p.normalize).map(slashed)
+      case None => Some(slashed(p))
     }
     case _ => None
   }
