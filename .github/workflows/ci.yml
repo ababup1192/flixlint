@@ -50,6 +50,11 @@ jobs:
         env:
           FLIX_JAR: ${{ github.workspace }}/flix.jar
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shim
+          path: build/flixlint-shim.jar
+
       - name: make test
         run: make test
         env:
@@ -64,7 +69,9 @@ jobs:
   # ような Unix 決め打ちは Linux の job では見えないので、fixture と examples の 2 つだけ Windows で同じ報告になるかを見る。
   # WhyNot: test/run.sh を全部は流さない。常駐の server（Unix socket）と mktemp に頼る節があり、利用側が Windows で使うのは
   # 素の 1 回の lint だけ。
+  # WhyNot: shim を Windows で組まない。shim は機種によらない jar で、scala-cli は Git Bash から起こせない（.bat）。
   windows:
+    needs: test
     runs-on: windows-latest
     defaults:
       run:
@@ -75,22 +82,20 @@ jobs:
 
       - uses: actions/checkout@v7
 
-      - uses: VirtusLab/scala-cli-setup@v1.17.1
-
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: shim
+          path: build
+
       - name: Download flix.jar
         run: |
           v=$(sed -n 's/^flix *= *"\(.*\)"/\1/p' flix.toml)
           curl -fsSL -o flix.jar "https://github.com/flix/flix/releases/download/v$v/flix.jar"
-
-      - name: Build the shim
-        run: |
-          mkdir -p build
-          scala-cli --power package shim --jar flix.jar --library -o build/flixlint-shim.jar -f --server=false
 
       - name: fixture と examples を resolved で lint して、Linux と同じ報告か
         run: |
