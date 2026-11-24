@@ -88,6 +88,15 @@ die() { echo "flixlint: $1" >&2; exit 4; }
 
 # ---- where a resident server listens (README "Resident server": the same formula in every client) ----
 sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi | cut -c1-64; }
+sha1() { if command -v sha1sum >/dev/null 2>&1; then sha1sum; else shasum; fi | cut -c1-40; }
+# The compiler and the shim as one java -cp. Windows' java reads only C:\... paths joined with ';'.
+# WhyNot: not `cygpath -wp "$flix_jar:$shim"`. A jar passed as C:\... already holds a ':' and would be cut there.
+classpath() {
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) printf '%s;%s' "$(cygpath -w "$flix_jar")" "$(cygpath -w "$shim")" ;;
+        *) printf '%s:%s' "$flix_jar" "$shim" ;;
+    esac
+}
 # The first 16 hex digits of the SHA-256 of the root, a newline, and the identity.
 socket_name() { printf '%s\n%s' "$1" "$2" | sha256 | cut -c1-16; }
 # The user's cache: ~/Library/Caches on macOS, %LOCALAPPDATA% on Windows, $XDG_CACHE_HOME or ~/.cache elsewhere.
@@ -222,7 +231,7 @@ server_log="${socket%.sock}.log"
 # The client is a JVM that only relays bytes, so it skips the optimizing compiler and the parallel collector.
 resident_client() {
     local kind="$1"; shift
-    java -XX:TieredStopAtLevel=1 -XX:+UseSerialGC -cp "$flix_jar:$shim" flixlint.Resident client --socket "$socket" \
+    java -XX:TieredStopAtLevel=1 -XX:+UseSerialGC -cp "$(classpath)" flixlint.Resident client --socket "$socket" \
         --root "$root" --identity "$identity" --kind "$kind" ${timeout:+--timeout "$timeout"} ${setting_opts[@]+"${setting_opts[@]}"} "$@"
 }
 start_server() {
@@ -232,7 +241,7 @@ start_server() {
     mkdir -p "$cache"
     echo "flixlint: starting the resident server (log: $server_log)" >&2
     # shellcheck disable=SC2086
-    java $opts -cp "$flix_jar:$shim" flixlint.Resident server --socket "$socket" --root "$root" --identity "$identity" \
+    java $opts -cp "$(classpath)" flixlint.Resident server --socket "$socket" --root "$root" --identity "$identity" \
         --idle-minutes "$idle_minutes" --run-limit "$run_limit" </dev/null >>"$server_log" 2>&1 &
 }
 if [ "$resident_stop" = 1 ]; then
@@ -307,7 +316,7 @@ if [ -z "$rules" ]; then
     via_resident spans "${facts_args[@]}"
     if [ "$status" -eq 11 ]; then
         # shellcheck disable=SC2086
-        java $java_opts -cp "$flix_jar:$shim" flixlint.Facts "${facts_args[@]}"
+        java $java_opts -cp "$(classpath)" flixlint.Facts "${facts_args[@]}"
         status=$?
     fi
     set -e
@@ -326,7 +335,7 @@ printf 'def main(): Unit \\ IO = Flixlint.Engine.lint(%s.rules())\n' "$rules_mod
 # same rule sources would reuse the jar the first compiler built. Path, size and mtime identify it without hashing a
 # hundred megabytes on every run (an mtime it cannot read only makes the key coarser). LC_ALL=C fixes the order the
 # globs expand in, which is the collation order and so the locale's.
-key="$(export LC_ALL=C; { echo "$jar_id"; cat "$engine"/src/*.flix "$engine"/src/Flixlint/*.flix; } | shasum | cut -c1-40)"
+key="$(export LC_ALL=C; { echo "$jar_id"; cat "$engine"/src/*.flix "$engine"/src/Flixlint/*.flix; } | sha1)"
 engine_jar="$engine/artifact/engine.jar"
 # The engine's settings (Flixlint.Engine.settingsOf), one list for every way the engine runs: the environment of a JVM
 # of its own (flixlint.Lint, engine.jar), and `--setting` of the request to the resident server.
@@ -346,7 +355,7 @@ set +e
 via_resident lint "${lint_args[@]}"
 if [ "$status" -eq 11 ]; then
     # shellcheck disable=SC2086
-    java $java_opts -cp "$flix_jar:$shim" flixlint.Lint "${lint_args[@]}"
+    java $java_opts -cp "$(classpath)" flixlint.Lint "${lint_args[@]}"
     status=$?
 fi
 set -e
