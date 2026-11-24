@@ -59,3 +59,52 @@ jobs:
         run: make test-resolved
         env:
           FLIX_JAR: ${{ github.workspace }}/flix.jar
+
+  # 利用側（flix_game_engine）は Windows でも Git Bash から bin/flixlint を起こす。shasum と java -cp の区切りの
+  # ような Unix 決め打ちは Linux の job では見えないので、fixture と examples の 2 つだけ Windows で同じ報告になるかを見る。
+  # WhyNot: test/run.sh を全部は流さない。常駐の server（Unix socket）と mktemp に頼る節があり、利用側が Windows で使うのは
+  # 素の 1 回の lint だけ。
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # WhyNot: autocrlf を切ってから checkout する。既定の true だと test/expected*.txt が CRLF になり、LF で出る報告と食い違う。
+      - run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v7
+
+      - uses: VirtusLab/scala-cli-setup@v1.17.1
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Download flix.jar
+        run: |
+          v=$(sed -n 's/^flix *= *"\(.*\)"/\1/p' flix.toml)
+          curl -fsSL -o flix.jar "https://github.com/flix/flix/releases/download/v$v/flix.jar"
+
+      - name: Build the shim
+        run: |
+          mkdir -p build
+          scala-cli --power package shim --jar flix.jar --library -o build/flixlint-shim.jar -f --server=false
+
+      - name: fixture と examples を resolved で lint して、Linux と同じ報告か
+        run: |
+          set -u
+          ws="$(cygpath -u "$GITHUB_WORKSPACE")"
+          jar="$(cygpath -w "$PWD/flix.jar")"
+          check() { # DIR RULES EXIT EXPECTED
+            set +e
+            (cd "$1" && "$ws/bin/flixlint" --flix-jar "$jar" --shim "$ws/build/flixlint-shim.jar" --rules "$2" --today 2026-09-19 \
+              --stage resolved --build-dir "$ws/build/$(basename "$1")" src) > actual.txt
+            code=$?
+            set -e
+            [ "$code" = "$3" ] || { echo "$1/$2: expected exit $3, got $code"; cat actual.txt; exit 1; }
+            diff "test/$4" actual.txt
+          }
+          check examples rules.flix 1 expected-examples.txt
+          check test/fixture rules/rules.flix 1 expected.txt
