@@ -109,7 +109,8 @@ jobs:
             code=$?
             set -e
             [ "$code" = "$3" ] || { echo "$1/$2: expected exit $3, got $code"; cat actual.txt; exit 1; }
-            diff "test/$4" actual.txt
+            # WhyNot: CR の違いは見ない。報告の行は println で出るので、Windows では各違反の最後の行だけが CRLF になる。中身の違いだけを見る。
+            diff --strip-trailing-cr "test/$4" actual.txt
           }
           check examples rules.flix 1 expected-examples.txt
           check test/fixture rules/rules.flix 1 expected.txt
